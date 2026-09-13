@@ -32,5 +32,7 @@ server reloads the page whenever you save a source file.
 
 Select **Add combatant**, paste a plain-text stat block, choose whether the
 combatant is an ally or enemy, and enter its initiative. The importer recognizes
-standard lines such as `Armor Class 15`, `Hit Points 27`, `Speed 30 ft.`, and the
-six ability scores. The first non-empty line becomes the combatant's name.
+standard `AC`/`Armor Class`, `HP`/`Hit Points`, initiative, speed, ability score,
+skill, sense, language, challenge rating, trait, action, and reaction fields.
+Imported actions are clickable, making it easy to mark limited or memorable
+abilities as used and reset them when they become available again.
