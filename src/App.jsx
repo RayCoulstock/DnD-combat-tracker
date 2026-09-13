@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ChevronRight, HeartPulse, Minus, Plus, Shield, Skull, Sparkles, Swords, X } from 'lucide-react'
+import { ChevronRight, HeartPulse, Minus, Plus, Shield, Skull, Sparkles, Swords, Upload, X } from 'lucide-react'
 
 const initialCombatants = [
   { id: 1, initiative: 18, name: 'Fenra Ashwood', short: 'FA', role: 'Half-elf ranger · Level 5', side: 'hero', hp: 37, maxHp: 45, ac: 15, speed: '30 ft', conditions: ['Poisoned'], saves: [['STR', 13], ['DEX', 18], ['CON', 14], ['INT', 10], ['WIS', 15], ['CHA', 11]], actions: [{ name: 'Longbow', text: 'Ranged Weapon Attack: +7 to hit, range 150/600 ft, one target. 1d8 + 4 piercing damage.' }, { name: "Hunter’s Mark", text: 'Bonus action · Mark a target for an extra 1d6 damage on each hit.' }] },
@@ -10,6 +10,36 @@ const initialCombatants = [
 ]
 
 const availableConditions = ['Blinded', 'Charmed', 'Frightened', 'Grappled', 'Poisoned', 'Prone', 'Stunned']
+const exampleStatBlock = `Bugbear
+Medium Humanoid (Goblinoid), Chaotic Evil
+Armor Class 16 (hide armor, shield)
+Hit Points 27 (5d8 + 5)
+Speed 30 ft.
+STR 15 DEX 14 CON 13 INT 8 WIS 11 CHA 9`
+
+function parseStatBlock(text, initiative, side) {
+  const lines = text.split('\n').map((line) => line.trim()).filter(Boolean)
+  const findNumber = (label, fallback) => Number(text.match(new RegExp(`${label}\\s+(\\d+)`, 'i'))?.[1] ?? fallback)
+  const scores = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'].map((ability) => [ability, Number(text.match(new RegExp(`${ability}\\s+(\\d+)`, 'i'))?.[1] ?? 10)])
+  const hp = findNumber('Hit Points?', 10)
+  const name = lines[0] || 'Unknown Combatant'
+
+  return {
+    id: Date.now(),
+    initiative: Number(initiative),
+    name,
+    short: name.split(/\s+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase(),
+    role: lines[1] || (side === 'hero' ? 'Player character' : 'Creature'),
+    side,
+    hp,
+    maxHp: hp,
+    ac: findNumber('Armor Class', 10),
+    speed: text.match(/Speed\s+([^\n,]+)/i)?.[1]?.trim() || '30 ft',
+    conditions: [],
+    saves: scores,
+    actions: [{ name: 'Imported stat block', text: 'Combatant imported successfully. Refer to the source stat block for its full actions and traits.' }],
+  }
+}
 
 function HealthBar({ value, max }) {
   const percent = Math.max(0, Math.min(100, (value / max) * 100))
@@ -24,6 +54,10 @@ function App() {
   const [round, setRound] = useState(3)
   const [amount, setAmount] = useState('')
   const [showConditions, setShowConditions] = useState(false)
+  const [showAddCombatant, setShowAddCombatant] = useState(false)
+  const [statBlock, setStatBlock] = useState('')
+  const [newInitiative, setNewInitiative] = useState('10')
+  const [newSide, setNewSide] = useState('enemy')
   const selected = combatants.find((item) => item.id === selectedId) ?? combatants[0]
   const activeIndex = combatants.findIndex((item) => item.id === activeId)
   const heroesStanding = useMemo(() => combatants.filter((c) => c.side === 'hero' && c.hp > 0).length, [combatants])
@@ -46,12 +80,23 @@ function App() {
     setCombatants((items) => items.map((item) => item.id === selected.id ? { ...item, conditions: item.conditions.includes(condition) ? item.conditions.filter((c) => c !== condition) : [...item.conditions, condition] } : item))
   }
 
+  const addCombatant = (event) => {
+    event.preventDefault()
+    if (!statBlock.trim() || newInitiative === '') return
+    const combatant = parseStatBlock(statBlock, newInitiative, newSide)
+    setCombatants((items) => [...items, combatant].sort((a, b) => b.initiative - a.initiative))
+    setSelectedId(combatant.id)
+    setStatBlock('')
+    setNewInitiative('10')
+    setShowAddCombatant(false)
+  }
+
   return (
     <main className="app-shell">
       <header>
         <div className="brand"><span className="brand-mark"><Swords size={20} /></span><span>ENCOUNTER <b>LEDGER</b></span></div>
         <div className="encounter-title"><div><span className="eyebrow">CURRENT ENCOUNTER</span><h1>Goblin Ambush</h1></div><div className="round"><span>ROUND</span><strong>{round}</strong></div></div>
-        <div className="header-actions"><button className="ghost"><Plus size={17} /> Add combatant</button><button className="primary" onClick={nextTurn}>Next turn <ChevronRight size={18} /></button></div>
+        <div className="header-actions"><button className="ghost" onClick={() => setShowAddCombatant(true)}><Plus size={17} /> Add combatant</button><button className="primary" onClick={nextTurn}>Next turn <ChevronRight size={18} /></button></div>
       </header>
 
       <div className="workspace">
@@ -92,6 +137,19 @@ function App() {
           <section className="roster"><div className="roster-heading"><div><span className="eyebrow">AT A GLANCE</span><h2>Battlefield</h2></div><div className="legend"><span><i className="hero-dot" /> Allies</span><span><i className="enemy-dot" /> Enemies</span></div></div><div className="roster-grid">{combatants.filter((c) => c.id !== selectedId).slice(0, 4).map((item) => <button key={item.id} onClick={() => setSelectedId(item.id)} className="roster-card"><span className={`avatar ${item.side}`}>{item.hp === 0 ? <Skull size={16} /> : item.short}</span><span className="roster-data"><strong>{item.name}<small>AC {item.ac}</small></strong><HealthBar value={item.hp} max={item.maxHp} /><em>{item.hp} / {item.maxHp} HP</em></span></button>)}</div></section>
         </section>
       </div>
+      {showAddCombatant && <div className="modal-backdrop" onMouseDown={() => setShowAddCombatant(false)}>
+        <form className="combatant-modal" onSubmit={addCombatant} onMouseDown={(event) => event.stopPropagation()}>
+          <div className="modal-heading"><span className="modal-icon"><Upload size={19} /></span><div><span className="eyebrow">IMPORT CREATURE</span><h2>Add a combatant</h2></div><button type="button" className="close-button" onClick={() => setShowAddCombatant(false)} aria-label="Close"><X size={19} /></button></div>
+          <p className="modal-help">Paste a plain-text stat block. We’ll pull out its name, armor class, hit points, speed, and ability scores.</p>
+          <label className="field-label" htmlFor="stat-block">STAT BLOCK</label>
+          <textarea id="stat-block" value={statBlock} onChange={(event) => setStatBlock(event.target.value)} placeholder={exampleStatBlock} autoFocus />
+          <div className="import-options">
+            <label><span className="field-label">INITIATIVE</span><input required type="number" value={newInitiative} onChange={(event) => setNewInitiative(event.target.value)} /></label>
+            <fieldset><legend className="field-label">SIDE</legend><div className="side-picker"><button type="button" className={newSide === 'hero' ? 'active hero-choice' : ''} onClick={() => setNewSide('hero')}>Ally</button><button type="button" className={newSide === 'enemy' ? 'active enemy-choice' : ''} onClick={() => setNewSide('enemy')}>Enemy</button></div></fieldset>
+          </div>
+          <div className="modal-actions"><button type="button" className="cancel-button" onClick={() => setShowAddCombatant(false)}>Cancel</button><button type="submit" className="primary" disabled={!statBlock.trim()}><Plus size={17} /> Add to encounter</button></div>
+        </form>
+      </div>}
     </main>
   )
 }
