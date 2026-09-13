@@ -36,3 +36,7 @@ standard `AC`/`Armor Class`, `HP`/`Hit Points`, initiative, speed, ability score
 skill, sense, language, challenge rating, trait, action, and reaction fields.
 Imported actions are clickable, making it easy to mark limited or memorable
 abilities as used and reset them when they become available again.
+
+Use **How many** to add a numbered group of identical creatures at once. An
+existing combatant can also be duplicated or removed from its stat card, while
+**Clear** resets the entire encounter after confirmation.

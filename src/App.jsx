@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Check, ChevronRight, HeartPulse, Minus, Plus, RotateCcw, Shield, Skull, Sparkles, Swords, Upload, X } from 'lucide-react'
+import { Check, ChevronRight, Copy, HeartPulse, Minus, Plus, RotateCcw, Shield, Skull, Sparkles, Swords, Trash2, Upload, UserPlus, X } from 'lucide-react'
 
 const initialCombatants = [
   { id: 1, initiative: 18, name: 'Fenra Ashwood', short: 'FA', role: 'Half-elf ranger · Level 5', side: 'hero', hp: 37, maxHp: 45, ac: 15, speed: '30 ft', conditions: ['Poisoned'], saves: [['STR', 13], ['DEX', 18], ['CON', 14], ['INT', 10], ['WIS', 15], ['CHA', 11]], actions: [{ name: 'Longbow', text: 'Ranged Weapon Attack: +7 to hit, range 150/600 ft, one target. 1d8 + 4 piercing damage.' }, { name: "Hunter’s Mark", text: 'Bonus action · Mark a target for an extra 1d6 damage on each hit.' }] },
@@ -70,6 +70,10 @@ function HealthBar({ value, max }) {
   return <div className="health-track"><span className={tone} style={{ width: `${percent}%` }} /></div>
 }
 
+function uniqueId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
 function App() {
   const [combatants, setCombatants] = useState(initialCombatants)
   const [selectedId, setSelectedId] = useState(1)
@@ -81,12 +85,14 @@ function App() {
   const [statBlock, setStatBlock] = useState('')
   const [newInitiative, setNewInitiative] = useState('')
   const [newSide, setNewSide] = useState('enemy')
+  const [newQuantity, setNewQuantity] = useState('1')
   const [usedAbilities, setUsedAbilities] = useState({})
-  const selected = combatants.find((item) => item.id === selectedId) ?? combatants[0]
+  const selected = combatants.find((item) => item.id === selectedId) ?? combatants[0] ?? null
   const activeIndex = combatants.findIndex((item) => item.id === activeId)
   const heroesStanding = useMemo(() => combatants.filter((c) => c.side === 'hero' && c.hp > 0).length, [combatants])
 
   const adjustHp = (direction) => {
+    if (!selected) return
     const parsed = Number.parseInt(amount, 10)
     if (!parsed || parsed < 1) return
     setCombatants((items) => items.map((item) => item.id === selected.id ? { ...item, hp: Math.max(0, Math.min(item.maxHp, item.hp + parsed * direction)) } : item))
@@ -94,6 +100,7 @@ function App() {
   }
 
   const nextTurn = () => {
+    if (!combatants.length) return
     const next = (activeIndex + 1) % combatants.length
     if (next === 0) setRound((value) => value + 1)
     setActiveId(combatants[next].id)
@@ -101,10 +108,12 @@ function App() {
   }
 
   const toggleCondition = (condition) => {
+    if (!selected) return
     setCombatants((items) => items.map((item) => item.id === selected.id ? { ...item, conditions: item.conditions.includes(condition) ? item.conditions.filter((c) => c !== condition) : [...item.conditions, condition] } : item))
   }
 
   const toggleAbility = (ability) => {
+    if (!selected) return
     const key = `${selected.id}:${ability.category}:${ability.name}`
     setUsedAbilities((items) => ({ ...items, [key]: !items[key] }))
   }
@@ -112,12 +121,43 @@ function App() {
   const addCombatant = (event) => {
     event.preventDefault()
     if (!statBlock.trim()) return
-    const combatant = parseStatBlock(statBlock, newInitiative, newSide)
-    setCombatants((items) => [...items, combatant].sort((a, b) => b.initiative - a.initiative))
-    setSelectedId(combatant.id)
+    const parsed = parseStatBlock(statBlock, newInitiative, newSide)
+    const quantity = Math.max(1, Math.min(20, Number(newQuantity) || 1))
+    const additions = Array.from({ length: quantity }, (_, index) => ({
+      ...parsed,
+      id: uniqueId(),
+      name: quantity > 1 ? `${parsed.name} ${index + 1}` : parsed.name,
+    }))
+    setCombatants((items) => [...items, ...additions].sort((a, b) => b.initiative - a.initiative))
+    setSelectedId(additions[0].id)
     setStatBlock('')
     setNewInitiative('')
+    setNewQuantity('1')
     setShowAddCombatant(false)
+  }
+
+  const duplicateCombatant = () => {
+    if (!selected) return
+    const duplicate = { ...selected, id: uniqueId(), name: `${selected.name} Copy`, conditions: [...selected.conditions], saves: selected.saves.map((score) => [...score]), details: selected.details?.map((detail) => [...detail]), actions: selected.actions.map((action) => ({ ...action })) }
+    setCombatants((items) => [...items, duplicate].sort((a, b) => b.initiative - a.initiative))
+    setSelectedId(duplicate.id)
+  }
+
+  const removeCombatant = () => {
+    if (!selected) return
+    const remaining = combatants.filter((item) => item.id !== selected.id)
+    setCombatants(remaining)
+    setSelectedId(remaining[0]?.id ?? null)
+    if (activeId === selected.id) setActiveId(remaining[0]?.id ?? null)
+  }
+
+  const clearEncounter = () => {
+    if (!window.confirm('Remove every combatant from this encounter?')) return
+    setCombatants([])
+    setSelectedId(null)
+    setActiveId(null)
+    setRound(1)
+    setUsedAbilities({})
   }
 
   return (
@@ -125,7 +165,7 @@ function App() {
       <header>
         <div className="brand"><span className="brand-mark"><Swords size={20} /></span><span>ENCOUNTER <b>LEDGER</b></span></div>
         <div className="encounter-title"><div><span className="eyebrow">CURRENT ENCOUNTER</span><h1>Goblin Ambush</h1></div><div className="round"><span>ROUND</span><strong>{round}</strong></div></div>
-        <div className="header-actions"><button className="ghost" onClick={() => setShowAddCombatant(true)}><Plus size={17} /> Add combatant</button><button className="primary" onClick={nextTurn}>Next turn <ChevronRight size={18} /></button></div>
+        <div className="header-actions"><button className="clear-button" onClick={clearEncounter} disabled={!combatants.length}><Trash2 size={16} /> Clear</button><button className="ghost" onClick={() => setShowAddCombatant(true)}><Plus size={17} /> Add combatant</button><button className="primary" onClick={nextTurn} disabled={!combatants.length}>Next turn <ChevronRight size={18} /></button></div>
       </header>
 
       <div className="workspace">
@@ -139,16 +179,19 @@ function App() {
               </button>
             ))}
           </div>
-          <div className="party-status"><HeartPulse size={18} /><div><strong>{heroesStanding} heroes standing</strong><span>1 combatant is down</span></div></div>
+          {!combatants.length && <div className="queue-empty"><UserPlus size={20} /><span>No combatants yet</span></div>}
+          <div className="party-status"><HeartPulse size={18} /><div><strong>{heroesStanding} heroes standing</strong><span>{combatants.filter((item) => item.hp === 0).length} combatants down</span></div></div>
         </aside>
 
         <section className="content">
+          {!selected ? <div className="empty-encounter"><span className="empty-icon"><Swords size={28} /></span><span className="eyebrow">THE BATTLEFIELD IS QUIET</span><h2>Add your first combatant</h2><p>Paste a creature or hero stat block to begin building the initiative order.</p><button className="primary" onClick={() => setShowAddCombatant(true)}><Plus size={17} /> Add combatant</button></div> : <>
           <article className="stat-card">
             <div className="stat-top">
               <div className={`portrait ${selected.side}`}>{selected.short}</div>
               <div className="identity"><span className="eyebrow">{selected.side === 'hero' ? 'PLAYER CHARACTER' : 'HOSTILE CREATURE'}</span><h2>{selected.name}</h2><p>{selected.role}</p></div>
               <div className="quick-stat"><Shield size={17} /><span>ARMOR CLASS<strong>{selected.ac}</strong></span></div>
               <div className="quick-stat"><span>SPD</span><span>SPEED<strong>{selected.speed}</strong></span></div>
+              <div className="combatant-actions"><button onClick={duplicateCombatant} title="Duplicate combatant"><Copy size={16} /><span>Duplicate</span></button><button className="remove" onClick={removeCombatant} title="Remove combatant"><Trash2 size={16} /><span>Remove</span></button></div>
             </div>
 
             <div className="vitals">
@@ -169,6 +212,7 @@ function App() {
           </article>
 
           <section className="roster"><div className="roster-heading"><div><span className="eyebrow">AT A GLANCE</span><h2>Battlefield</h2></div><div className="legend"><span><i className="hero-dot" /> Allies</span><span><i className="enemy-dot" /> Enemies</span></div></div><div className="roster-grid">{combatants.filter((c) => c.id !== selectedId).slice(0, 4).map((item) => <button key={item.id} onClick={() => setSelectedId(item.id)} className="roster-card"><span className={`avatar ${item.side}`}>{item.hp === 0 ? <Skull size={16} /> : item.short}</span><span className="roster-data"><strong>{item.name}<small>AC {item.ac}</small></strong><HealthBar value={item.hp} max={item.maxHp} /><em>{item.hp} / {item.maxHp} HP</em></span></button>)}</div></section>
+          </>}
         </section>
       </div>
       {showAddCombatant && <div className="modal-backdrop" onMouseDown={() => setShowAddCombatant(false)}>
@@ -179,6 +223,7 @@ function App() {
           <textarea id="stat-block" value={statBlock} onChange={(event) => setStatBlock(event.target.value)} placeholder={exampleStatBlock} autoFocus />
           <div className="import-options">
             <label><span className="field-label">INITIATIVE <em>(AUTO IF BLANK)</em></span><input type="number" value={newInitiative} onChange={(event) => setNewInitiative(event.target.value)} placeholder="Auto" /></label>
+            <label><span className="field-label">HOW MANY</span><input type="number" min="1" max="20" value={newQuantity} onChange={(event) => setNewQuantity(event.target.value)} /></label>
             <fieldset><legend className="field-label">SIDE</legend><div className="side-picker"><button type="button" className={newSide === 'hero' ? 'active hero-choice' : ''} onClick={() => setNewSide('hero')}>Ally</button><button type="button" className={newSide === 'enemy' ? 'active enemy-choice' : ''} onClick={() => setNewSide('enemy')}>Enemy</button></div></fieldset>
           </div>
           <div className="modal-actions"><button type="button" className="cancel-button" onClick={() => setShowAddCombatant(false)}>Cancel</button><button type="submit" className="primary" disabled={!statBlock.trim()}><Plus size={17} /> Add to encounter</button></div>
