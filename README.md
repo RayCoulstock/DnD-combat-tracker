@@ -40,3 +40,14 @@ abilities as used and reset them when they become available again.
 Use **How many** to add a numbered group of identical creatures at once. An
 existing combatant can also be duplicated or removed from its stat card, while
 **Clear** resets the entire encounter after confirmation.
+
+## Saving an encounter
+
+Use **Export** to download the complete encounter as a JSON file, including the
+round, active turn, current hit points, conditions, used abilities, and character
+art. Use **Import** to restore one of these files later—no account or database is
+required.
+
+Select a combatant's portrait or choose **Add art** on its stat card to attach an
+image. Artwork up to 3 MB is stored directly in exported encounter files, so it
+will still be available when the encounter is imported on another device.
