@@ -27,6 +27,8 @@ server reloads the page whenever you save a source file.
 | `npm run dev` | Start the local Vite development server |
 | `npm run build` | Create an optimized production build in `dist/` |
 | `npm run lint` | Check the source with ESLint |
+| `npm run typecheck` | Type-check the TypeScript map components |
+| `npm test` | Run map-state and encounter compatibility tests |
 
 ## Adding a combatant
 
@@ -51,3 +53,20 @@ required.
 Select a combatant's portrait or choose **Add art** on its stat card to attach an
 image. Artwork up to 3 MB is stored directly in exported encounter files, so it
 will still be available when the encounter is imported on another device.
+
+## Using the 3D battle map
+
+Choose **3D Map** in the header to open the local virtual tabletop. Each
+combatant is represented by a colour-coded token on a 20 × 20 grid, where every
+square represents 5 feet. Allies are green, enemies are red, the selected token
+has a blue ring, and the active initiative token has a gold ring.
+
+Select a token (in the scene or initiative panel), then select a destination
+square to move it. Positions snap to integer grid coordinates and remain intact
+when switching back to the tracker. Drag to rotate the camera, right-drag to pan,
+and use the mouse wheel to zoom. The controls panel can reset the camera and
+toggle grid lines or token labels.
+
+Map settings and token positions are included in encounter JSON exports. Files
+created before the map was added remain importable; missing or invalid positions
+are assigned safe starting squares automatically.
