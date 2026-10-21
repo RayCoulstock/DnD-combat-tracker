@@ -259,6 +259,70 @@ function App() {
     setBattleMap((map) => moveTokenInMap(map, combatantId, destination))
   }
 
+  const exportEncounter = () => {
+    const encounter = {
+      version: encounterFileVersion,
+      exportedAt: new Date().toISOString(),
+      round,
+      activeId,
+      selectedId,
+      usedAbilities,
+      combatants,
+    }
+    const blob = new Blob([JSON.stringify(encounter, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `encounter-ledger-round-${round}.json`
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 0)
+    setFileMessage({ tone: 'success', text: 'Encounter exported.' })
+  }
+
+  const importEncounter = async (event) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    try {
+      const encounter = validateEncounter(JSON.parse(await file.text()))
+      const ids = new Set(encounter.combatants.map((combatant) => combatant.id))
+      setCombatants(encounter.combatants)
+      setRound(encounter.round)
+      setActiveId(ids.has(encounter.activeId) ? encounter.activeId : encounter.combatants[0]?.id ?? null)
+      setSelectedId(ids.has(encounter.selectedId) ? encounter.selectedId : encounter.combatants[0]?.id ?? null)
+      setUsedAbilities(encounter.usedAbilities && typeof encounter.usedAbilities === 'object' ? encounter.usedAbilities : {})
+      setFileMessage({ tone: 'success', text: `${encounter.combatants.length} combatants imported.` })
+    } catch (error) {
+      setFileMessage({ tone: 'error', text: error instanceof Error ? error.message : 'Could not import that file.' })
+    }
+  }
+
+  const updateArtwork = (event) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file || !selected) return
+    if (!file.type.startsWith('image/')) {
+      setFileMessage({ tone: 'error', text: 'Choose an image file for character art.' })
+      return
+    }
+    if (file.size > maxArtworkSize) {
+      setFileMessage({ tone: 'error', text: 'Character art must be smaller than 3 MB.' })
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      setCombatants((items) => items.map((item) => item.id === selected.id ? { ...item, artwork: reader.result } : item))
+      setFileMessage({ tone: 'success', text: `Artwork added for ${selected.name}.` })
+    }
+    reader.onerror = () => setFileMessage({ tone: 'error', text: 'Could not read that image.' })
+    reader.readAsDataURL(file)
+  }
+
+  const removeArtwork = () => {
+    if (!selected) return
+    setCombatants((items) => items.map((item) => item.id === selected.id ? { ...item, artwork: undefined } : item))
+  }
+
   return (
     <main className="app-shell">
       <header>
