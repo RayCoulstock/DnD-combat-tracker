@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { Check, ChevronRight, Copy, Download, FileJson, HeartPulse, ImagePlus, List, Map, Minus, Plus, RotateCcw, Shield, Skull, Sparkles, Swords, Trash2, Upload, UserPlus, X } from 'lucide-react'
 import BattleMap3D from './BattleMap3D'
-import { createBattleMapState, moveToken as moveTokenInMap, normalizeBattleMap, reconcileBattleMap } from './mapState'
+import { applyCommand, commandSchema, importEncounter as readEncounter } from '../shared/domain'
 
 const initialCombatants = [
   { id: 1, initiative: 18, name: 'Fenra Ashwood', short: 'FA', role: 'Half-elf ranger · Level 5', side: 'hero', hp: 37, maxHp: 45, ac: 15, speed: '30 ft', conditions: ['Poisoned'], saves: [['STR', 13], ['DEX', 18], ['CON', 14], ['INT', 10], ['WIS', 15], ['CHA', 11]], actions: [{ name: 'Longbow', text: 'Ranged Weapon Attack: +7 to hit, range 150/600 ft, one target. 1d8 + 4 piercing damage.' }, { name: "Hunter’s Mark", text: 'Bonus action · Mark a target for an extra 1d6 damage on each hit.' }] },
@@ -72,33 +72,15 @@ function HealthBar({ value, max }) {
   return <div className="health-track"><span className={tone} style={{ width: `${percent}%` }} /></div>
 }
 
-function uniqueId() {
-  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
-}
-
-const encounterFileVersion = 1
+const uniqueId = () => crypto.randomUUID()
 const maxArtworkSize = 3 * 1024 * 1024
 
-function isCombatant(value) {
-  return value && typeof value === 'object' && ['string', 'number'].includes(typeof value.id) &&
-    typeof value.name === 'string' && value.name.trim() && ['hero', 'enemy'].includes(value.side) &&
-    Number.isFinite(value.initiative) && Number.isFinite(value.hp) && Number.isFinite(value.maxHp) &&
-    Number.isFinite(value.ac) && Array.isArray(value.conditions) && Array.isArray(value.saves) && Array.isArray(value.actions) &&
-    (value.artwork === undefined || (typeof value.artwork === 'string' && value.artwork.startsWith('data:image/') && value.artwork.length <= maxArtworkSize * 1.5))
-}
-
-function validateEncounter(value) {
-  if (!value || typeof value !== 'object' || value.version !== encounterFileVersion) throw new Error('This is not a supported Encounter Ledger file.')
-  if (!Array.isArray(value.combatants) || !value.combatants.every(isCombatant)) throw new Error('The encounter contains invalid combatant data.')
-  if (!Number.isInteger(value.round) || value.round < 1) throw new Error('The encounter round is invalid.')
-  return value
-}
-
-function App() {
-  const [combatants, setCombatants] = useState(initialCombatants)
+/** @param {{ multiplayer?: null | { snapshot: import('../shared/domain').Snapshot, connected: boolean, send: (command: import('../shared/domain').GameCommand) => Promise<void>, exportFile: () => Promise<import('../shared/domain').EncounterState> } }} props */
+function App({ multiplayer = null }) {
+  const [localState, setLocalState] = useState(() => readEncounter({ version: 1, round: 3, activeId: 1, combatants: initialCombatants }))
+  const state = multiplayer?.snapshot.state ?? localState
+  const { combatants, activeId, round, usedAbilities, battleMap } = state
   const [selectedId, setSelectedId] = useState(1)
-  const [activeId, setActiveId] = useState(1)
-  const [round, setRound] = useState(3)
   const [amount, setAmount] = useState('')
   const [showConditions, setShowConditions] = useState(false)
   const [showAddCombatant, setShowAddCombatant] = useState(false)
@@ -106,236 +88,99 @@ function App() {
   const [newInitiative, setNewInitiative] = useState('')
   const [newSide, setNewSide] = useState('enemy')
   const [newQuantity, setNewQuantity] = useState('1')
-  const [usedAbilities, setUsedAbilities] = useState({})
   const [view, setView] = useState('tracker')
-  const [battleMap, setBattleMap] = useState(() => createBattleMapState(initialCombatants.map((combatant) => combatant.id)))
   const [fileMessage, setFileMessage] = useState(null)
   const encounterInputRef = useRef(null)
   const artworkInputRef = useRef(null)
   const selected = combatants.find((item) => item.id === selectedId) ?? combatants[0] ?? null
-  const activeIndex = combatants.findIndex((item) => item.id === activeId)
   const heroesStanding = useMemo(() => combatants.filter((c) => c.side === 'hero' && c.hp > 0).length, [combatants])
 
+  const canChange = !multiplayer || multiplayer.connected
+  const perform = (input) => {
+    if (!canChange) return
+    try {
+      const command = commandSchema.parse(input)
+      if (multiplayer) void multiplayer.send(command).catch(error => setFileMessage({ tone: 'error', text: error.message }))
+      else setLocalState(current => applyCommand(current, { role: 'dm', id: 'local' }, command))
+    } catch (error) { setFileMessage({ tone: 'error', text: error.message }) }
+  }
   const adjustHp = (direction) => {
-    if (!selected) return
     const parsed = Number.parseInt(amount, 10)
-    if (!parsed || parsed < 1) return
-    setCombatants((items) => items.map((item) => item.id === selected.id ? { ...item, hp: Math.max(0, Math.min(item.maxHp, item.hp + parsed * direction)) } : item))
+    if (!selected || !parsed || parsed < 1) return
+    perform({ type: 'combatant.hp.update', combatantId: selected.id, hp: Math.max(0, Math.min(selected.maxHp, selected.hp + parsed * direction)) })
     setAmount('')
   }
-
   const nextTurn = () => {
-    if (!combatants.length) return
-    const next = (activeIndex + 1) % combatants.length
-    if (next === 0) setRound((value) => value + 1)
-    setActiveId(combatants[next].id)
-    setSelectedId(combatants[next].id)
+    if (!combatants.length || !canChange) return
+    const next = (combatants.findIndex(c => c.id === activeId) + 1) % combatants.length
+    perform({ type: 'initiative.next' }); setSelectedId(combatants[next].id)
   }
-
   const toggleCondition = (condition) => {
-    if (!selected) return
-    setCombatants((items) => items.map((item) => item.id === selected.id ? { ...item, conditions: item.conditions.includes(condition) ? item.conditions.filter((c) => c !== condition) : [...item.conditions, condition] } : item))
+    if (selected) perform({ type: 'combatant.conditions', combatantId: selected.id, conditions: selected.conditions.includes(condition) ? selected.conditions.filter(c => c !== condition) : [...selected.conditions, condition] })
   }
-
   const toggleAbility = (ability) => {
-    if (!selected) return
-    const key = `${selected.id}:${ability.category}:${ability.name}`
-    setUsedAbilities((items) => ({ ...items, [key]: !items[key] }))
+    if (selected) perform({ type: 'ability.toggle', combatantId: selected.id, key: `${selected.id}:${ability.category}:${ability.name}` })
   }
-
   const addCombatant = (event) => {
     event.preventDefault()
     if (!statBlock.trim()) return
     const parsed = parseStatBlock(statBlock, newInitiative, newSide)
     const quantity = Math.max(1, Math.min(20, Number(newQuantity) || 1))
-    const additions = Array.from({ length: quantity }, (_, index) => ({
-      ...parsed,
-      id: uniqueId(),
-      name: quantity > 1 ? `${parsed.name} ${index + 1}` : parsed.name,
-    }))
-    setCombatants((items) => [...items, ...additions].sort((a, b) => b.initiative - a.initiative))
-    setBattleMap((map) => reconcileBattleMap(map, [...combatants, ...additions].map((combatant) => combatant.id)))
-    setSelectedId(additions[0].id)
-    setStatBlock('')
-    setNewInitiative('')
-    setNewQuantity('1')
-    setShowAddCombatant(false)
+    const additions = Array.from({ length: quantity }, (_, index) => ({ ...parsed, id: uniqueId(), name: quantity > 1 ? `${parsed.name} ${index + 1}` : parsed.name }))
+    perform({ type: 'combatant.add', combatants: additions })
+    setSelectedId(additions[0].id); setStatBlock(''); setNewInitiative(''); setNewQuantity('1'); setShowAddCombatant(false)
   }
-
   const duplicateCombatant = () => {
     if (!selected) return
-    const duplicate = { ...selected, id: uniqueId(), name: `${selected.name} Copy`, conditions: [...selected.conditions], saves: selected.saves.map((score) => [...score]), details: selected.details?.map((detail) => [...detail]), actions: selected.actions.map((action) => ({ ...action })) }
-    setCombatants((items) => [...items, duplicate].sort((a, b) => b.initiative - a.initiative))
-    setBattleMap((map) => reconcileBattleMap(map, [...combatants, duplicate].map((combatant) => combatant.id)))
-    setSelectedId(duplicate.id)
+    const duplicate = { ...selected, id: uniqueId(), name: `${selected.name} Copy` }
+    perform({ type: 'combatant.add', combatants: [duplicate] }); setSelectedId(duplicate.id)
   }
-
-  const removeCombatant = () => {
-    if (!selected) return
-    const remaining = combatants.filter((item) => item.id !== selected.id)
-    setCombatants(remaining)
-    setBattleMap((map) => reconcileBattleMap(map, remaining.map((combatant) => combatant.id)))
-    setSelectedId(remaining[0]?.id ?? null)
-    if (activeId === selected.id) setActiveId(remaining[0]?.id ?? null)
-  }
-
-  const clearEncounter = () => {
-    if (!window.confirm('Remove every combatant from this encounter?')) return
-    setCombatants([])
-    setSelectedId(null)
-    setActiveId(null)
-    setRound(1)
-    setUsedAbilities({})
-    setBattleMap(createBattleMapState())
-  }
-
-  const exportEncounter = () => {
-    const encounter = {
-      version: encounterFileVersion,
-      exportedAt: new Date().toISOString(),
-      round,
-      activeId,
-      selectedId,
-      usedAbilities,
-      combatants,
-      battleMap,
-    }
-    const blob = new Blob([JSON.stringify(encounter, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `encounter-ledger-round-${round}.json`
-    link.click()
-    window.setTimeout(() => URL.revokeObjectURL(url), 0)
-    setFileMessage({ tone: 'success', text: 'Encounter exported.' })
-  }
-
-  const importEncounter = async (event) => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
+  const removeCombatant = () => { if (selected) perform({ type: 'combatant.remove', combatantId: selected.id }) }
+  const clearEncounter = () => { if (window.confirm('Remove every combatant from this encounter?')) perform({ type: 'encounter.clear' }) }
+  const exportEncounter = async () => {
     try {
-      const encounter = validateEncounter(JSON.parse(await file.text()))
-      const ids = new Set(encounter.combatants.map((combatant) => combatant.id))
-      setCombatants(encounter.combatants)
-      setBattleMap(normalizeBattleMap(encounter.battleMap, encounter.combatants.map((combatant) => combatant.id)))
-      setRound(encounter.round)
-      setActiveId(ids.has(encounter.activeId) ? encounter.activeId : encounter.combatants[0]?.id ?? null)
-      setSelectedId(ids.has(encounter.selectedId) ? encounter.selectedId : encounter.combatants[0]?.id ?? null)
-      setUsedAbilities(encounter.usedAbilities && typeof encounter.usedAbilities === 'object' ? encounter.usedAbilities : {})
-      setFileMessage({ tone: 'success', text: `${encounter.combatants.length} combatants imported.` })
-    } catch (error) {
-      setFileMessage({ tone: 'error', text: error instanceof Error ? error.message : 'Could not import that file.' })
-    }
+      const encounter = multiplayer ? await multiplayer.exportFile() : state
+      const blob = new Blob([JSON.stringify({ ...encounter, selectedId, exportedAt: new Date().toISOString() }, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob); const link = document.createElement('a')
+      link.href = url; link.download = `encounter-ledger-round-${round}.json`; link.click()
+      window.setTimeout(() => URL.revokeObjectURL(url), 0)
+      setFileMessage({ tone: 'success', text: 'Encounter exported.' })
+    } catch (error) { setFileMessage({ tone: 'error', text: error.message }) }
   }
-
+  const importEncounter = async (event) => {
+    const file = event.target.files?.[0]; event.target.value = ''
+    if (!file) return
+    try { perform({ type: 'encounter.restore', file: readEncounter(JSON.parse(await file.text())) }) }
+    catch { setFileMessage({ tone: 'error', text: 'This is not a supported Encounter Ledger file.' }) }
+  }
   const updateArtwork = (event) => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
+    const file = event.target.files?.[0]; event.target.value = ''
     if (!file || !selected) return
-    if (!file.type.startsWith('image/')) {
-      setFileMessage({ tone: 'error', text: 'Choose an image file for character art.' })
-      return
-    }
-    if (file.size > maxArtworkSize) {
-      setFileMessage({ tone: 'error', text: 'Character art must be smaller than 3 MB.' })
-      return
+    if (!/^image\/[a-z0-9.+-]{1,80}$/.test(file.type) || file.size > maxArtworkSize) {
+      setFileMessage({ tone: 'error', text: 'Choose an image smaller than 3 MB.' }); return
     }
     const reader = new FileReader()
-    reader.onload = () => {
-      setCombatants((items) => items.map((item) => item.id === selected.id ? { ...item, artwork: reader.result } : item))
-      setFileMessage({ tone: 'success', text: `Artwork added for ${selected.name}.` })
-    }
+    reader.onload = () => perform({ type: 'combatant.edit', combatantId: selected.id, combatant: { ...selected, artwork: reader.result } })
     reader.onerror = () => setFileMessage({ tone: 'error', text: 'Could not read that image.' })
     reader.readAsDataURL(file)
   }
-
-  const removeArtwork = () => {
-    if (!selected) return
-    setCombatants((items) => items.map((item) => item.id === selected.id ? { ...item, artwork: undefined } : item))
-  }
-
-  const moveToken = (combatantId, destination) => {
-    setBattleMap((map) => moveTokenInMap(map, combatantId, destination))
-  }
-
-  const exportEncounter = () => {
-    const encounter = {
-      version: encounterFileVersion,
-      exportedAt: new Date().toISOString(),
-      round,
-      activeId,
-      selectedId,
-      usedAbilities,
-      combatants,
-    }
-    const blob = new Blob([JSON.stringify(encounter, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `encounter-ledger-round-${round}.json`
-    link.click()
-    window.setTimeout(() => URL.revokeObjectURL(url), 0)
-    setFileMessage({ tone: 'success', text: 'Encounter exported.' })
-  }
-
-  const importEncounter = async (event) => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
-    try {
-      const encounter = validateEncounter(JSON.parse(await file.text()))
-      const ids = new Set(encounter.combatants.map((combatant) => combatant.id))
-      setCombatants(encounter.combatants)
-      setRound(encounter.round)
-      setActiveId(ids.has(encounter.activeId) ? encounter.activeId : encounter.combatants[0]?.id ?? null)
-      setSelectedId(ids.has(encounter.selectedId) ? encounter.selectedId : encounter.combatants[0]?.id ?? null)
-      setUsedAbilities(encounter.usedAbilities && typeof encounter.usedAbilities === 'object' ? encounter.usedAbilities : {})
-      setFileMessage({ tone: 'success', text: `${encounter.combatants.length} combatants imported.` })
-    } catch (error) {
-      setFileMessage({ tone: 'error', text: error instanceof Error ? error.message : 'Could not import that file.' })
-    }
-  }
-
-  const updateArtwork = (event) => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file || !selected) return
-    if (!file.type.startsWith('image/')) {
-      setFileMessage({ tone: 'error', text: 'Choose an image file for character art.' })
-      return
-    }
-    if (file.size > maxArtworkSize) {
-      setFileMessage({ tone: 'error', text: 'Character art must be smaller than 3 MB.' })
-      return
-    }
-    const reader = new FileReader()
-    reader.onload = () => {
-      setCombatants((items) => items.map((item) => item.id === selected.id ? { ...item, artwork: reader.result } : item))
-      setFileMessage({ tone: 'success', text: `Artwork added for ${selected.name}.` })
-    }
-    reader.onerror = () => setFileMessage({ tone: 'error', text: 'Could not read that image.' })
-    reader.readAsDataURL(file)
-  }
-
-  const removeArtwork = () => {
-    if (!selected) return
-    setCombatants((items) => items.map((item) => item.id === selected.id ? { ...item, artwork: undefined } : item))
-  }
+  const removeArtwork = () => { if (selected) perform({ type: 'combatant.edit', combatantId: selected.id, combatant: { ...selected, artwork: undefined } }) }
+  const moveToken = (combatantId, destination) => perform({ type: 'token.move', combatantId, destination })
+  const mapSettings = patch => perform({ type: 'map.settings', showGrid: battleMap.showGrid, showLabels: battleMap.showLabels, ...patch })
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${!canChange ? 'game-disconnected' : ''}`}>
       <header>
         <div className="brand"><span className="brand-mark"><Swords size={20} /></span><span>ENCOUNTER <b>LEDGER</b></span></div>
-        <div className="encounter-title"><div><span className="eyebrow">CURRENT ENCOUNTER</span><h1>Goblin Ambush</h1></div><div className="round"><span>ROUND</span><strong>{round}</strong></div><div className="view-switcher" aria-label="Choose encounter view"><button className={view === 'tracker' ? 'active' : ''} onClick={() => setView('tracker')}><List size={15} /> Tracker</button><button className={view === 'map' ? 'active' : ''} onClick={() => setView('map')}><Map size={15} /> 3D Map</button></div></div>
-        <div className="header-actions"><button className="clear-button" onClick={clearEncounter} disabled={!combatants.length}><Trash2 size={16} /> Clear</button><div className="file-actions"><button className="ghost icon-button" onClick={() => encounterInputRef.current?.click()} title="Import encounter"><Upload size={16} /><span>Import</span></button><button className="ghost icon-button" onClick={exportEncounter} title="Export encounter"><Download size={16} /><span>Export</span></button></div><button className="ghost" onClick={() => setShowAddCombatant(true)}><Plus size={17} /> Add combatant</button><button className="primary" onClick={nextTurn} disabled={!combatants.length}>Next turn <ChevronRight size={18} /></button></div>
+        <div className="encounter-title"><div><span className="eyebrow">CURRENT ENCOUNTER</span><h1>{multiplayer?.snapshot.name ?? 'Goblin Ambush'}</h1></div><div className="round"><span>ROUND</span><strong>{round}</strong></div><div className="view-switcher" aria-label="Choose encounter view"><button className={view === 'tracker' ? 'active' : ''} onClick={() => setView('tracker')}><List size={15} /> Tracker</button><button className={view === 'map' ? 'active' : ''} onClick={() => setView('map')}><Map size={15} /> 3D Map</button></div></div>
+        <div className="header-actions"><button className="clear-button" onClick={clearEncounter} disabled={!canChange || !combatants.length}><Trash2 size={16} /> Clear</button><div className="file-actions"><button className="ghost icon-button" disabled={!canChange} onClick={() => encounterInputRef.current?.click()} title="Import encounter"><Upload size={16} /><span>Import</span></button><button className="ghost icon-button" onClick={exportEncounter} title="Export encounter"><Download size={16} /><span>Export</span></button></div><button className="ghost" disabled={!canChange} onClick={() => setShowAddCombatant(true)}><Plus size={17} /> Add combatant</button><button className="primary" onClick={nextTurn} disabled={!canChange || !combatants.length}>Next turn <ChevronRight size={18} /></button></div>
       </header>
 
       <input ref={encounterInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={importEncounter} />
       <input ref={artworkInputRef} className="visually-hidden" type="file" accept="image/*" onChange={updateArtwork} />
       {fileMessage && <div className={`file-message ${fileMessage.tone}`} role="status"><FileJson size={16} /><span>{fileMessage.text}</span><button onClick={() => setFileMessage(null)} aria-label="Dismiss message"><X size={14} /></button></div>}
 
-      {view === 'map' ? <BattleMap3D combatants={combatants} map={battleMap} round={round} selectedId={selectedId} activeId={activeId} onSelectToken={setSelectedId} onMoveToken={moveToken} onToggleGrid={() => setBattleMap((map) => ({ ...map, showGrid: !map.showGrid }))} onToggleLabels={() => setBattleMap((map) => ({ ...map, showLabels: !map.showLabels }))} onReturnToTracker={() => setView('tracker')} /> : <div className="workspace">
+      {view === 'map' ? <BattleMap3D canMove={canChange} combatants={combatants} map={battleMap} round={round} selectedId={selected?.id ?? null} activeId={activeId} onSelectToken={setSelectedId} onMoveToken={moveToken} onToggleGrid={() => mapSettings({ showGrid: !battleMap.showGrid })} onToggleLabels={() => mapSettings({ showLabels: !battleMap.showLabels })} onReturnToTracker={() => setView('tracker')} /> : <div className="workspace">
         <aside className="initiative-panel">
           <div className="panel-heading"><div><span className="eyebrow">COMBAT QUEUE</span><h2>Initiative order</h2></div><span className="count">{combatants.length}</span></div>
           <div className="initiative-list">
@@ -351,22 +196,22 @@ function App() {
         </aside>
 
         <section className="content">
-          {!selected ? <div className="empty-encounter"><span className="empty-icon"><Swords size={28} /></span><span className="eyebrow">THE BATTLEFIELD IS QUIET</span><h2>Add your first combatant</h2><p>Paste a creature or hero stat block to begin building the initiative order.</p><button className="primary" onClick={() => setShowAddCombatant(true)}><Plus size={17} /> Add combatant</button></div> : <>
+          {!selected ? <div className="empty-encounter"><span className="empty-icon"><Swords size={28} /></span><span className="eyebrow">THE BATTLEFIELD IS QUIET</span><h2>Add your first combatant</h2><p>Paste a creature or hero stat block to begin building the initiative order.</p><button className="primary" disabled={!canChange} onClick={() => setShowAddCombatant(true)}><Plus size={17} /> Add combatant</button></div> : <>
           <article className="stat-card">
             <div className="stat-top">
-              <button className={`portrait ${selected.side} ${selected.artwork ? 'has-artwork' : ''}`} onClick={() => artworkInputRef.current?.click()} title={selected.artwork ? 'Change character art' : 'Add character art'}>{selected.artwork ? <img src={selected.artwork} alt={`${selected.name} character art`} /> : selected.short}<span className="portrait-edit"><ImagePlus size={13} /></span></button>
+              <button className={`portrait ${selected.side} ${selected.artwork ? 'has-artwork' : ''}`} disabled={!canChange} onClick={() => artworkInputRef.current?.click()} title={selected.artwork ? 'Change character art' : 'Add character art'}>{selected.artwork ? <img src={selected.artwork} alt={`${selected.name} character art`} /> : selected.short}<span className="portrait-edit"><ImagePlus size={13} /></span></button>
               <div className="identity"><span className="eyebrow">{selected.side === 'hero' ? 'PLAYER CHARACTER' : 'HOSTILE CREATURE'}</span><h2>{selected.name}</h2><p>{selected.role}</p></div>
               <div className="quick-stat"><Shield size={17} /><span>ARMOR CLASS<strong>{selected.ac}</strong></span></div>
               <div className="quick-stat"><span>SPD</span><span>SPEED<strong>{selected.speed}</strong></span></div>
-              <div className="combatant-actions"><button onClick={() => artworkInputRef.current?.click()} title="Add or change character art"><ImagePlus size={16} /><span>{selected.artwork ? 'Change art' : 'Add art'}</span></button>{selected.artwork && <button className="remove" onClick={removeArtwork} title="Remove character art"><X size={16} /><span>Remove art</span></button>}<button onClick={duplicateCombatant} title="Duplicate combatant"><Copy size={16} /><span>Duplicate</span></button><button className="remove" onClick={removeCombatant} title="Remove combatant"><Trash2 size={16} /><span>Remove</span></button></div>
+              <div className="combatant-actions"><button disabled={!canChange} onClick={() => artworkInputRef.current?.click()} title="Add or change character art"><ImagePlus size={16} /><span>{selected.artwork ? 'Change art' : 'Add art'}</span></button>{selected.artwork && <button className="remove" disabled={!canChange} onClick={removeArtwork} title="Remove character art"><X size={16} /><span>Remove art</span></button>}<button disabled={!canChange} onClick={duplicateCombatant} title="Duplicate combatant"><Copy size={16} /><span>Duplicate</span></button><button className="remove" disabled={!canChange} onClick={removeCombatant} title="Remove combatant"><Trash2 size={16} /><span>Remove</span></button></div>
             </div>
 
             <div className="vitals">
               <div className="vitals-label"><span>HIT POINTS</span><strong>{selected.hp} <em>/ {selected.maxHp}</em></strong></div><HealthBar value={selected.hp} max={selected.maxHp} />
-              <div className="hp-controls"><div className="amount"><button onClick={() => setAmount(String(Math.max(0, (Number(amount) || 0) - 1)))}><Minus size={15} /></button><input aria-label="Hit point amount" value={amount} onChange={(e) => setAmount(e.target.value.replace(/\D/g, ''))} placeholder="Amount" inputMode="numeric" /><button onClick={() => setAmount(String((Number(amount) || 0) + 1))}><Plus size={15} /></button></div><button className="damage" onClick={() => adjustHp(-1)}>Damage</button><button className="heal" onClick={() => adjustHp(1)}>Heal</button></div>
+              <div className="hp-controls"><div className="amount"><button onClick={() => setAmount(String(Math.max(0, (Number(amount) || 0) - 1)))}><Minus size={15} /></button><input aria-label="Hit point amount" value={amount} onChange={(e) => setAmount(e.target.value.replace(/\D/g, ''))} placeholder="Amount" inputMode="numeric" /><button onClick={() => setAmount(String((Number(amount) || 0) + 1))}><Plus size={15} /></button></div><button className="damage" disabled={!canChange} onClick={() => adjustHp(-1)}>Damage</button><button className="heal" disabled={!canChange} onClick={() => adjustHp(1)}>Heal</button></div>
             </div>
 
-            <div className="conditions-block"><span className="section-label">CONDITIONS</span><div className="chips">{selected.conditions.length === 0 && <span className="no-condition">No active conditions</span>}{selected.conditions.map((condition) => <button className={`chip ${condition.toLowerCase()}`} onClick={() => toggleCondition(condition)} key={condition}>{condition}<X size={13} /></button>)}<button className="add-chip" onClick={() => setShowConditions(!showConditions)}><Plus size={14} /> Add condition</button></div>{showConditions && <div className="condition-menu">{availableConditions.map((condition) => <button className={selected.conditions.includes(condition) ? 'applied' : ''} onClick={() => toggleCondition(condition)} key={condition}>{condition}{selected.conditions.includes(condition) && ' ✓'}</button>)}</div>}</div>
+            <div className="conditions-block"><span className="section-label">CONDITIONS</span><div className="chips">{selected.conditions.length === 0 && <span className="no-condition">No active conditions</span>}{selected.conditions.map((condition) => <button className={`chip ${condition.toLowerCase()}`} disabled={!canChange} onClick={() => toggleCondition(condition)} key={condition}>{condition}<X size={13} /></button>)}<button className="add-chip" onClick={() => setShowConditions(!showConditions)}><Plus size={14} /> Add condition</button></div>{showConditions && <div className="condition-menu">{availableConditions.map((condition) => <button className={selected.conditions.includes(condition) ? 'applied' : ''} disabled={!canChange} onClick={() => toggleCondition(condition)} key={condition}>{condition}{selected.conditions.includes(condition) && ' ✓'}</button>)}</div>}</div>
 
             <div className="abilities">{selected.saves.map(([name, value]) => <div key={name}><span>{name}</span><strong>{value}</strong><small>{value >= 12 ? `+${Math.floor((value - 10) / 2)}` : Math.floor((value - 10) / 2)}</small></div>)}</div>
 
@@ -374,7 +219,7 @@ function App() {
             <div className="actions"><div className="section-title"><span className="section-label">TRAITS, ACTIONS & REACTIONS</span><Sparkles size={16} /></div>{selected.actions.map((action) => {
               const key = `${selected.id}:${action.category}:${action.name}`
               const used = Boolean(usedAbilities[key])
-              return <button type="button" className={`action ${used ? 'used' : ''}`} onClick={() => toggleAbility(action)} key={`${action.category}:${action.name}`}><span className="action-name"><small>{action.category || 'Action'}</small><strong>{action.name}</strong></span><p>{action.text}</p><span className="action-toggle">{used ? <><RotateCcw size={13} /> Reset</> : <><Check size={13} /> Mark used</>}</span></button>
+              return <button type="button" className={`action ${used ? 'used' : ''}`} disabled={!canChange} onClick={() => toggleAbility(action)} key={`${action.category}:${action.name}`}><span className="action-name"><small>{action.category || 'Action'}</small><strong>{action.name}</strong></span><p>{action.text}</p><span className="action-toggle">{used ? <><RotateCcw size={13} /> Reset</> : <><Check size={13} /> Mark used</>}</span></button>
             })}</div>
           </article>
 
@@ -384,7 +229,7 @@ function App() {
       </div>}
       {showAddCombatant && <div className="modal-backdrop" onMouseDown={() => setShowAddCombatant(false)}>
         <form className="combatant-modal" onSubmit={addCombatant} onMouseDown={(event) => event.stopPropagation()}>
-          <div className="modal-heading"><span className="modal-icon"><Upload size={19} /></span><div><span className="eyebrow">IMPORT CREATURE</span><h2>Add a combatant</h2></div><button type="button" className="close-button" onClick={() => setShowAddCombatant(false)} aria-label="Close"><X size={19} /></button></div>
+          <div className="modal-heading"><span className="modal-icon"><Upload size={19} /></span><div><span className="eyebrow">IMPORT CREATURE</span><h2>Add a combatant</h2></div><button type="button" className="close-button" disabled={!canChange} onClick={() => setShowAddCombatant(false)} aria-label="Close"><X size={19} /></button></div>
           <p className="modal-help">Paste a plain-text stat block. We’ll pull out its core stats, skills, senses, traits, actions, and reactions.</p>
           <label className="field-label" htmlFor="stat-block">STAT BLOCK</label>
           <textarea id="stat-block" value={statBlock} onChange={(event) => setStatBlock(event.target.value)} placeholder={exampleStatBlock} autoFocus />
@@ -393,7 +238,7 @@ function App() {
             <label><span className="field-label">HOW MANY</span><input type="number" min="1" max="20" value={newQuantity} onChange={(event) => setNewQuantity(event.target.value)} /></label>
             <fieldset><legend className="field-label">SIDE</legend><div className="side-picker"><button type="button" className={newSide === 'hero' ? 'active hero-choice' : ''} onClick={() => setNewSide('hero')}>Ally</button><button type="button" className={newSide === 'enemy' ? 'active enemy-choice' : ''} onClick={() => setNewSide('enemy')}>Enemy</button></div></fieldset>
           </div>
-          <div className="modal-actions"><button type="button" className="cancel-button" onClick={() => setShowAddCombatant(false)}>Cancel</button><button type="submit" className="primary" disabled={!statBlock.trim()}><Plus size={17} /> Add to encounter</button></div>
+          <div className="modal-actions"><button type="button" className="cancel-button" disabled={!canChange} onClick={() => setShowAddCombatant(false)}>Cancel</button><button type="submit" className="primary" disabled={!canChange || !statBlock.trim()}><Plus size={17} /> Add to encounter</button></div>
         </form>
       </div>}
     </main>

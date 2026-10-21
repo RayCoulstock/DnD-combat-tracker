@@ -5,30 +5,38 @@ and creature stat blocks during a Dungeons & Dragons combat.
 
 ## Requirements
 
-- [Node.js](https://nodejs.org/) 20 or newer
+- [Node.js](https://nodejs.org/) 24 or newer
 - npm (included with Node.js)
 
 ## Run locally
 
 ```bash
-git clone <repository-url>
-cd DnD-combat-tracker
-npm install
+npm ci
 npm run dev
 ```
 
-Open the URL printed by Vite (normally <http://localhost:5173>). The development
-server reloads the page whenever you save a source file.
+Select **Local tracker** for the original standalone workflow. Multiplayer adds a
+TypeScript/Socket.IO server, PostgreSQL, DM accounts, invitations and authorised
+player views. Follow [multiplayer setup and Codespaces instructions](docs/multiplayer-development.md)
+to start the complete system. See the [architecture](docs/multiplayer-architecture.md)
+for command ordering, identity, persistence and privacy boundaries.
 
 ## Available commands
 
 | Command | Purpose |
 | --- | --- |
-| `npm run dev` | Start the local Vite development server |
-| `npm run build` | Create an optimized production build in `dist/` |
-| `npm run lint` | Check the source with ESLint |
-| `npm run typecheck` | Type-check the TypeScript map components |
-| `npm test` | Run map-state and encounter compatibility tests |
+| `npm run dev` | Vite frontend (standalone mode needs no backend) |
+| `npm run dev:all` | Frontend and backend together |
+| `docker compose up -d --wait` | PostgreSQL development service |
+| `npm run db:migrate` | Apply transactional database migrations |
+| `npm run db:seed` | Optional seed using supplied DM credentials |
+| `npm run build` | Build frontend and TypeScript backend |
+| `npm run typecheck` | Check shared, frontend and backend TypeScript |
+| `npm run lint` | ESLint for JavaScript and TypeScript |
+| `npm test` | Original map tests and shared domain tests |
+| `npm run test:integration` | PostgreSQL/Socket.IO multiplayer/security tests |
+| `npm run test:e2e` | Real browser multiplayer and camera tests |
+| `npm start` | Serve built frontend/API/Socket.IO in production |
 
 ## Adding a combatant
 

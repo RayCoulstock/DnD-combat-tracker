@@ -65,8 +65,8 @@ export function normalizeBattleMap(value: unknown, ids: Array<string | number>):
   const candidate = value as Partial<BattleMapState>
   const base: BattleMapState = {
     version: 1,
-    width: candidate.width === DEFAULT_MAP_SIZE ? candidate.width : DEFAULT_MAP_SIZE,
-    height: candidate.height === DEFAULT_MAP_SIZE ? candidate.height : DEFAULT_MAP_SIZE,
+    width: Number.isInteger(candidate.width) && candidate.width! > 0 && candidate.width! <= 100 ? candidate.width! : DEFAULT_MAP_SIZE,
+    height: Number.isInteger(candidate.height) && candidate.height! > 0 && candidate.height! <= 100 ? candidate.height! : DEFAULT_MAP_SIZE,
     gridSizeFeet: 5,
     showGrid: candidate.showGrid !== false,
     showLabels: candidate.showLabels !== false,

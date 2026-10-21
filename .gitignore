@@ -1,0 +1,11 @@
+node_modules/
+dist/
+dist-server/
+.env
+.env.*
+!.env.example
+coverage/
+*.log
+playwright-report/
+test-results/
+.playwright-browsers/
