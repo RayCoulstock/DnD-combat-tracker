@@ -6,17 +6,26 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "node --test src/App.test.js src/mapState.test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@react-three/drei": "10.0.6",
+    "@react-three/fiber": "9.1.2",
     "@vitejs/plugin-react": "latest",
-    "vite": "latest",
-    "typescript": "latest",
+    "lucide-react": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "lucide-react": "latest"
+    "three": "0.176.0",
+    "typescript": "latest",
+    "vite": "latest"
   },
   "devDependencies": {
+    "@types/node": "22.15.3",
+    "@types/react": "19.1.2",
+    "@types/react-dom": "19.1.2",
+    "@types/three": "0.176.0",
     "eslint": "latest",
     "@eslint/js": "latest",
     "eslint-plugin-react-hooks": "latest",
