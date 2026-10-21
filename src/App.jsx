@@ -189,7 +189,7 @@ function App() {
     setBattleMap(createBattleMapState())
   }
 
-  const exportEncounter = () => {
+  const handleExportEncounter = () => {
     const encounter = {
       version: encounterFileVersion,
       exportedAt: new Date().toISOString(),
@@ -210,7 +210,7 @@ function App() {
     setFileMessage({ tone: 'success', text: 'Encounter exported.' })
   }
 
-  const importEncounter = async (event) => {
+  const handleImportEncounter = async (event) => {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
@@ -229,7 +229,7 @@ function App() {
     }
   }
 
-  const updateArtwork = (event) => {
+  const handleArtworkChange = (event) => {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file || !selected) return
@@ -250,7 +250,7 @@ function App() {
     reader.readAsDataURL(file)
   }
 
-  const removeArtwork = () => {
+  const handleArtworkRemove = () => {
     if (!selected) return
     setCombatants((items) => items.map((item) => item.id === selected.id ? { ...item, artwork: undefined } : item))
   }
@@ -259,80 +259,16 @@ function App() {
     setBattleMap((map) => moveTokenInMap(map, combatantId, destination))
   }
 
-  const exportEncounter = () => {
-    const encounter = {
-      version: encounterFileVersion,
-      exportedAt: new Date().toISOString(),
-      round,
-      activeId,
-      selectedId,
-      usedAbilities,
-      combatants,
-    }
-    const blob = new Blob([JSON.stringify(encounter, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `encounter-ledger-round-${round}.json`
-    link.click()
-    window.setTimeout(() => URL.revokeObjectURL(url), 0)
-    setFileMessage({ tone: 'success', text: 'Encounter exported.' })
-  }
-
-  const importEncounter = async (event) => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
-    try {
-      const encounter = validateEncounter(JSON.parse(await file.text()))
-      const ids = new Set(encounter.combatants.map((combatant) => combatant.id))
-      setCombatants(encounter.combatants)
-      setRound(encounter.round)
-      setActiveId(ids.has(encounter.activeId) ? encounter.activeId : encounter.combatants[0]?.id ?? null)
-      setSelectedId(ids.has(encounter.selectedId) ? encounter.selectedId : encounter.combatants[0]?.id ?? null)
-      setUsedAbilities(encounter.usedAbilities && typeof encounter.usedAbilities === 'object' ? encounter.usedAbilities : {})
-      setFileMessage({ tone: 'success', text: `${encounter.combatants.length} combatants imported.` })
-    } catch (error) {
-      setFileMessage({ tone: 'error', text: error instanceof Error ? error.message : 'Could not import that file.' })
-    }
-  }
-
-  const updateArtwork = (event) => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file || !selected) return
-    if (!file.type.startsWith('image/')) {
-      setFileMessage({ tone: 'error', text: 'Choose an image file for character art.' })
-      return
-    }
-    if (file.size > maxArtworkSize) {
-      setFileMessage({ tone: 'error', text: 'Character art must be smaller than 3 MB.' })
-      return
-    }
-    const reader = new FileReader()
-    reader.onload = () => {
-      setCombatants((items) => items.map((item) => item.id === selected.id ? { ...item, artwork: reader.result } : item))
-      setFileMessage({ tone: 'success', text: `Artwork added for ${selected.name}.` })
-    }
-    reader.onerror = () => setFileMessage({ tone: 'error', text: 'Could not read that image.' })
-    reader.readAsDataURL(file)
-  }
-
-  const removeArtwork = () => {
-    if (!selected) return
-    setCombatants((items) => items.map((item) => item.id === selected.id ? { ...item, artwork: undefined } : item))
-  }
-
   return (
     <main className="app-shell">
       <header>
         <div className="brand"><span className="brand-mark"><Swords size={20} /></span><span>ENCOUNTER <b>LEDGER</b></span></div>
         <div className="encounter-title"><div><span className="eyebrow">CURRENT ENCOUNTER</span><h1>Goblin Ambush</h1></div><div className="round"><span>ROUND</span><strong>{round}</strong></div><div className="view-switcher" aria-label="Choose encounter view"><button className={view === 'tracker' ? 'active' : ''} onClick={() => setView('tracker')}><List size={15} /> Tracker</button><button className={view === 'map' ? 'active' : ''} onClick={() => setView('map')}><Map size={15} /> 3D Map</button></div></div>
-        <div className="header-actions"><button className="clear-button" onClick={clearEncounter} disabled={!combatants.length}><Trash2 size={16} /> Clear</button><div className="file-actions"><button className="ghost icon-button" onClick={() => encounterInputRef.current?.click()} title="Import encounter"><Upload size={16} /><span>Import</span></button><button className="ghost icon-button" onClick={exportEncounter} title="Export encounter"><Download size={16} /><span>Export</span></button></div><button className="ghost" onClick={() => setShowAddCombatant(true)}><Plus size={17} /> Add combatant</button><button className="primary" onClick={nextTurn} disabled={!combatants.length}>Next turn <ChevronRight size={18} /></button></div>
+        <div className="header-actions"><button className="clear-button" onClick={clearEncounter} disabled={!combatants.length}><Trash2 size={16} /> Clear</button><div className="file-actions"><button className="ghost icon-button" onClick={() => encounterInputRef.current?.click()} title="Import encounter"><Upload size={16} /><span>Import</span></button><button className="ghost icon-button" onClick={handleExportEncounter} title="Export encounter"><Download size={16} /><span>Export</span></button></div><button className="ghost" onClick={() => setShowAddCombatant(true)}><Plus size={17} /> Add combatant</button><button className="primary" onClick={nextTurn} disabled={!combatants.length}>Next turn <ChevronRight size={18} /></button></div>
       </header>
 
-      <input ref={encounterInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={importEncounter} />
-      <input ref={artworkInputRef} className="visually-hidden" type="file" accept="image/*" onChange={updateArtwork} />
+      <input ref={encounterInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={handleImportEncounter} />
+      <input ref={artworkInputRef} className="visually-hidden" type="file" accept="image/*" onChange={handleArtworkChange} />
       {fileMessage && <div className={`file-message ${fileMessage.tone}`} role="status"><FileJson size={16} /><span>{fileMessage.text}</span><button onClick={() => setFileMessage(null)} aria-label="Dismiss message"><X size={14} /></button></div>}
 
       {view === 'map' ? <BattleMap3D combatants={combatants} map={battleMap} round={round} selectedId={selectedId} activeId={activeId} onSelectToken={setSelectedId} onMoveToken={moveToken} onToggleGrid={() => setBattleMap((map) => ({ ...map, showGrid: !map.showGrid }))} onToggleLabels={() => setBattleMap((map) => ({ ...map, showLabels: !map.showLabels }))} onReturnToTracker={() => setView('tracker')} /> : <div className="workspace">
@@ -358,7 +294,7 @@ function App() {
               <div className="identity"><span className="eyebrow">{selected.side === 'hero' ? 'PLAYER CHARACTER' : 'HOSTILE CREATURE'}</span><h2>{selected.name}</h2><p>{selected.role}</p></div>
               <div className="quick-stat"><Shield size={17} /><span>ARMOR CLASS<strong>{selected.ac}</strong></span></div>
               <div className="quick-stat"><span>SPD</span><span>SPEED<strong>{selected.speed}</strong></span></div>
-              <div className="combatant-actions"><button onClick={() => artworkInputRef.current?.click()} title="Add or change character art"><ImagePlus size={16} /><span>{selected.artwork ? 'Change art' : 'Add art'}</span></button>{selected.artwork && <button className="remove" onClick={removeArtwork} title="Remove character art"><X size={16} /><span>Remove art</span></button>}<button onClick={duplicateCombatant} title="Duplicate combatant"><Copy size={16} /><span>Duplicate</span></button><button className="remove" onClick={removeCombatant} title="Remove combatant"><Trash2 size={16} /><span>Remove</span></button></div>
+              <div className="combatant-actions"><button onClick={() => artworkInputRef.current?.click()} title="Add or change character art"><ImagePlus size={16} /><span>{selected.artwork ? 'Change art' : 'Add art'}</span></button>{selected.artwork && <button className="remove" onClick={handleArtworkRemove} title="Remove character art"><X size={16} /><span>Remove art</span></button>}<button onClick={duplicateCombatant} title="Duplicate combatant"><Copy size={16} /><span>Duplicate</span></button><button className="remove" onClick={removeCombatant} title="Remove combatant"><Trash2 size={16} /><span>Remove</span></button></div>
             </div>
 
             <div className="vitals">

@@ -7,7 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "lint": "eslint .",
-    "test": "node --test src/mapState.test.ts",
+    "test": "node --test src/App.test.js src/mapState.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
