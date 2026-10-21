@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "module": "NodeNext", "moduleResolution": "NodeNext",
+    "strict": true, "esModuleInterop": true, "skipLibCheck": true,
+    "outDir": "../dist-server", "rootDir": "..", "rewriteRelativeImportExtensions": true,
+    "types": ["node"]
+  },
+  "include": ["./**/*.ts", "../shared/**/*.ts", "../src/mapState.ts"],
+  "exclude": ["./tests", "../shared/**/*.test.ts"]
+}
