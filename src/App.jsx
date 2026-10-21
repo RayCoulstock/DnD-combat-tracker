@@ -176,8 +176,8 @@ function App({ multiplayer = null }) {
         <div className="header-actions"><button className="clear-button" onClick={clearEncounter} disabled={!canChange || !combatants.length}><Trash2 size={16} /> Clear</button><div className="file-actions"><button className="ghost icon-button" disabled={!canChange} onClick={() => encounterInputRef.current?.click()} title="Import encounter"><Upload size={16} /><span>Import</span></button><button className="ghost icon-button" onClick={exportEncounter} title="Export encounter"><Download size={16} /><span>Export</span></button></div><button className="ghost" disabled={!canChange} onClick={() => setShowAddCombatant(true)}><Plus size={17} /> Add combatant</button><button className="primary" onClick={nextTurn} disabled={!canChange || !combatants.length}>Next turn <ChevronRight size={18} /></button></div>
       </header>
 
-      <input ref={encounterInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={importEncounter} />
-      <input ref={artworkInputRef} className="visually-hidden" type="file" accept="image/*" onChange={updateArtwork} />
+      <input ref={encounterInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={handleImportEncounter} />
+      <input ref={artworkInputRef} className="visually-hidden" type="file" accept="image/*" onChange={handleArtworkChange} />
       {fileMessage && <div className={`file-message ${fileMessage.tone}`} role="status"><FileJson size={16} /><span>{fileMessage.text}</span><button onClick={() => setFileMessage(null)} aria-label="Dismiss message"><X size={14} /></button></div>}
 
       {view === 'map' ? <BattleMap3D canMove={canChange} combatants={combatants} map={battleMap} round={round} selectedId={selected?.id ?? null} activeId={activeId} onSelectToken={setSelectedId} onMoveToken={moveToken} onToggleGrid={() => mapSettings({ showGrid: !battleMap.showGrid })} onToggleLabels={() => mapSettings({ showLabels: !battleMap.showLabels })} onReturnToTracker={() => setView('tracker')} /> : <div className="workspace">
