@@ -87,7 +87,13 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
     if (action === 'delete') setTemplateId('')
   })
   const hit = (value: EditorHit) => {
-    if (tool === 'select') { setSelected(value); return }
+    if (tool === 'select') {
+      // Sparse furniture geometry leaves gaps in its occupied cell. Preserve direct
+      // wall/door/prop hits, but let a floor hit select the prop on that square.
+      const occupant = !value.objectId && document?.props.find(p => p.position.x === value.cell.x && p.position.z === value.cell.z)
+      setSelected(occupant ? { ...value, kind: 'prop', objectId: occupant.id } : value)
+      return
+    }
     if (tool === 'floor') { void dispatch({ type: 'map.floor.paint', cells: [value.cell], material: floor }); return }
     if (tool === 'wall' && (value.kind === 'wall' || value.kind === 'door')) { setSelected(value); return }
     if (tool === 'wall') void dispatch({ type: 'map.wall.place', wall: { ...value.wall, material: wallMaterial } })

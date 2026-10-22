@@ -21,7 +21,7 @@ Migration `003_dungeon_maps.sql` adds `map_templates` (campaign, owner, schema v
 2. Choose **Paint floor**, select stone, wood, dirt, grass or lava, then click or drag across the grid. The highlighted cells form one undoable brush stroke.
 3. Choose **Draw wall**, select stone or wood, and click near a cell edge. Adjacent cells share the same canonical wall. Click an existing wall to select it.
 4. Choose **Place door** and click a wall. Open doors leave a visible passage; locked doors have a gold panel. Use the door-state property and click again, or select the door and apply its state.
-5. Choose **Place object**, select one of ten props and a rotation, then click a cell. **Select** an object to rotate/remove it; **Erase** removes the object, door, wall or floor under the pointer. Removing a wall also removes its doorway.
+5. Choose **Place object**, select one of ten props and a rotation, then click a cell. **Select** an object (or click its occupied grid square) to rotate/remove it; **Erase** removes the object, door, wall or floor under the pointer. Removing a wall also removes its doorway.
 6. Use **Undo map edit** / **Redo map edit**. History contains only map geometry and dimensions, never HP, initiative, ownership or token movements. It retains up to 20 entries per stack within a 2 MB cap.
 7. **Save map** creates a reusable template. Select a saved template to open, rename, duplicate, explicitly overwrite or delete it. The map-name input supplies the new name. Overwriting/deleting requires confirmation.
 
@@ -70,7 +70,11 @@ There is no fog of war, collision, elevation, pathfinding, uploaded assets or au
 - `npm test`: 21 checks passed (7 existing map/application guards and 14 shared domain/generator checks). The existing application handler guard was updated to current handler names and included in the default test command.
 - `npm run test:integration`: 22 checks passed against PostgreSQL, including a DM and two simulated players, template/instance isolation, live map updates, denied player/stale/cross-campaign access, reconnect, and backend restart recovery.
 - `npm run lint`, `npm run typecheck`, and `npm run build`: passed. Build retains the large JavaScript chunk advisory (about 1.64 MB / 456 KB gzip).
-- `CHROMIUM_PATH=/usr/bin/chromium npm run test:e2e`: all four browser scenarios passed. Coverage includes existing local/multiplayer combat, waiting-room activation, independent/offline cameras, DM brush strokes, generator preview/cancel/accept, two-player updates, template loading without camera reset, local undo/redo, template recovery and JSON export.
+- `CHROMIUM_PATH=/usr/bin/chromium npm run test:e2e`: all five browser scenarios passed. Coverage includes existing local/multiplayer combat, waiting-room activation, independent/offline cameras, DM brush strokes, generator preview/cancel/accept, two-player updates, template loading without camera reset, local undo/redo, template recovery, JSON export and chair/table selection with exported rotation checks.
 - Source and compiled production migration commands both passed and safely repeated against an already-migrated development database.
 
 Browser camera checks wait for actual rendered-view convergence rather than a fixed delay: multiple software-rendered WebGL canvases can take longer to finish OrbitControls damping. Screenshots were also inspected for dungeon geometry and editor layout. Representative physical-laptop performance has not been benchmarked.
+
+## Furniture selection fix
+
+Chair/table selection previously depended entirely on raycasting their narrow component meshes. Clicking the floor within the furniture's occupied square cleared selection, so gaps around legs/seats could make furniture difficult to select. The Select tool now falls back to the prop occupying a clicked floor cell. Direct mesh hits on props, walls and doors retain priority; rotation commands and server permissions are unchanged. A browser regression reproduces the missed chair selection before the fix, then selects and rotates both furniture types and verifies their exported rotations.
