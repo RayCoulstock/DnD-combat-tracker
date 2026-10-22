@@ -3,6 +3,8 @@ import { Html, OrbitControls } from '@react-three/drei'
 import { ChevronLeft, Eye, EyeOff, LocateFixed, RotateCcw } from 'lucide-react'
 import { Suspense, useMemo, useRef } from 'react'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
+import { DungeonScene, EditorSurface, type EditorInteraction } from './DungeonScene'
+import type { DungeonMap } from '../shared/dungeon'
 import type { BattleMapState, GridPosition } from './mapState'
 
 interface Combatant {
@@ -16,7 +18,9 @@ interface Combatant {
   ownerId?: string | null
 }
 
-interface BattleMap3DProps {
+export interface BattleMap3DProps {
+  dungeonMap?: DungeonMap
+  editor?: EditorInteraction
   combatants: Combatant[]
   map: BattleMapState
   round: number
@@ -70,9 +74,9 @@ function BattlefieldGrid({ width, height }: { width: number; height: number }) {
   </lineSegments>
 }
 
-function BattlefieldScene({ combatants, map, selectedId, activeId, onSelectToken, onMoveToken, controlsRef, canMove }: Omit<BattleMap3DProps, 'round' | 'onToggleGrid' | 'onToggleLabels' | 'onReturnToTracker'> & { controlsRef: React.RefObject<OrbitControlsImpl | null> }) {
+function BattlefieldScene({ combatants, map, selectedId, activeId, onSelectToken, onMoveToken, controlsRef, canMove, dungeonMap, editor }: Omit<BattleMap3DProps, 'round' | 'onToggleGrid' | 'onToggleLabels' | 'onReturnToTracker'> & { controlsRef: React.RefObject<OrbitControlsImpl | null> }) {
   const handleFloorClick = (event: ThreeEvent<MouseEvent>) => {
-    if (canMove === false || selectedId === null || event.delta > 3) return
+    if (editor || canMove === false || selectedId === null || event.delta > 3) return
     const destination = {
       x: Math.floor(event.point.x + map.width / 2),
       z: Math.floor(event.point.z + map.height / 2),
@@ -84,21 +88,23 @@ function BattlefieldScene({ combatants, map, selectedId, activeId, onSelectToken
     <color attach="background" args={['#171a19']} />
     <ambientLight intensity={1.05} />
     <directionalLight position={[8, 14, 6]} intensity={2.1} castShadow shadow-mapSize={[1024, 1024]} />
-    <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow onClick={handleFloorClick}>
+    <mesh position={[0, dungeonMap ? -.08 : 0, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow onClick={handleFloorClick}>
       <planeGeometry args={[map.width, map.height]} />
-      <meshStandardMaterial color="#666760" roughness={0.92} metalness={0.02} />
+      <meshStandardMaterial color={dungeonMap ? '#242724' : '#666760'} roughness={0.92} metalness={0.02} />
     </mesh>
     {map.showGrid && <BattlefieldGrid width={map.width} height={map.height} />}
-    <group>
+    {!dungeonMap && <group>
       <mesh position={[0, 0.75, -map.height / 2]} castShadow receiveShadow><boxGeometry args={[map.width + 0.3, 1.5, 0.3]} /><meshStandardMaterial color="#4a4943" roughness={0.88} /></mesh>
       <mesh position={[-map.width / 2, 0.75, -map.height / 4]} castShadow receiveShadow><boxGeometry args={[0.3, 1.5, map.height / 2]} /><meshStandardMaterial color="#4a4943" roughness={0.88} /></mesh>
       <mesh position={[map.width / 2, 0.75, map.height / 4]} castShadow receiveShadow><boxGeometry args={[0.3, 1.5, map.height / 2]} /><meshStandardMaterial color="#4a4943" roughness={0.88} /></mesh>
-    </group>
+    </group>}
+    {dungeonMap && <DungeonScene map={dungeonMap} editor={editor} />}
+    {editor && <EditorSurface width={map.width} height={map.height} editor={editor} />}
     {combatants.map((combatant) => {
       const position = map.tokens[String(combatant.id)]
       return position && <Token key={combatant.id} combatant={combatant} position={position} map={map} selected={combatant.id === selectedId} active={combatant.id === activeId} showLabel={map.showLabels} onSelect={() => onSelectToken(combatant.id)} />
     })}
-    <OrbitControls ref={controlsRef} makeDefault enableDamping dampingFactor={0.08} minDistance={7} maxDistance={35} maxPolarAngle={Math.PI / 2.08} target={[0, 0, 0]} mouseButtons={{ LEFT: 0, MIDDLE: 2, RIGHT: 2 }} />
+    <OrbitControls ref={controlsRef} makeDefault enableDamping dampingFactor={0.08} minDistance={7} maxDistance={Math.max(35, Math.max(map.width, map.height) * 2)} maxPolarAngle={Math.PI / 2.08} target={[0, 0, 0]} mouseButtons={{ LEFT: editor ? undefined : 0, MIDDLE: editor ? 0 : 2, RIGHT: 2 }} />
   </>
 }
 
@@ -106,15 +112,15 @@ export default function BattleMap3D(props: BattleMap3DProps) {
   const controlsRef = useRef<OrbitControlsImpl>(null)
   const resetCamera = () => controlsRef.current?.reset()
 
-  return <section className="tabletop-shell">
+  return <section className="tabletop-shell" aria-label={props.dungeonMap ? `Dungeon map: ${props.dungeonMap.name}` : 'Flat battlefield'}>
     <aside className="tabletop-panel tabletop-roster">
       <span className="eyebrow">CURRENT ENCOUNTER</span><h2>Round {props.round}</h2>
       <div className="map-initiative-list">{props.combatants.map((combatant) => <button key={combatant.id} className={`${combatant.id === props.selectedId ? 'selected' : ''} ${combatant.id === props.activeId ? 'active' : ''}`} onClick={() => props.onSelectToken(combatant.id)}><span className={`map-token-dot ${combatant.side}`} /><span><strong>{combatant.name}</strong><small>Initiative {combatant.initiative}</small></span>{(!props.playerId || combatant.ownerId === props.playerId) && <em>{combatant.hp}/{combatant.maxHp} HP</em>}</button>)}</div>
       {!props.combatants.length && <p className="map-empty">Add combatants in the tracker to place tokens.</p>}
     </aside>
     <div className="battlefield-wrap">
-      <div className="battlefield-help"><LocateFixed size={15} /> {props.canMove === false ? 'Select a token to inspect · camera remains available' : 'Select a token, then click a square to move'}</div>
-      <Canvas frameloop="demand" shadows camera={{ position: [12, 14, 12], fov: 42, near: 0.1, far: 100 }}>
+      <div className="battlefield-help"><LocateFixed size={15} /> {props.editor ? 'Left: edit · Middle: rotate · Right: pan · Wheel: zoom' : props.canMove === false ? 'Select a token to inspect · camera remains available' : 'Select a token, then click a square to move'}</div>
+      <Canvas frameloop="demand" shadows camera={{ position: [12, 14, 12], fov: 42, near: 0.1, far: 300 }}>
         <Suspense fallback={null}><BattlefieldScene {...props} controlsRef={controlsRef} /></Suspense>
       </Canvas>
     </div>

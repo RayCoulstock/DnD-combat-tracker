@@ -6,6 +6,7 @@ import { io, type Socket } from 'socket.io-client'
 import type { AddressInfo } from 'node:net'
 import { createApplication } from '../app.ts'
 import { migrate } from '../migrate.ts'
+import { importEncounter, mergeMapSnapshot } from '../../shared/domain.ts'
 import type { ClientEvents, CommandEnvelope, CommandResult, GameCommand, ServerEvents, Snapshot, SessionState } from '../../shared/domain.ts'
 
 const origin = 'http://localhost:5173'
@@ -38,7 +39,7 @@ class Browser {
     const socket: Socket<ServerEvents, ClientEvents> = io(this.base, { transports: ['websocket'], extraHeaders: { Origin: origin, Cookie: this.cookie }, auth: { csrf: this.csrf }, reconnectionDelay: 100, reconnectionDelayMax: 300, autoConnect: false })
     const client = { socket, session: null as SessionState | null, snapshot: null as Snapshot | null, snapshots: [] as Snapshot[], revoked: false, ended: false }
     socket.on('session.state', s => { client.session = s })
-    socket.on('encounter.snapshot', s => { client.snapshot = s; client.snapshots.push(s) })
+    socket.on('encounter.snapshot', s => { const next = mergeMapSnapshot(client.snapshot, s); if (next) { client.snapshot = next; client.snapshots.push(next) } })
     socket.on('access.revoked', () => { client.revoked = true })
     socket.on('session.ended', () => { client.ended = true })
     socket.on('connect', () => socket.emit('campaign.join', campaignId, () => {}))
@@ -129,7 +130,7 @@ test('PostgreSQL multiplayer lifecycle with DM and two players', { timeout: 9000
       during.socket.disconnect(); sockets.splice(sockets.indexOf(during.socket), 1)
     })
     const send = (client: typeof dc, command: GameCommand, override: Partial<CommandEnvelope> = {}) => new Promise<CommandResult>((resolve, reject) => {
-      client.socket.timeout(8000).emit('game.command', { commandId: randomUUID(), encounterId: encounter.id, revision: client.snapshot!.revision, command, ...override }, (error, result) => error ? reject(error) : resolve(result))
+      client.socket.timeout(8000).emit('game.command', { commandId: randomUUID(), encounterId: client.snapshot!.encounterId, revision: client.snapshot!.revision, command, ...override }, (error, result) => error ? reject(error) : resolve(result))
     })
     const accepted = async (client: typeof dc, command: GameCommand) => { const r = await send(client, command); assert.ok(r.ok, JSON.stringify(r)); return r }
     await t.test('WebSocket authentication rejects missing sessions, wrong CSRF and hostile origins', async () => {
@@ -215,29 +216,111 @@ test('PostgreSQL multiplayer lifecycle with DM and two players', { timeout: 9000
       await waitFor(() => dc.snapshot!.revision > prior, 'Restore not broadcast')
       assert.equal(c1.snapshot!.state.combatants[0].hp, 7)
     })
+    await t.test('DM dungeon commands broadcast to both players; player edits and stale writes reject', async () => {
+      await accepted(dc, { type: 'map.generate', options: { width: 30, height: 24, roomCount: 4, minRoomSize: 3, maxRoomSize: 6, theme: 'mining-outpost', seed: 'multiplayer-map' } })
+      for (const client of [dc, c1, c2]) {
+        assert.equal(client.snapshot!.state.dungeonMap!.schemaVersion, 1)
+        assert.equal(client.snapshot!.state.dungeonMap!.width, 30)
+        assert.ok(client.snapshot!.state.dungeonMap!.props.length)
+      }
+      const revision = dc.snapshot!.revision
+      const mapRevision = dc.snapshot!.state.mapRevision!
+      const denied = await send(c1, { type: 'map.floor.paint', cells: [{ x: 0, z: 0 }], material: 'lava' })
+      assert.ok(!denied.ok && denied.error.code === 'FORBIDDEN')
+      const undoDenied = await send(c2, { type: 'map.undo' }); assert.ok(!undoDenied.ok && undoDenied.error.code === 'FORBIDDEN')
+      await accepted(dc, { type: 'map.floor.paint', cells: [{ x: 0, z: 0 }], material: 'lava' })
+      assert.ok(c1.snapshot!.state.dungeonMap!.floors.some(f => f.x === 0 && f.z === 0 && f.type === 'lava'))
+      assert.equal(c2.snapshot!.state.mapRevision, mapRevision + 1)
+      const stale = await send(dc, { type: 'map.wall.place', wall: { id: 'H:0:0', axis: 'H', x: 0, z: 0, material: 'stone' } }, { revision })
+      assert.ok(!stale.ok && stale.error.code === 'CONFLICT')
+      await accepted(dc, { type: 'map.wall.place', wall: { id: 'H:0:0', axis: 'H', x: 0, z: 0, material: 'wood' } })
+      await accepted(dc, { type: 'map.door.place', door: { id: 'test-door', wallId: 'H:0:0', state: 'locked' } })
+      await accepted(dc, { type: 'map.prop.place', prop: { id: 'test-anvil', type: 'anvil', position: { x: 0, z: 0 }, rotation: 0 } })
+      await accepted(dc, { type: 'map.prop.rotate', propId: 'test-anvil', rotation: 90 })
+      await accepted(dc, { type: 'combatant.hp.update', combatantId: 1, hp: 6 })
+      assert.ok(c1.session!.snapshot!.mapDocumentOmitted, 'Combat-only updates should omit the unchanged map')
+      assert.equal(c1.session!.snapshot!.state.dungeonMap, undefined)
+      assert.ok(c1.snapshot!.state.dungeonMap, 'Client cache must retain the known document')
+      await accepted(dc, { type: 'token.move', combatantId: 1, destination: { x: 11, z: 11 } })
+      await accepted(dc, { type: 'map.undo' })
+      assert.equal(c1.snapshot!.state.dungeonMap!.props.find(p => p.id === 'test-anvil')!.rotation, 0)
+      assert.equal(c1.snapshot!.state.combatants[0].hp, 6)
+      assert.deepEqual(c1.snapshot!.state.battleMap.tokens['1'], { x: 11, z: 11 })
+      await accepted(dc, { type: 'map.redo' })
+      assert.equal(c2.snapshot!.state.dungeonMap!.props.find(p => p.id === 'test-anvil')!.rotation, 90)
+      await accepted(dc, { type: 'combatant.hp.update', combatantId: 1, hp: 7 })
+      const exported = await dm.request(`${path}/export`)
+      assert.deepEqual(importEncounter(exported).dungeonMap, dc.snapshot!.state.dungeonMap)
+      const before = dc.snapshot!.revision
+      const malformed = await send(dc, { type: 'encounter.restore', file: { ...exported, dungeonMap: { ...exported.dungeonMap, props: [{ id: 'bad', type: 'evil.glb', position: { x: 0, z: 0 }, rotation: 0 }] } } } as unknown as GameCommand)
+      assert.equal(malformed.ok, false); assert.equal(dc.snapshot!.revision, before)
+    })
+    await t.test('campaign templates save, copy, rename, duplicate and delete independently of encounter instances', async () => {
+      const saved = await dm.request(`${path}/maps`, { name: 'Reusable mine', encounterId: encounter.id, encounterRevision: dc.snapshot!.revision }, 201)
+      const loaded = await dm.request(`${path}/maps/${saved.id}`)
+      assert.equal(loaded.document.doors.find((d: { id: string }) => d.id === 'test-door').state, 'locked')
+      await p1.request(`${path}/maps`, undefined, 403)
+      await p1.request(`${path}/maps`, { name: 'Forbidden', encounterId: encounter.id, encounterRevision: dc.snapshot!.revision }, 403)
+      const otherCampaign = await dm.request('/campaigns', { name: 'Private map campaign' }, 201)
+      await dm.request(`/campaigns/${otherCampaign.id}/maps/${saved.id}`, undefined, 403)
+      await accepted(dc, { type: 'map.door.update', doorId: 'test-door', state: 'open' })
+      assert.equal((await dm.request(`${path}/maps/${saved.id}`)).document.doors.find((d: { id: string }) => d.id === 'test-door').state, 'locked')
+      await dm.request(`${path}/maps/${saved.id}/rename`, { revision: 1, name: 'Renamed mine' })
+      await dm.request(`${path}/maps/${saved.id}/delete`, { revision: 1 }, 409)
+      const duplicate = await dm.request(`${path}/maps/${saved.id}/duplicate`, { revision: 2, name: 'Duplicate mine' }, 201)
+      const otherEncounter = await dm.request(`${path}/encounters`, { name: 'Map copy encounter' }, 201)
+      await accepted(dc, { type: 'map.template.load', templateId: duplicate.id })
+      assert.equal(c1.snapshot!.encounterId, otherEncounter.id)
+      assert.equal(c1.snapshot!.state.dungeonMap!.name, 'Duplicate mine')
+      await accepted(dc, { type: 'map.door.update', doorId: 'test-door', state: 'closed' })
+      // Overwriting a template from another encounter must not mutate existing instances.
+      await dm.request(`${path}/maps/${saved.id}/save`, { name: 'Renamed mine', revision: 2, encounterId: otherEncounter.id, encounterRevision: dc.snapshot!.revision })
+      assert.equal((await dm.request(`${path}/maps/${saved.id}`)).document.doors.find((d: { id: string }) => d.id === 'test-door').state, 'closed')
+      const original = (await pool.query('SELECT document FROM encounter_maps WHERE encounter_id=$1', [encounter.id])).rows[0].document
+      assert.equal(original.doors.find((d: { id: string }) => d.id === 'test-door').state, 'open')
+      await dm.request(`${path}/maps/${duplicate.id}/delete`, { revision: 1 })
+      assert.ok((await dm.request(`${path}/snapshot`)).state.dungeonMap)
+      await dm.request(`${path}/open`, { encounterId: encounter.id })
+      const list = await dm.request(`${path}/maps`)
+      assert.equal(list.length, 1); assert.equal(list[0].name, 'Renamed mine')
+    })
     await t.test('disconnect/reconnect restores identity and newest state without stale replay', async () => {
       const prior = c1.snapshot!.revision
+      const oldMapRevision = c1.snapshot!.state.mapRevision!
       c1.socket.disconnect()
+      await accepted(dc, { type: 'map.floor.paint', cells: [{ x: 1, z: 0 }], material: 'grass' })
       await accepted(dc, { type: 'token.move', combatantId: 1, destination: { x: 13, z: 14 } })
       c1.socket.connect()
       await waitFor(() => c1.snapshot!.revision > prior, 'Reconnect did not load new snapshot')
       assert.equal(c1.snapshot!.actor.id, p1.actor!.id)
+      assert.ok(c1.snapshot!.state.mapRevision! > oldMapRevision)
+      assert.ok(c1.snapshot!.state.dungeonMap!.floors.some(f => f.x === 1 && f.z === 0 && f.type === 'grass'))
       assert.deepEqual(c1.snapshot!.state.battleMap.tokens['1'], { x: 13, z: 14 })
     })
     await t.test('server restart recovers PostgreSQL state and authenticated sessions', async () => {
       const revision = dc.snapshot!.revision
       const campaignRevision = dc.session!.revision
+      const savedMap = dc.snapshot!.state.dungeonMap
+      const savedMapRevision = dc.snapshot!.state.mapRevision
       for (const s of sockets) s.disconnect()
       await application.close()
       application = createApplication({ pool, secret, origin })
       await new Promise<void>(resolve => application.http.listen(port, '127.0.0.1', resolve))
       const restored = await p1.request(`${path}/snapshot`)
       assert.equal(restored.revision, revision)
+      assert.deepEqual(restored.state.dungeonMap, savedMap)
+      assert.equal(restored.state.mapRevision, savedMapRevision)
       assert.equal(Number((await pool.query('SELECT state_revision FROM campaigns WHERE id=$1', [campaign.id])).rows[0].state_revision), campaignRevision)
       assert.deepEqual(restored.state.battleMap.tokens['1'], { x: 13, z: 14 })
       dc.snapshot = null; c1.snapshot = null; c2.snapshot = null
       for (const s of sockets) s.connect()
       await waitFor(() => Boolean(dc.snapshot && c1.snapshot && c2.snapshot), 'Could not reconnect after restart')
+      assert.ok((dc.snapshot!.state.mapUndoDepth ?? 0) > 0, 'Map history should survive restart')
+      await accepted(dc, { type: 'map.undo' })
+      assert.ok(c1.snapshot!.state.mapRevision! > savedMapRevision!)
+      assert.deepEqual(c1.snapshot!.state.battleMap.tokens['1'], { x: 13, z: 14 })
+      await accepted(dc, { type: 'map.redo' })
+      assert.deepEqual(c2.snapshot!.state.dungeonMap, savedMap)
     })
     await t.test('revoking a player removes live sockets and HTTP access', async () => {
       await dm.request(`${path}/members/${p2.actor!.id}/revoke`, {})
@@ -249,6 +332,8 @@ test('PostgreSQL multiplayer lifecycle with DM and two players', { timeout: 9000
       const invitation = await dm.request(`${path}/invitations`, {}, 201)
       await guest.request('/invitations/redeem', { token: invitation.url.split('#invite=')[1], displayName: 'Temporary' }, 201)
       const client = await guest.connect(campaign.id); sockets.push(client.socket)
+      assert.deepEqual(client.snapshot!.state.dungeonMap, dc.snapshot!.state.dungeonMap, 'Late join must receive a complete current map')
+      assert.equal(client.snapshot!.state.mapRevision, dc.snapshot!.state.mapRevision)
       await pool.query("UPDATE auth_sessions SET expires_at=now()-interval '1 second' WHERE data->'actor'->>'id'=$1", [guest.actor!.id])
       const result = await send(client, { type: 'token.move', combatantId: 1, destination: { x: 1, z: 1 } })
       assert.equal(result.ok, false)

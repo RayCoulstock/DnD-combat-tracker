@@ -44,3 +44,14 @@ test('campaign revisions reject delayed activation, termination and old encounte
   assert.equal(acceptsSessionState(current, current, 'campaign'), true) // reconnect, unchanged state
   assert.equal(acceptsSessionState(null, current, 'campaign'), true)
 })
+test('map snapshot omission keeps geometry references and requests recovery on missing versions', async () => {
+  const { mergeMapSnapshot } = await import('./domain.ts')
+  const { blankDungeon } = await import('./dungeon.ts')
+  const state = { ...fixture(), dungeonMap: blankDungeon('cached', 'Cached'), mapRevision: 4 }
+  const full = { campaignId: 'campaign', encounterId: 'encounter', name: 'Test', revision: 1, sessionActive: true, actor: { role: 'dm' as const, id: 'dm' }, state }
+  const patch = { ...full, revision: 2, mapDocumentOmitted: true, state: { ...state, dungeonMap: undefined } }
+  assert.equal(mergeMapSnapshot(full, patch)!.state.dungeonMap, state.dungeonMap)
+  assert.equal(mergeMapSnapshot(null, patch), null)
+  assert.equal(mergeMapSnapshot(full, { ...patch, state: { ...patch.state, mapRevision: 5 } }), null)
+  assert.equal(mergeMapSnapshot(full, { ...patch, encounterId: 'different' }), null)
+})

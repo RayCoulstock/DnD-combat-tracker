@@ -78,3 +78,13 @@ toggle grid lines or token labels.
 Map settings and token positions are included in encounter JSON exports. Files
 created before the map was added remain importable; missing or invalid positions
 are assigned safe starting squares automatically.
+
+## Hybrid dungeon builder
+
+DMs and local users can choose **Map editor** to paint terrain, draw walls, operate doors,
+place props, generate seeded dungeons, and save reusable templates. Players receive the
+shared encounter environment automatically while keeping independent cameras.
+Apply `npm run db:migrate` when upgrading multiplayer installations.
+See [the builder guide](docs/dungeon-builder-development.md) for controls, map lifecycle,
+generation, two-player checks and limitations, and [the architecture](docs/dungeon-builder-architecture.md)
+for the schema, authority and persistence design.

@@ -11,6 +11,7 @@ import { rateLimit } from 'express-rate-limit'
 import { Server, type Socket } from 'socket.io'
 import { z } from 'zod'
 import { PgSessionStore, hashSecret } from './sessions.ts'
+import { registerMapRoutes } from './maps.ts'
 import { transaction, type Pool } from './db.ts'
 import { authorize, execute, loadState, persistState, snapshot, sessionState } from './game.ts'
 import { artworkStorage, embedArtwork } from './artwork.ts'
@@ -106,6 +107,7 @@ export function createApplication({ pool, secret, origin, production = false }: 
     return req.session.actor
   }
   const requireDM = (req: Request) => { const actor = requireActor(req); if (actor.role !== 'dm') throw new DomainError('FORBIDDEN', 'Dungeon Master access required.'); return actor }
+  registerMapRoutes(app, pool, requireDM)
   app.get('/api/campaigns', async (req, res) => {
     const actor = requireActor(req)
     const query = actor.role === 'dm' ? 'SELECT id,name,session_active FROM campaigns WHERE owner_id=$1 ORDER BY created_at' : 'SELECT c.id,c.name,c.session_active FROM campaigns c JOIN memberships m ON m.campaign_id=c.id WHERE m.id=$1 AND m.revoked_at IS NULL'
@@ -215,7 +217,7 @@ export function createApplication({ pool, secret, origin, production = false }: 
       const state = checkpoint.state
       const members = new Set((await db.query('SELECT id FROM memberships WHERE campaign_id=$1 AND revoked_at IS NULL', [campaignId])).rows.map(r => r.id))
       for (const combatant of state.combatants) if (!members.has(combatant.ownerId)) combatant.ownerId = null
-      await persistState(db, c.active_encounter_id, state)
+      await persistState(db, c.active_encounter_id, state, { undo: [], redo: [] })
       await db.query('UPDATE encounters SET revision=revision+1 WHERE id=$1', [c.active_encounter_id])
       await db.query('UPDATE campaigns SET state_revision=state_revision+1 WHERE id=$1', [campaignId])
     }); await broadcast(campaignId); res.json({ ok: true })
@@ -260,10 +262,19 @@ export function createApplication({ pool, secret, origin, production = false }: 
     catch { next(new Error('Authentication required.')) }
   })
   const rooms = new Map<string, string>()
-  async function publishState(socket: Socket<ClientEvents, ServerEvents>, campaignId: string) {
+  const sentMaps = new Map<string, { encounterId: string; revision: number }>()
+  async function publishState(socket: Socket<ClientEvents, ServerEvents>, campaignId: string, full = false) {
     const actor = await socketActor(socket)
     const data = await transaction(pool, db => sessionState(db, actor, campaignId))
     if (rooms.get(socket.id) !== campaignId || !socket.connected) return data
+    const map = data.snapshot
+    if (map) {
+      const previous = sentMaps.get(socket.id)
+      if (!full && map.state.dungeonMap && previous?.encounterId === map.encounterId && previous.revision === map.state.mapRevision) {
+        data.snapshot = { ...map, mapDocumentOmitted: true, state: { ...map.state, dungeonMap: undefined } }
+      }
+      sentMaps.set(socket.id, { encounterId: map.encounterId, revision: map.state.mapRevision ?? 0 })
+    }
     socket.emit('session.state', data)
     // Retain the existing snapshot/termination events for older consumers.
     if (data.snapshot) socket.emit('encounter.snapshot', data.snapshot)
@@ -296,7 +307,7 @@ export function createApplication({ pool, secret, origin, production = false }: 
         const old = rooms.get(socket.id); if (old) await socket.leave(old)
         rooms.set(socket.id, campaignId); await socket.join(campaignId); subscribed = true
         // Subscribe before reading so activation during the join cannot be missed.
-        const data = await publishState(socket, campaignId)
+        const data = await publishState(socket, campaignId, true)
         ack({ ok: true, revision: data.snapshot?.revision ?? 0, duplicate: false }); if (old) await presence(old); await presence(campaignId)
       } catch (e) { ack(commandError(e)); if (subscribed) { socket.emit('access.revoked'); socket.disconnect(true) } }
     })
@@ -322,7 +333,7 @@ export function createApplication({ pool, secret, origin, production = false }: 
         if (campaignId) { try { await publishState(socket, campaignId) } catch { socket.emit('access.revoked'); socket.disconnect(true) } }
       }
     })
-    socket.on('disconnect', () => { const c = rooms.get(socket.id); rooms.delete(socket.id); if (c) void presence(c).catch(() => {}) })
+    socket.on('disconnect', () => { sentMaps.delete(socket.id); const c = rooms.get(socket.id); rooms.delete(socket.id); if (c) void presence(c).catch(() => {}) })
   })
   const timer = setInterval(() => {
     for (const socket of io.sockets.sockets.values()) {

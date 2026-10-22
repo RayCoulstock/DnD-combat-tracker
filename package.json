@@ -7,7 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build && tsc -p server/tsconfig.json && cp -r server/migrations dist-server/server/",
     "lint": "eslint .",
-    "test": "node --test src/mapState.test.ts && tsx --test shared/*.test.ts",
+    "test": "node --test src/mapState.test.ts src/App.test.js && tsx --test shared/*.test.ts",
     "typecheck": "tsc --noEmit && tsc -p server/tsconfig.json --noEmit",
     "dev:server": "tsx watch --env-file-if-exists=.env server/index.ts",
     "dev:all": "concurrently -k \"npm:dev\" \"npm:dev:server\"",

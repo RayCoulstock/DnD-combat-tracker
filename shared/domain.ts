@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { generationOptionsSchema, generateDungeon } from './generator.ts'
+import { dungeonSchema, editMap, emptyHistory, mapCommandSchemas, type DungeonMap, type MapCommand, type MapHistory } from './dungeon.ts'
 import { createBattleMapState, isGridPosition, moveToken, normalizeBattleMap, reconcileBattleMap } from '../src/mapState.ts'
 
 export const idSchema = z.union([z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/), z.number().int().safe().nonnegative()]).refine(v => !['__proto__', 'constructor', 'prototype'].includes(String(v)))
@@ -19,9 +21,11 @@ export const encounterFileSchema = z.object({
   version: z.literal(1), round: z.number().int().min(1).max(1000000),
   activeId: idSchema.nullable().optional(), selectedId: idSchema.nullable().optional(),
   usedAbilities: z.record(z.string().max(400), z.boolean()).default({}),
+  dungeonMap: dungeonSchema.optional(),
   combatants: z.array(combatantSchema).max(100), battleMap: z.unknown().optional(),
 }).refine(s => new Set(s.combatants.map(c => String(c.id))).size === s.combatants.length, 'Duplicate combatant IDs')
 export interface EncounterState {
+  dungeonMap?: DungeonMap; mapRevision?: number; mapUndoDepth?: number; mapRedoDepth?: number
   version: 1; round: number; activeId: string | number | null; selectedId: string | number | null
   usedAbilities: Record<string, boolean>; combatants: Combatant[]; battleMap: ReturnType<typeof createBattleMapState>
 }
@@ -32,11 +36,13 @@ export function importEncounter(value: unknown, preservePermissions = false): En
   const ids = new Set(combatants.map(c => c.id))
   return { version: 1, round: data.round, activeId: ids.has(data.activeId!) ? data.activeId! : combatants[0]?.id ?? null,
     selectedId: ids.has(data.selectedId!) ? data.selectedId! : combatants[0]?.id ?? null,
-    usedAbilities: data.usedAbilities, combatants, battleMap: normalizeBattleMap(data.battleMap, combatants.map(c => c.id)) }
+    usedAbilities: data.usedAbilities, combatants, ...(data.dungeonMap ? { dungeonMap: data.dungeonMap } : {}), battleMap: normalizeBattleMap(data.dungeonMap ? { ...(data.battleMap as object ?? {}), width: data.dungeonMap.width, height: data.dungeonMap.height } : data.battleMap, combatants.map(c => c.id)) }
 }
 export const emptyEncounter = (): EncounterState => importEncounter({ version: 1, round: 1, combatants: [] })
 const target = { combatantId: idSchema }
 export const commandSchema = z.discriminatedUnion('type', [
+  ...mapCommandSchemas,
+  z.object({ type: z.literal('map.generate'), options: generationOptionsSchema }).strict(),
   z.object({ type: z.literal('token.move'), ...target, destination: z.object({ x: z.number().int(), z: z.number().int() }).strict() }).strict(),
   z.object({ type: z.literal('token.assign'), ...target, playerId: z.uuid().nullable() }).strict(),
   z.object({ type: z.literal('combatant.hp.update'), ...target, hp: z.number().int().min(0).max(100000) }).strict(),
@@ -60,6 +66,11 @@ export class DomainError extends Error {
 export function applyCommand(state: EncounterState, actor: Actor, command: GameCommand): EncounterState {
   const c = 'combatantId' in command ? state.combatants.find(c => String(c.id) === String(command.combatantId)) : undefined
   if (actor.role !== 'dm' && (command.type !== 'token.move' || !c?.visible || c.ownerId !== actor.id)) throw new DomainError('FORBIDDEN', 'This action is not permitted.')
+  if (command.type === 'map.generate') {
+    if (actor.role !== 'dm') throw new DomainError('FORBIDDEN', 'Only the DM may generate maps.')
+    return applyMapEdit(state, actor, { type: 'map.load', document: generateDungeon(command.options) }, emptyHistory()).state
+  }
+  if (isMapEdit(command)) return applyMapEdit(state, actor, command, emptyHistory()).state
   if ('combatantId' in command && !c) throw new DomainError('NOT_FOUND', 'Combatant not found.')
   const update = (patch: Partial<Combatant>) => ({ ...state, combatants: state.combatants.map(item => item === c ? { ...item, ...patch } : item) })
   switch (command.type) {
@@ -94,10 +105,23 @@ export function applyCommand(state: EncounterState, actor: Actor, command: GameC
       const next = (state.combatants.findIndex(c => c.id === state.activeId) + 1) % state.combatants.length
       return { ...state, activeId: state.combatants[next].id, round: state.round + (next === 0 ? 1 : 0) }
     }
-    case 'map.settings': return { ...state, battleMap: reconcileBattleMap({ ...state.battleMap, showGrid: command.showGrid, showLabels: command.showLabels, width: command.width ?? state.battleMap.width, height: command.height ?? state.battleMap.height }, state.combatants.map(c => c.id)) }
+    case 'map.settings':
+      if (state.dungeonMap && ((command.width && command.width !== state.dungeonMap.width) || (command.height && command.height !== state.dungeonMap.height))) throw new DomainError('INVALID', 'Use the dungeon builder to replace map dimensions.')
+      return { ...state, battleMap: reconcileBattleMap({ ...state.battleMap, showGrid: command.showGrid, showLabels: command.showLabels, width: command.width ?? state.battleMap.width, height: command.height ?? state.battleMap.height }, state.combatants.map(c => c.id)) }
     case 'encounter.clear': return emptyEncounter()
     case 'encounter.restore': return importEncounter(command.file)
   }
+}
+export const isMapEdit = (command: GameCommand): command is MapCommand => mapCommandSchemas.some(s => s.shape.type.value === command.type)
+export function applyMapEdit(state: EncounterState, actor: Actor, command: MapCommand, history: MapHistory) {
+  if (actor.role !== 'dm') throw new DomainError('FORBIDDEN', 'Only the DM may edit maps.')
+  try {
+    const result = editMap({ document: state.dungeonMap ?? null, width: state.battleMap.width, height: state.battleMap.height }, history, command)
+    const next: EncounterState = { ...state, dungeonMap: result.frame.document ?? undefined,
+      battleMap: reconcileBattleMap({ ...state.battleMap, width: result.frame.width, height: result.frame.height }, state.combatants.map(c => c.id)),
+      mapUndoDepth: result.history.undo.length, mapRedoDepth: result.history.redo.length }
+    return { state: next, history: result.history }
+  } catch (error) { throw new DomainError('INVALID', error instanceof Error ? error.message : 'Invalid map edit.') }
 }
 // Explicit allowlists: never send opaque stored objects to players.
 export function projectEncounter(state: EncounterState, actor: Actor): EncounterState {
@@ -112,11 +136,17 @@ export function projectEncounter(state: EncounterState, actor: Actor): Encounter
   })
   const ids = new Set(combatants.map(c => String(c.id)))
   const owned = combatants.filter(c => c.ownerId === actor.id)
-  return { ...state, combatants, selectedId: null, activeId: ids.has(String(state.activeId)) ? state.activeId : null,
+  return { ...state, mapUndoDepth: undefined, mapRedoDepth: undefined, combatants, selectedId: null, activeId: ids.has(String(state.activeId)) ? state.activeId : null,
     usedAbilities: Object.fromEntries(Object.entries(state.usedAbilities).filter(([key]) => owned.some(c => key.startsWith(`${c.id}:`)))),
     battleMap: { ...state.battleMap, tokens: Object.fromEntries(Object.entries(state.battleMap.tokens).filter(([id]) => ids.has(id))) } }
 }
-export interface Snapshot { campaignId: string; encounterId: string; name: string; revision: number; sessionActive: boolean; state: EncounterState; actor: Actor }
+export interface Snapshot { mapDocumentOmitted?: boolean; campaignId: string; encounterId: string; name: string; revision: number; sessionActive: boolean; state: EncounterState; actor: Actor }
+// Retain the same document reference for combat-only updates. Missing patches require a full join snapshot.
+export function mergeMapSnapshot(previous: Snapshot | null, next: Snapshot): Snapshot | null {
+  if (!next.mapDocumentOmitted) return next
+  if (!previous || previous.encounterId !== next.encounterId || previous.state.mapRevision !== next.state.mapRevision || !previous.state.dungeonMap) return null
+  return { ...next, mapDocumentOmitted: false, state: { ...next.state, dungeonMap: previous.state.dungeonMap } }
+}
 // Monotonic across encounters and session activation; inactive players receive no state.
 export interface SessionState {
   campaignId: string; revision: number; sessionActive: boolean; encounterId: string | null; snapshot: Snapshot | null

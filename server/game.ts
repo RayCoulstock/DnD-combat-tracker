@@ -1,7 +1,10 @@
 import type { PoolClient } from 'pg'
+import { isDeepStrictEqual } from 'node:util'
 import { createHash } from 'node:crypto'
-import { applyCommand, DomainError, projectEncounter, type Actor, type CommandEnvelope, type EncounterState, type Snapshot, type SessionState } from '../shared/domain.ts'
+import { applyCommand, applyMapEdit, isMapEdit, DomainError, projectEncounter, type Actor, type CommandEnvelope, type EncounterState, type Snapshot, type SessionState } from '../shared/domain.ts'
 import { transaction, type Pool } from './db.ts'
+import { generateDungeon } from '../shared/generator.ts'
+import { emptyHistory, readDungeon, type MapHistory } from '../shared/dungeon.ts'
 import { storeArtwork } from './artwork.ts'
 
 export async function authorize(db: PoolClient, actor: Actor, campaignId: string) {
@@ -15,12 +18,19 @@ export async function loadState(db: PoolClient, encounterId: string): Promise<En
   const encounter = (await db.query('SELECT state FROM encounters WHERE id=$1', [encounterId])).rows[0]
   if (!encounter) throw new DomainError('NOT_FOUND', 'Encounter not found.')
   const rows = (await db.query('SELECT * FROM combatants WHERE encounter_id=$1 ORDER BY ordinal', [encounterId])).rows
-  return { ...encounter.state, combatants: rows.map(r => ({ ...r.data, ownerId: r.owner_id, visible: r.visible })),
+  const instance = (await db.query('SELECT document,revision,history FROM encounter_maps WHERE encounter_id=$1', [encounterId])).rows[0]
+  return { ...encounter.state, dungeonMap: instance?.document ? readDungeon(instance.document) : undefined, mapRevision: instance?.revision ?? 0, mapUndoDepth: instance?.history.undo.length ?? 0, mapRedoDepth: instance?.history.redo.length ?? 0, combatants: rows.map(r => ({ ...r.data, ownerId: r.owner_id, visible: r.visible })),
     battleMap: { ...encounter.state.battleMap, tokens: Object.fromEntries(rows.map(r => [r.id, r.position])) } }
 }
-export async function persistState(db: PoolClient, encounterId: string, input: EncounterState) {
+export async function persistState(db: PoolClient, encounterId: string, input: EncounterState, history?: MapHistory) {
   const state = await storeArtwork(db, input)
-  await db.query('UPDATE encounters SET state=$2,updated_at=now() WHERE id=$1', [encounterId, { ...state, combatants: [], battleMap: { ...state.battleMap, tokens: {} } }])
+  const existing = (await db.query('SELECT document FROM encounter_maps WHERE encounter_id=$1', [encounterId])).rows[0]
+  if (history || !isDeepStrictEqual(existing?.document ?? null, state.dungeonMap ?? null)) {
+    if (state.dungeonMap) readDungeon(state.dungeonMap)
+    await db.query(`INSERT INTO encounter_maps(encounter_id,document,history) VALUES($1,$2,$3)
+      ON CONFLICT(encounter_id) DO UPDATE SET document=$2,history=$3,revision=encounter_maps.revision+1,updated_at=now()`, [encounterId, state.dungeonMap ?? null, history ?? emptyHistory()])
+  }
+  await db.query('UPDATE encounters SET state=$2,updated_at=now() WHERE id=$1', [encounterId, { ...state, dungeonMap: undefined, mapRevision: undefined, mapUndoDepth: undefined, mapRedoDepth: undefined, combatants: [], battleMap: { ...state.battleMap, tokens: {} } }])
   await db.query('DELETE FROM combatants WHERE encounter_id=$1', [encounterId])
   for (const [ordinal, c] of state.combatants.entries()) {
     await db.query('INSERT INTO combatants(encounter_id,id,ordinal,data,owner_id,visible,position) VALUES($1,$2,$3,$4,$5,$6,$7)',
@@ -64,8 +74,25 @@ export async function execute(pool: Pool, actor: Actor, campaignId: string, data
     if (data.command.type === 'token.assign' && data.command.playerId !== null) {
       if (!(await db.query('SELECT 1 FROM memberships WHERE id=$1 AND campaign_id=$2 AND revoked_at IS NULL', [data.command.playerId, campaignId])).rowCount) throw new DomainError('INVALID', 'Choose an active campaign player.')
     }
-    const next = applyCommand(await loadState(db, encounter.id), actor, data.command)
-    await persistState(db, encounter.id, next)
+    const current = await loadState(db, encounter.id)
+    let command = data.command
+    if (command.type === 'map.generate') {
+      if (actor.role !== 'dm') throw new DomainError('FORBIDDEN', 'Only the DM may generate maps.')
+      try { command = { type: 'map.load', document: generateDungeon(command.options) } } catch (e) { throw new DomainError('INVALID', (e as Error).message) }
+    }
+    if (command.type === 'map.template.load') {
+      if (actor.role !== 'dm') throw new DomainError('FORBIDDEN', 'Only the DM may load maps.')
+      const template = (await db.query('SELECT document FROM map_templates WHERE id=$1 AND campaign_id=$2', [command.templateId, campaignId])).rows[0]
+      if (!template) throw new DomainError('FORBIDDEN', 'Map access denied.')
+      command = { type: 'map.load', document: readDungeon(template.document) }
+    }
+    let next: EncounterState, history: MapHistory | undefined
+    if (isMapEdit(command)) {
+      const saved = (await db.query('SELECT history FROM encounter_maps WHERE encounter_id=$1', [encounter.id])).rows[0]
+      const result = applyMapEdit(current, actor, command, saved?.history ?? emptyHistory())
+      next = result.state; history = result.history
+    } else { next = applyCommand(current, actor, command); if (command.type === 'encounter.restore' || command.type === 'encounter.clear') history = emptyHistory() }
+    await persistState(db, encounter.id, next, history)
     const revision = encounter.revision + 1
     await db.query('UPDATE encounters SET revision=$2 WHERE id=$1', [encounter.id, revision])
     await db.query('UPDATE campaigns SET state_revision=state_revision+1 WHERE id=$1', [campaignId])
