@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg'
 import { createHash } from 'node:crypto'
-import { applyCommand, DomainError, projectEncounter, type Actor, type CommandEnvelope, type EncounterState, type Snapshot } from '../shared/domain.ts'
+import { applyCommand, DomainError, projectEncounter, type Actor, type CommandEnvelope, type EncounterState, type Snapshot, type SessionState } from '../shared/domain.ts'
 import { transaction, type Pool } from './db.ts'
 import { storeArtwork } from './artwork.ts'
 
@@ -37,6 +37,14 @@ export async function snapshot(db: PoolClient, actor: Actor, campaignId: string)
   return { campaignId, encounterId: encounter.id, name: encounter.name, revision: encounter.revision,
     sessionActive: campaign.session_active, actor, state: projectEncounter(await loadState(db, encounter.id), actor) }
 }
+// Waiting-room subscription does not grant access to an inactive encounter.
+export async function sessionState(db: PoolClient, actor: Actor, campaignId: string): Promise<SessionState> {
+  await db.query('SELECT id FROM campaigns WHERE id=$1 FOR SHARE', [campaignId])
+  const campaign = await authorize(db, actor, campaignId)
+  return { campaignId, revision: campaign.state_revision, sessionActive: campaign.session_active,
+    encounterId: campaign.active_encounter_id,
+    snapshot: campaign.active_encounter_id && (actor.role === 'dm' || campaign.session_active) ? await snapshot(db, actor, campaignId) : null }
+}
 export async function execute(pool: Pool, actor: Actor, campaignId: string, data: CommandEnvelope) {
   return transaction(pool, async db => {
     // All room lifecycle writes use this lock order as well.
@@ -60,6 +68,7 @@ export async function execute(pool: Pool, actor: Actor, campaignId: string, data
     await persistState(db, encounter.id, next)
     const revision = encounter.revision + 1
     await db.query('UPDATE encounters SET revision=$2 WHERE id=$1', [encounter.id, revision])
+    await db.query('UPDATE campaigns SET state_revision=state_revision+1 WHERE id=$1', [campaignId])
     await db.query('INSERT INTO command_receipts(encounter_id,actor_id,command_id,revision,payload_hash) VALUES($1,$2,$3,$4,$5)', [encounter.id, actor.id, data.commandId, revision, hash])
     return { revision, duplicate: false }
   })

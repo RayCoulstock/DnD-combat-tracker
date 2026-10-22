@@ -8,6 +8,25 @@ async function api(page: Page, path: string, body?: unknown) {
     return r.json()
   }, { path, body })
 }
+// Compare rendered views with a small rasterisation/damping tolerance, without extra dependencies.
+async function imageDifference(page: Page, before: Buffer, after: Buffer): Promise<number> {
+  return page.evaluate(async ({ before, after }) => {
+    const decode = async (value: string) => {
+      const bytes = Uint8Array.from(atob(value), c => c.charCodeAt(0))
+      const bitmap = await createImageBitmap(new Blob([bytes], { type: 'image/png' }))
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(bitmap, 0, 0)
+      bitmap.close()
+      return ctx.getImageData(0, 0, canvas.width, canvas.height)
+    }
+    const a = await decode(before), b = await decode(after)
+    if (a.width !== b.width || a.height !== b.height) return 255
+    let difference = 0
+    for (let i = 0; i < a.data.length; i++) difference += Math.abs(a.data[i] - b.data[i])
+    return difference / a.data.length
+  }, { before: before.toString('base64'), after: after.toString('base64') })
+}
 test('local ledger, DM and two browsers, camera isolation and offline camera', async ({ browser, page }) => {
   const errors: string[] = []
   page.on('pageerror', e => errors.push(e.message))
@@ -80,4 +99,79 @@ test('local ledger, DM and two browsers, camera isolation and offline camera', a
     await expect(players[0].locator('.connection')).toHaveText('Connected')
     expect(errors).toEqual([])
   } catch (error) { for (const player of players) console.log((await player.locator('body').innerText()).slice(0,2500)); throw error } finally { for (const c of contexts) await c.close() }
+})
+
+test('waiting players see first activation and restart without refresh or camera reset', async ({ browser, page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Multiplayer', exact: true }).click()
+  await page.getByLabel('Email', { exact: true }).fill(`waiting-dm-${randomUUID()}@example.test`)
+  await page.getByLabel('Password (12+ characters)', { exact: true }).fill('Waiting Room Password 2049!')
+  await page.getByRole('button', { name: 'Create account', exact: true }).click()
+  await page.getByLabel('New campaign', { exact: true }).fill('Waiting campaign')
+  await page.getByRole('button', { name: 'Create campaign', exact: true }).click()
+  await expect(page.getByLabel('New encounter', { exact: true })).toBeVisible()
+  const campaignId = await page.getByRole('combobox', { name: 'Campaign', exact: true }).inputValue()
+  const contexts = [await browser.newContext(), await browser.newContext(), await browser.newContext()]
+  const players: Page[] = []
+  let apiRequests = 0, navigations = 0
+  async function join(index: number) {
+    const { url } = await api(page, `/campaigns/${campaignId}/invitations`, {})
+    const player = await contexts[index].newPage(); players.push(player)
+    await player.goto(url)
+    await player.getByLabel('Display name').fill(`Waiting player ${index + 1}`)
+    await player.getByRole('button', { name: 'Join campaign', exact: true }).click()
+    await expect(player.locator('.connection')).toHaveText('Connected')
+    return player
+  }
+  try {
+    const early = await join(0) // before even creating an encounter
+    await expect(early.getByText('Waiting for the DM to open and start an encounter.')).toBeVisible()
+    await expect(early.locator('canvas')).toHaveCount(0)
+    const file = { version: 1, round: 1, combatants: [
+      { id: 1, name: 'Waiting hero', side: 'hero', hp: 10, maxHp: 10, ac: 15, initiative: 18, conditions: [], saves: [], actions: [] },
+      { id: 2, name: 'Hidden waiting monster', side: 'enemy', hp: 20, maxHp: 20, ac: 18, initiative: 10, conditions: [], saves: [], actions: [], visible: false },
+    ] }
+    const encounter = await api(page, `/campaigns/${campaignId}/encounters`, { name: 'First activation', file })
+    const waiting = await join(1) // encounter selected, but session inactive
+    await expect(waiting.getByText('Waiting for the DM to open and start an encounter.')).toBeVisible()
+    for (const player of [early, waiting]) {
+      await expect(player.locator('canvas')).toHaveCount(0)
+      player.on('request', req => { if (new URL(req.url()).pathname.startsWith('/api/')) apiRequests++ })
+      player.on('framenavigated', frame => { if (frame === player.mainFrame()) navigations++ })
+    }
+    await page.getByRole('button', { name: 'Start multiplayer session', exact: true }).click()
+    for (const player of [early, waiting]) {
+      await expect(player.locator('canvas')).toBeVisible({ timeout: 5000 })
+      await expect(player.getByText('Hidden waiting monster', { exact: true })).toHaveCount(0)
+    }
+    const late = await join(2) // already-active session
+    await expect(late.locator('canvas')).toBeVisible({ timeout: 5000 })
+    const canvas = early.locator('canvas')
+    await canvas.scrollIntoViewIfNeeded()
+    const element = await canvas.elementHandle()
+    const defaultView = await canvas.screenshot()
+    const box = (await canvas.boundingBox())!
+    await early.mouse.move(box.x + box.width * .5, box.y + box.height * .4)
+    await early.mouse.down(); await early.mouse.move(box.x + box.width * .7, box.y + box.height * .5, { steps: 20 }); await early.mouse.up()
+    // Wait for local OrbitControls damping to finish before comparing camera views.
+    await early.waitForTimeout(2000)
+    const cameraView = await canvas.screenshot()
+    expect(await imageDifference(early, defaultView, cameraView)).toBeGreaterThan(3)
+    await page.getByRole('button', { name: 'End session', exact: true }).click()
+    await expect(canvas).toBeHidden({ timeout: 5000 })
+    await expect(early.getByText('Waiting for the DM to open and start an encounter.')).toBeVisible()
+    expect(await element!.evaluate(el => el.isConnected)).toBe(true)
+    await expect(early.locator('.connection')).toHaveText('Connected')
+    await page.getByRole('button', { name: 'Start multiplayer session', exact: true }).click()
+    await expect(canvas).toBeVisible({ timeout: 5000 })
+    expect(await element!.evaluate(el => el.isConnected)).toBe(true)
+    expect(await imageDifference(early, cameraView, await canvas.screenshot())).toBeLessThan(2)
+    // Rapid switches can lower the encounter revision, but never the campaign revision.
+    await api(page, `/campaigns/${campaignId}/encounters`, { name: 'Temporary', file: { ...file, round: 2 } })
+    await expect(early.getByRole('heading', { name: 'Round 2', exact: true })).toBeVisible({ timeout: 5000 })
+    await api(page, `/campaigns/${campaignId}/open`, { encounterId: encounter.id })
+    await expect(early.getByRole('heading', { name: 'Round 1', exact: true })).toBeVisible({ timeout: 5000 })
+    expect(navigations).toBe(0)
+    expect(apiRequests).toBe(0)
+  } finally { for (const context of contexts) await context.close() }
 })

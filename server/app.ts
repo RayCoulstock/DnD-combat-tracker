@@ -12,7 +12,7 @@ import { Server, type Socket } from 'socket.io'
 import { z } from 'zod'
 import { PgSessionStore, hashSecret } from './sessions.ts'
 import { transaction, type Pool } from './db.ts'
-import { authorize, execute, loadState, persistState, snapshot } from './game.ts'
+import { authorize, execute, loadState, persistState, snapshot, sessionState } from './game.ts'
 import { artworkStorage, embedArtwork } from './artwork.ts'
 import { DomainError, emptyEncounter, envelopeSchema, importEncounter, type Actor, type ClientEvents, type ServerEvents } from '../shared/domain.ts'
 
@@ -146,7 +146,7 @@ export function createApplication({ pool, secret, origin, production = false }: 
       if (state.combatants.some(c => c.artwork?.startsWith('/'))) throw new DomainError('INVALID', 'Import embedded artwork, not server references.')
       await db.query('INSERT INTO encounters(id,campaign_id,name,state) VALUES($1,$2,$3,$4)', [id, campaignId, data.name, emptyEncounter()])
       await persistState(db, id, state)
-      await db.query('UPDATE campaigns SET active_encounter_id=$2,updated_at=now() WHERE id=$1', [campaignId, id])
+      await db.query('UPDATE campaigns SET active_encounter_id=$2,state_revision=state_revision+1,updated_at=now() WHERE id=$1', [campaignId, id])
     })
     await broadcast(campaignId); res.status(201).json({ id })
   })
@@ -156,7 +156,7 @@ export function createApplication({ pool, secret, origin, production = false }: 
     await transaction(pool, async db => {
       await db.query('SELECT id FROM campaigns WHERE id=$1 FOR UPDATE', [campaignId]); await authorize(db, actor, campaignId)
       if (!(await db.query('SELECT 1 FROM encounters WHERE id=$1 AND campaign_id=$2', [encounterId, campaignId])).rowCount) throw new DomainError('FORBIDDEN', 'Encounter access denied.')
-      await db.query('UPDATE campaigns SET active_encounter_id=$2,updated_at=now() WHERE id=$1', [campaignId, encounterId])
+      await db.query('UPDATE campaigns SET active_encounter_id=$2,state_revision=state_revision+1,updated_at=now() WHERE id=$1', [campaignId, encounterId])
     }); await broadcast(campaignId); res.json({ ok: true })
   })
   app.post('/api/campaigns/:campaignId/session', async (req, res) => {
@@ -165,7 +165,7 @@ export function createApplication({ pool, secret, origin, production = false }: 
     await transaction(pool, async db => {
       await db.query('SELECT id FROM campaigns WHERE id=$1 FOR UPDATE', [campaignId]); const campaign = await authorize(db, actor, campaignId)
       if (active && !campaign.active_encounter_id) throw new DomainError('INVALID', 'Open an encounter first.')
-      await db.query('UPDATE campaigns SET session_active=$2,updated_at=now() WHERE id=$1', [campaignId, active])
+      await db.query('UPDATE campaigns SET session_active=$2,state_revision=state_revision+1,updated_at=now() WHERE id=$1', [campaignId, active])
     })
     await broadcast(campaignId); res.json({ ok: true })
   })
@@ -217,6 +217,7 @@ export function createApplication({ pool, secret, origin, production = false }: 
       for (const combatant of state.combatants) if (!members.has(combatant.ownerId)) combatant.ownerId = null
       await persistState(db, c.active_encounter_id, state)
       await db.query('UPDATE encounters SET revision=revision+1 WHERE id=$1', [c.active_encounter_id])
+      await db.query('UPDATE campaigns SET state_revision=state_revision+1 WHERE id=$1', [campaignId])
     }); await broadcast(campaignId); res.json({ ok: true })
   })
   app.get('/api/campaigns/:campaignId/export', async (req, res) => {
@@ -259,14 +260,21 @@ export function createApplication({ pool, secret, origin, production = false }: 
     catch { next(new Error('Authentication required.')) }
   })
   const rooms = new Map<string, string>()
+  async function publishState(socket: Socket<ClientEvents, ServerEvents>, campaignId: string) {
+    const actor = await socketActor(socket)
+    const data = await transaction(pool, db => sessionState(db, actor, campaignId))
+    if (rooms.get(socket.id) !== campaignId || !socket.connected) return data
+    socket.emit('session.state', data)
+    // Retain the existing snapshot/termination events for older consumers.
+    if (data.snapshot) socket.emit('encounter.snapshot', data.snapshot)
+    else if (!data.sessionActive) socket.emit('session.ended')
+    return data
+  }
   async function broadcast(campaignId: string) {
     for (const socket of io.sockets.sockets.values()) {
       if (rooms.get(socket.id) !== campaignId) continue
-      try { const actor = await socketActor(socket); socket.emit('encounter.snapshot', await transaction(pool, db => snapshot(db, actor, campaignId))) }
-      catch (e) {
-        if (e instanceof DomainError && e.code === 'SESSION_ENDED') { socket.emit('session.ended'); rooms.delete(socket.id); await socket.leave(campaignId) }
-        else { socket.emit('access.revoked'); socket.disconnect(true) }
-      }
+      try { await publishState(socket, campaignId) }
+      catch { socket.emit('access.revoked'); socket.disconnect(true) }
     }
     await presence(campaignId)
   }
@@ -279,15 +287,18 @@ export function createApplication({ pool, secret, origin, production = false }: 
     let count = 0; let windowStart = Date.now()
     socket.on('campaign.join', async (input, ack) => {
       if (typeof ack !== 'function') return
+      let subscribed = false
       try {
         if (Date.now() - windowStart > 1000) { count = 0; windowStart = Date.now() }
         if (++count > 30) throw new DomainError('INVALID', 'Too many commands.')
         const actor = await socketActor(socket); const campaignId = uuid.parse(input)
-        const data = await transaction(pool, db => snapshot(db, actor, campaignId))
+        await transaction(pool, db => authorize(db, actor, campaignId))
         const old = rooms.get(socket.id); if (old) await socket.leave(old)
-        rooms.set(socket.id, campaignId); await socket.join(campaignId); socket.emit('encounter.snapshot', data)
-        ack({ ok: true, revision: data.revision, duplicate: false }); if (old) await presence(old); await presence(campaignId)
-      } catch (e) { ack(commandError(e)) }
+        rooms.set(socket.id, campaignId); await socket.join(campaignId); subscribed = true
+        // Subscribe before reading so activation during the join cannot be missed.
+        const data = await publishState(socket, campaignId)
+        ack({ ok: true, revision: data.snapshot?.revision ?? 0, duplicate: false }); if (old) await presence(old); await presence(campaignId)
+      } catch (e) { ack(commandError(e)); if (subscribed) { socket.emit('access.revoked'); socket.disconnect(true) } }
     })
     socket.on('game.command', async (input, ack) => {
       if (typeof ack !== 'function') return
@@ -308,12 +319,20 @@ export function createApplication({ pool, secret, origin, production = false }: 
         await broadcast(campaignId); ack({ ok: true, ...result })
       } catch (e) {
         ack(commandError(e))
-        if (campaignId) { try { socket.emit('encounter.snapshot', await transaction(pool, async db => snapshot(db, await socketActor(socket), campaignId!))) } catch { socket.emit('access.revoked'); socket.disconnect(true) } }
+        if (campaignId) { try { await publishState(socket, campaignId) } catch { socket.emit('access.revoked'); socket.disconnect(true) } }
       }
     })
     socket.on('disconnect', () => { const c = rooms.get(socket.id); rooms.delete(socket.id); if (c) void presence(c).catch(() => {}) })
   })
-  const timer = setInterval(() => { for (const c of new Set(rooms.values())) void broadcast(c).catch(() => {}) }, 15000)
+  const timer = setInterval(() => {
+    for (const socket of io.sockets.sockets.values()) {
+      const campaignId = rooms.get(socket.id)
+      if (campaignId) void (async () => {
+        try { const actor = await socketActor(socket); await transaction(pool, db => authorize(db, actor, campaignId)) }
+        catch { socket.emit('access.revoked'); socket.disconnect(true) }
+      })()
+    }
+  }, 15000)
   timer.unref()
   return { app, http, io, close: async () => { clearInterval(timer); await new Promise<void>(resolve => io.close(() => resolve())) } }
 }

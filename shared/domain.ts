@@ -117,9 +117,17 @@ export function projectEncounter(state: EncounterState, actor: Actor): Encounter
     battleMap: { ...state.battleMap, tokens: Object.fromEntries(Object.entries(state.battleMap.tokens).filter(([id]) => ids.has(id))) } }
 }
 export interface Snapshot { campaignId: string; encounterId: string; name: string; revision: number; sessionActive: boolean; state: EncounterState; actor: Actor }
+// Monotonic across encounters and session activation; inactive players receive no state.
+export interface SessionState {
+  campaignId: string; revision: number; sessionActive: boolean; encounterId: string | null; snapshot: Snapshot | null
+}
+export function acceptsSessionState(previous: SessionState | null, next: SessionState, campaignId: string): boolean {
+  return next.campaignId === campaignId && (!previous || previous.campaignId !== campaignId || next.revision >= previous.revision)
+}
 export interface Member { id: string; displayName: string; connected: boolean }
 export type CommandResult = { ok: true; revision: number; duplicate: boolean } | { ok: false; error: { code: string; message: string } }
 export interface ServerEvents {
+  'session.state': (state: SessionState) => void
   'encounter.snapshot': (snapshot: Snapshot) => void
   'presence.changed': (members: Member[]) => void
   'session.ended': () => void

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { io, type Socket } from 'socket.io-client'
 import App from './App.jsx'
 import BattleMap3D from './BattleMap3D'
-import type { Actor, ClientEvents, CommandResult, GameCommand, Member, ServerEvents, Snapshot } from '../shared/domain'
+import { acceptsSessionState } from '../shared/domain'
+import type { SessionState, Actor, ClientEvents, CommandResult, GameCommand, Member, ServerEvents, Snapshot } from '../shared/domain'
 import './multiplayer.css'
 
 interface Campaign { id: string; name: string }
@@ -22,6 +23,7 @@ export default function Multiplayer() {
   const [campaignId, setCampaignId] = useState('')
   const [details, setDetails] = useState<Details | null>(null)
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
+  const [sessionState, setSessionState] = useState<SessionState | null>(null)
   const [status, setStatus] = useState<'Connected' | 'Reconnecting' | 'Disconnected'>('Disconnected')
   const [error, setError] = useState('')
   const [inviteURL, setInviteURL] = useState('')
@@ -32,6 +34,7 @@ export default function Multiplayer() {
   const [checkpoints, setCheckpoints] = useState<{ id: string; revision: number; created_at: string }[]>([])
   const socketRef = useRef<Socket<ServerEvents, ClientEvents> | null>(null)
   const snapshotRef = useRef<Snapshot | null>(null)
+  const sessionRef = useRef<SessionState | null>(null)
   const pending = useRef(false)
   const api = useCallback(async (path: string, body?: unknown) => {
     const response = await fetch(`/api${path}`, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin',
@@ -41,7 +44,7 @@ export default function Multiplayer() {
       if (response.status === 401 || data.error?.code === 'CSRF') {
         const current = await (await fetch('/api/session')).json()
         setCsrf(current.csrf)
-        if (!current.actor) { setActor(null); setSnapshot(null); snapshotRef.current = null; setDetails(null); setCampaignId(''); socketRef.current?.disconnect() }
+        if (!current.actor) { sessionRef.current = null; setSessionState(null); setActor(null); setSnapshot(null); snapshotRef.current = null; setDetails(null); setCampaignId(''); socketRef.current?.disconnect() }
       }
       throw new Error(data.error?.message ?? 'Request failed.')
     }
@@ -64,7 +67,7 @@ export default function Multiplayer() {
       if (!cancelled) setCampaigns(list)
       if (campaignId) {
         const d = await api(`/campaigns/${campaignId}`)
-        if (!cancelled) { setDetails(d); setMembers(d.members.map((m: Member) => ({ ...m, connected: false }))) }
+        if (!cancelled) { const current = sessionRef.current; setDetails(current?.campaignId === campaignId ? { ...d, activeEncounterId: current.encounterId, sessionActive: current.sessionActive } : d); setMembers(d.members.map((m: Member) => ({ ...m, connected: false }))) }
         if (actor.role === 'dm') { const saves = await api(`/campaigns/${campaignId}/checkpoints`); if (!cancelled) setCheckpoints(saves) }
       }
     }
@@ -72,29 +75,32 @@ export default function Multiplayer() {
     return () => { cancelled = true }
   }, [api, mode, actor, campaignId, reload])
   useEffect(() => {
-    if (mode !== 'online' || !actor || !csrf || !campaignId || !details?.activeEncounterId) return
+    if (mode !== 'online' || !actor || !csrf || !campaignId) return
     const socket: Socket<ServerEvents, ClientEvents> = io({ auth: { csrf }, autoConnect: false, transports: ['websocket'],
       reconnection: true, reconnectionDelay: 500, reconnectionDelayMax: 10000, randomizationFactor: 0.5, reconnectionAttempts: Infinity,
       // Never buffer commands during outages. send() also checks connected status.
     })
     socketRef.current = socket
+    let disposed = false
     socket.on('connect', () => {
+      const connectionId = socket.id
       socket.emit('campaign.join', campaignId, result => {
+        if (disposed || socket.id !== connectionId || !socket.connected) return
         if (result.ok) { setStatus('Connected'); setError('') }
         else { setStatus('Disconnected'); setError(result.error.message) }
       })
     })
-    socket.on('encounter.snapshot', data => {
-      const previous = snapshotRef.current
-      if (!previous || previous.encounterId !== data.encounterId || data.revision >= previous.revision) {
-        snapshotRef.current = data; setSnapshot(data)
-      }
+    socket.on('session.state', data => {
+      if (disposed || !acceptsSessionState(sessionRef.current, data, campaignId)) return
+      sessionRef.current = data; setSessionState(data)
+      setDetails(current => current?.id === campaignId ? { ...current, activeEncounterId: data.encounterId, sessionActive: data.sessionActive } : current)
+      if (data.snapshot) { snapshotRef.current = data.snapshot; setSnapshot(data.snapshot) }
+      // Keep an already-mounted camera while waiting, without displaying or enabling the battlefield.
     })
     socket.on('presence.changed', setMembers)
     socket.on('disconnect', reason => setStatus(reason === 'io server disconnect' ? 'Disconnected' : 'Reconnecting'))
     socket.on('connect_error', () => { setStatus('Reconnecting'); setError('Connection unavailable or session expired. Sign in again if reconnection fails.') })
-    const clear = (message: string) => { snapshotRef.current = null; setSnapshot(null); setStatus('Disconnected'); setError(message); socket.disconnect() }
-    socket.on('session.ended', () => clear('The DM ended this session. Use Rejoin when the DM starts it again.'))
+    const clear = (message: string) => { sessionRef.current = null; setSessionState(null); snapshotRef.current = null; setSnapshot(null); setStatus('Disconnected'); setError(message); socket.disconnect() }
     socket.on('access.revoked', () => {
       clear('Your access ended. Sign in or request a new invitation.')
       setActor(null); setCampaignId(''); setDetails(null)
@@ -106,17 +112,18 @@ export default function Multiplayer() {
     window.addEventListener('online', online)
     if (navigator.onLine) socket.connect()
     return () => {
+      disposed = true
       window.removeEventListener('offline', offline); window.removeEventListener('online', online)
       socket.disconnect(); socketRef.current = null; setStatus('Disconnected')
     }
-  }, [mode, actor, csrf, campaignId, details?.activeEncounterId, details?.sessionActive])
+  }, [mode, actor, csrf, campaignId])
   async function run(fn: () => Promise<unknown>) {
     setError(''); setBusy(true)
     try { await fn(); setReload(value => value + 1) } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
   const send = async (command: GameCommand): Promise<void> => {
     const socket = socketRef.current; const current = snapshotRef.current
-    if (!navigator.onLine || !socket?.connected || status !== 'Connected' || !current || pending.current) throw new Error('Wait for the current update or reconnect before changing the encounter.')
+    if (!navigator.onLine || !socket?.connected || status !== 'Connected' || !current || (actor?.role === 'player' && !sessionRef.current?.sessionActive) || pending.current) throw new Error('Wait for the current update or reconnect before changing the encounter.')
     pending.current = true
     try {
       await new Promise<void>((resolve, reject) => {
@@ -128,7 +135,7 @@ export default function Multiplayer() {
       })
     } finally { pending.current = false }
   }
-  const chooseCampaign = (id: string) => { setCampaignId(id); setDetails(null); setSnapshot(null); snapshotRef.current = null; setInviteURL(''); setSelected(null) }
+  const chooseCampaign = (id: string) => { sessionRef.current = null; setSessionState(null); setCampaignId(id); setDetails(null); setSnapshot(null); snapshotRef.current = null; setInviteURL(''); setSelected(null) }
   const online = status === 'Connected'
   const selectedCombatant = snapshot?.state.combatants.find(c => c.id === selected) ?? snapshot?.state.combatants[0]
   const player = actor?.role === 'player'
@@ -169,12 +176,12 @@ export default function Multiplayer() {
         </div>)}</details>}
         </section>
         {snapshot && !player && <App multiplayer={{ snapshot, connected: online, send, exportFile: () => api(`/campaigns/${campaignId}/export`) }} />}
-        {snapshot && player && <><BattleMap3D combatants={snapshot.state.combatants} map={snapshot.state.battleMap} round={snapshot.state.round} selectedId={selectedCombatant?.id ?? null} activeId={snapshot.state.activeId} onSelectToken={setSelected}
-          onMoveToken={(combatantId, destination) => { if (online && snapshot.state.combatants.find(c => c.id === combatantId)?.ownerId === actor.id) void send({ type: 'token.move', combatantId, destination }).catch(e => setError(e.message)) }}
-          canMove={online && selectedCombatant?.ownerId === actor.id} showSharedControls={false} playerId={actor.id} onToggleGrid={() => {}} onToggleLabels={() => {}} onReturnToTracker={() => {}} />
+        {snapshot && player && <div hidden={!sessionState?.sessionActive}><BattleMap3D combatants={snapshot.state.combatants} map={snapshot.state.battleMap} round={snapshot.state.round} selectedId={selectedCombatant?.id ?? null} activeId={snapshot.state.activeId} onSelectToken={setSelected}
+          onMoveToken={(combatantId, destination) => { if (online && sessionState?.sessionActive && snapshot.state.combatants.find(c => c.id === combatantId)?.ownerId === actor.id) void send({ type: 'token.move', combatantId, destination }).catch(e => setError(e.message)) }}
+          canMove={online && Boolean(sessionState?.sessionActive) && selectedCombatant?.ownerId === actor.id} showSharedControls={false} playerId={actor.id} onToggleGrid={() => {}} onToggleLabels={() => {}} onReturnToTracker={() => {}} />
           {selectedCombatant && <article className="online-card"><h2>{selectedCombatant.name}</h2>{selectedCombatant.ownerId === actor.id ? <><p>{selectedCombatant.hp}/{selectedCombatant.maxHp} HP · AC {selectedCombatant.ac} · {selectedCombatant.speed}</p>{selectedCombatant.artwork && <img className="player-artwork" src={selectedCombatant.artwork} alt={`${selectedCombatant.name} artwork`} />}{selectedCombatant.actions.map(a => <p key={a.name}><strong>{a.name}</strong> {a.text}</p>)}</> : <p>Visible on the battlefield. Statistics are private.</p>}</article>}
-        </>}
-        {!snapshot && details && <p className="online-card">{player ? 'Waiting for the DM to open and start an encounter.' : 'Create or open an encounter to begin.'}</p>}
+        </div>}
+        {(!snapshot || (player && !sessionState?.sessionActive)) && details && <p className="online-card">{player ? 'Waiting for the DM to open and start an encounter.' : 'Create or open an encounter to begin.'}</p>}
       </>}
     </>}
   </>
