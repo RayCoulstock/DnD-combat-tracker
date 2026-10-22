@@ -6,7 +6,7 @@ import { io, type Socket } from 'socket.io-client'
 import type { AddressInfo } from 'node:net'
 import { createApplication } from '../app.ts'
 import { migrate } from '../migrate.ts'
-import type { ClientEvents, CommandEnvelope, CommandResult, GameCommand, ServerEvents, Snapshot } from '../../shared/domain.ts'
+import type { ClientEvents, CommandEnvelope, CommandResult, GameCommand, ServerEvents, Snapshot, SessionState } from '../../shared/domain.ts'
 
 const origin = 'http://localhost:5173'
 const secret = 'integration-test-secret-is-long-and-random-' + randomUUID()
@@ -34,15 +34,16 @@ class Browser {
     return data
   }
   async init() { await this.request('/session'); return this }
-  async connect(campaignId: string) {
+  async connect(campaignId: string, waiting = false) {
     const socket: Socket<ServerEvents, ClientEvents> = io(this.base, { transports: ['websocket'], extraHeaders: { Origin: origin, Cookie: this.cookie }, auth: { csrf: this.csrf }, reconnectionDelay: 100, reconnectionDelayMax: 300, autoConnect: false })
-    const client = { socket, snapshot: null as Snapshot | null, snapshots: [] as Snapshot[], revoked: false, ended: false }
+    const client = { socket, session: null as SessionState | null, snapshot: null as Snapshot | null, snapshots: [] as Snapshot[], revoked: false, ended: false }
+    socket.on('session.state', s => { client.session = s })
     socket.on('encounter.snapshot', s => { client.snapshot = s; client.snapshots.push(s) })
     socket.on('access.revoked', () => { client.revoked = true })
     socket.on('session.ended', () => { client.ended = true })
     socket.on('connect', () => socket.emit('campaign.join', campaignId, () => {}))
     socket.connect()
-    await waitFor(() => Boolean(client.snapshot), 'No authorised snapshot received')
+    await waitFor(() => waiting ? Boolean(client.session) : Boolean(client.snapshot), 'No authorised session state received')
     return client
   }
 }
@@ -76,8 +77,6 @@ test('PostgreSQL multiplayer lifecycle with DM and two players', { timeout: 9000
     })
     const campaign = await dm.request('/campaigns', { name: 'Test campaign' }, 201)
     const path = `/campaigns/${campaign.id}`
-    const encounter = await dm.request(`${path}/encounters`, { name: 'Ambush', file: fixture }, 201)
-    await dm.request(`${path}/session`, { active: true })
     await t.test('one-time, expired and revoked invitations; stable player identities', async () => {
       const invite1 = await dm.request(`${path}/invitations`, {}, 201)
       const token = invite1.url.split('#invite=')[1]
@@ -97,8 +96,38 @@ test('PostgreSQL multiplayer lifecycle with DM and two players', { timeout: 9000
       const sessions = (await pool.query('SELECT sid_hash FROM auth_sessions')).rows
       assert.ok(sessions.every(r => /^[a-f0-9]{64}$/.test(r.sid_hash)))
     })
-    const dc = await dm.connect(campaign.id), c1 = await p1.connect(campaign.id), c2 = await p2.connect(campaign.id)
+    const dc = await dm.connect(campaign.id, true), c1 = await p1.connect(campaign.id, true), c2 = await p2.connect(campaign.id, true)
     sockets.push(dc.socket, c1.socket, c2.socket)
+    await t.test('players subscribe before any encounter exists without receiving game state', async () => {
+      for (const client of [c1, c2]) {
+        assert.ok(client.socket.connected)
+        assert.equal(client.session!.encounterId, null)
+        assert.equal(client.session!.sessionActive, false)
+        assert.equal(client.session!.snapshot, null)
+      }
+      await p1.request(`${path}/snapshot`, undefined, 404)
+    })
+    const encounter = await dm.request(`${path}/encounters`, { name: 'Ambush', file: fixture }, 201)
+    await t.test('opening an inactive encounter updates waiting members without exposing it', async () => {
+      await waitFor(() => c1.session!.encounterId === encounter.id && c2.session!.encounterId === encounter.id, 'Waiting-room encounter update was missed')
+      for (const client of [c1, c2]) {
+        assert.equal(client.session!.snapshot, null)
+        assert.ok(!JSON.stringify(client.session).includes('Secret dragon'))
+      }
+      await p1.request(`${path}/snapshot`, undefined, 409)
+      const denied = await new Promise<CommandResult>(resolve => c1.socket.emit('game.command', { commandId: randomUUID(), encounterId: encounter.id, revision: 0, command: { type: 'token.move', combatantId: 1, destination: { x: 1, z: 1 } } }, resolve))
+      assert.ok(!denied.ok && denied.error.code === 'SESSION_ENDED')
+      assert.ok(c1.socket.connected)
+    })
+    await t.test('first activation reaches waiting players and a simultaneous join without reconnecting', async () => {
+      const connectionIds = [c1.socket.id, c2.socket.id]
+      const [during] = await Promise.all([p1.connect(campaign.id, true), dm.request(`${path}/session`, { active: true })])
+      sockets.push(during.socket)
+      await waitFor(() => [dc, c1, c2, during].every(c => c.session?.sessionActive && c.snapshot), 'Session start did not deliver an authorised battlefield')
+      assert.deepEqual([c1.socket.id, c2.socket.id], connectionIds)
+      assert.equal(during.snapshot!.encounterId, encounter.id)
+      during.socket.disconnect(); sockets.splice(sockets.indexOf(during.socket), 1)
+    })
     const send = (client: typeof dc, command: GameCommand, override: Partial<CommandEnvelope> = {}) => new Promise<CommandResult>((resolve, reject) => {
       client.socket.timeout(8000).emit('game.command', { commandId: randomUUID(), encounterId: encounter.id, revision: client.snapshot!.revision, command, ...override }, (error, result) => error ? reject(error) : resolve(result))
     })
@@ -197,12 +226,14 @@ test('PostgreSQL multiplayer lifecycle with DM and two players', { timeout: 9000
     })
     await t.test('server restart recovers PostgreSQL state and authenticated sessions', async () => {
       const revision = dc.snapshot!.revision
+      const campaignRevision = dc.session!.revision
       for (const s of sockets) s.disconnect()
       await application.close()
       application = createApplication({ pool, secret, origin })
       await new Promise<void>(resolve => application.http.listen(port, '127.0.0.1', resolve))
       const restored = await p1.request(`${path}/snapshot`)
       assert.equal(restored.revision, revision)
+      assert.equal(Number((await pool.query('SELECT state_revision FROM campaigns WHERE id=$1', [campaign.id])).rows[0].state_revision), campaignRevision)
       assert.deepEqual(restored.state.battleMap.tokens['1'], { x: 13, z: 14 })
       dc.snapshot = null; c1.snapshot = null; c2.snapshot = null
       for (const s of sockets) s.connect()
@@ -226,9 +257,28 @@ test('PostgreSQL multiplayer lifecycle with DM and two players', { timeout: 9000
     })
     await t.test('ending a session removes player access, while DM can recover it', async () => {
       await dm.request(`${path}/session`, { active: false })
-      await waitFor(() => c1.ended, 'Session termination not delivered')
+      await waitFor(() => c1.session?.sessionActive === false, 'Session termination not delivered')
+      assert.equal(c1.session!.snapshot, null)
+      assert.ok(c1.socket.connected, 'Waiting membership subscription should survive termination')
       await p1.request(`${path}/snapshot`, undefined, 409)
       await dm.request(`${path}/snapshot`)
+    })
+    await t.test('reconnect while waiting and rapid encounter/session transitions converge on latest state', async () => {
+      c1.socket.disconnect(); c1.socket.connect()
+      await waitFor(() => c1.socket.connected, 'Waiting player did not reconnect')
+      const replacement = await dm.request(`${path}/encounters`, { name: 'Replacement', file: fixture }, 201)
+      await Promise.all([
+        dm.request(`${path}/session`, { active: true }),
+        dm.request(`${path}/session`, { active: false }),
+        dm.request(`${path}/open`, { encounterId: encounter.id }),
+      ])
+      await dm.request(`${path}/open`, { encounterId: replacement.id })
+      await dm.request(`${path}/session`, { active: true })
+      const authoritative = (await pool.query('SELECT state_revision FROM campaigns WHERE id=$1', [campaign.id])).rows[0].state_revision
+      await waitFor(() => c1.session?.revision === authoritative && c1.session.sessionActive, 'Rapid transitions left the player stale')
+      assert.equal(c1.session!.snapshot!.encounterId, replacement.id)
+      assert.equal(c1.session!.snapshot!.revision, 0)
+      assert.equal(c1.session!.snapshot!.state.combatants.length, 2)
     })
     await t.test('production serves assets with secure cookies and no wildcard CORS', async () => {
       const production = createApplication({ pool, secret, origin: 'https://tabletop.example.test', production: true })

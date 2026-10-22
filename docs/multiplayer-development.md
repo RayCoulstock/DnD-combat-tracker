@@ -29,7 +29,7 @@ For the original standalone workflow, `npm run dev` alone still works: select **
 4. Open each invitation in a separate browser profile/private context and enter a display name. Use **Token ownership, visibility and combatant settings** to assign characters, hide/reveal enemies, edit initiative/max HP/name/private notes, and resize the map.
 5. Players can select visible tokens and move only their assigned, revealed tokens. Their own statistics and actions are available below the map. Other visible combatants show identity/initiative/conditions without private statistics. Only the DM changes HP, conditions, abilities or initiative.
 6. Use **Save session** for a checkpoint. Every accepted command is already persisted. Restore a checkpoint through **Invitations and saved sessions**. Export produces compatible JSON including embedded artwork; import strips ownership to avoid reviving another campaign's permissions.
-7. Revoke invitations or player access in the room controls. Revoked players are disconnected and their sessions deleted. Ending a session removes player access while retaining state. After the DM restarts it, players can use **Refresh / rejoin**.
+7. Revoke invitations or player access in the room controls. Revoked players are disconnected and their sessions deleted. Ending a session removes player access while retaining state. Players remain subscribed in the waiting room and automatically receive the battlefield when the DM starts it again.
 
 A player retains a stable identity in the same browser for up to seven days. After expiry, cookie deletion or revocation, a new invitation creates a new identity; the DM must reassign its tokens. Two players with the same display name still have distinct identities. Invitations use URL fragments to avoid server/referrer logs. Treat the displayed invitation as a temporary credential.
 
@@ -97,3 +97,5 @@ This is a single-process prototype. Horizontal scaling requires a shared Socket.
 For builds behind a TLS-inspecting corporate proxy, the Dockerfile accepts an optional BuildKit `build_ca` secret. Pass your trusted public CA certificate using `--secret id=build_ca,src=/path/to/ca.pem` and the Docker automatic proxy build arguments as appropriate. The certificate is mounted only for dependency installation and is not embedded in the image. Do not disable TLS or package-integrity verification.
 
 On this cloud machine, the optional full application image build encountered Docker builder DNS `EAI_AGAIN` during npm dependency installation even with proxy/CA configuration. Native installation/build and the PostgreSQL Compose service were verified. Recheck the image on your hosting builder; native Node deployment does not require that image.
+
+The [session activation fix](session-start-synchronisation.md) documents the waiting-room subscription, authoritative lifecycle event, campaign ordering migration and regression coverage.

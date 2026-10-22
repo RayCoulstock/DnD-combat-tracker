@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { applyCommand, commandSchema, importEncounter, projectEncounter } from './domain.ts'
+import { acceptsSessionState, type SessionState, applyCommand, commandSchema, importEncounter, projectEncounter } from './domain.ts'
 const member = '11111111-1111-4111-8111-111111111111'
 export const fixture = () => importEncounter({ version: 1, round: 3, activeId: 2, usedAbilities: { '2:Action:Secret': true }, combatants: [
   { id: 1, name: 'Hero', short: 'H', side: 'hero', hp: 10, maxHp: 20, ac: 15, initiative: 18, conditions: [], saves: [], actions: [], privateNotes: 'DM secret' },
@@ -33,4 +33,14 @@ test('ownership, DM-only commands and invalid destinations are enforced', () => 
 test('camera/identity claims are not part of any command', () => {
   assert.equal(commandSchema.safeParse({ type: 'camera.move', x: 1 }).success, false)
   assert.equal(commandSchema.safeParse({ type: 'initiative.next', role: 'dm' }).success, false)
+})
+
+test('campaign revisions reject delayed activation, termination and old encounter updates', () => {
+  const current: SessionState = { campaignId: 'campaign', revision: 8, sessionActive: true, encounterId: 'new', snapshot: null }
+  assert.equal(acceptsSessionState(current, { ...current, revision: 7, encounterId: 'old' }, 'campaign'), false)
+  assert.equal(acceptsSessionState(current, { ...current, revision: 6, sessionActive: false }, 'campaign'), false)
+  assert.equal(acceptsSessionState(current, { ...current, revision: 9, sessionActive: false }, 'campaign'), true)
+  assert.equal(acceptsSessionState(current, { ...current, revision: 10, campaignId: 'other' }, 'campaign'), false)
+  assert.equal(acceptsSessionState(current, current, 'campaign'), true) // reconnect, unchanged state
+  assert.equal(acceptsSessionState(null, current, 'campaign'), true)
 })
