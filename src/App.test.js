@@ -6,10 +6,10 @@ const appSource = await readFile(new URL('./App.jsx', import.meta.url), 'utf8')
 
 test('encounter file and artwork handlers are declared exactly once', () => {
   const handlerNames = [
-    'handleExportEncounter',
-    'handleImportEncounter',
-    'handleArtworkChange',
-    'handleArtworkRemove',
+    'exportEncounter',
+    'importEncounter',
+    'updateArtwork',
+    'removeArtwork',
   ]
 
   handlerNames.forEach((handlerName) => {

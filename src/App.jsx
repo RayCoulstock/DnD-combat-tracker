@@ -1,7 +1,9 @@
 import { useMemo, useRef, useState } from 'react'
 import { Check, ChevronRight, Copy, Download, FileJson, HeartPulse, ImagePlus, List, Map, Minus, Plus, RotateCcw, Shield, Skull, Sparkles, Swords, Trash2, Upload, UserPlus, X } from 'lucide-react'
-import BattleMap3D from './BattleMap3D'
-import { applyCommand, commandSchema, importEncounter as readEncounter } from '../shared/domain'
+import DungeonBuilder from './DungeonBuilder'
+import { emptyHistory } from '../shared/dungeon'
+import { generateDungeon } from '../shared/generator'
+import { applyCommand, applyMapEdit, isMapEdit, commandSchema, importEncounter as readEncounter } from '../shared/domain'
 
 const initialCombatants = [
   { id: 1, initiative: 18, name: 'Fenra Ashwood', short: 'FA', role: 'Half-elf ranger · Level 5', side: 'hero', hp: 37, maxHp: 45, ac: 15, speed: '30 ft', conditions: ['Poisoned'], saves: [['STR', 13], ['DEX', 18], ['CON', 14], ['INT', 10], ['WIS', 15], ['CHA', 11]], actions: [{ name: 'Longbow', text: 'Ranged Weapon Attack: +7 to hit, range 150/600 ft, one target. 1d8 + 4 piercing damage.' }, { name: "Hunter’s Mark", text: 'Bonus action · Mark a target for an extra 1d6 damage on each hit.' }] },
@@ -75,9 +77,9 @@ function HealthBar({ value, max }) {
 const uniqueId = () => crypto.randomUUID()
 const maxArtworkSize = 3 * 1024 * 1024
 
-/** @param {{ multiplayer?: null | { snapshot: import('../shared/domain').Snapshot, connected: boolean, send: (command: import('../shared/domain').GameCommand) => Promise<void>, exportFile: () => Promise<import('../shared/domain').EncounterState> } }} props */
+/** @param {{ multiplayer?: null | { snapshot: import('../shared/domain').Snapshot, connected: boolean, send: (command: import('../shared/domain').GameCommand) => Promise<void>, library?: import('./DungeonBuilder').MapLibrary, exportFile: () => Promise<import('../shared/domain').EncounterState> } }} props */
 function App({ multiplayer = null }) {
-  const [localState, setLocalState] = useState(() => readEncounter({ version: 1, round: 3, activeId: 1, combatants: initialCombatants }))
+  const [{ encounter: localState, history: localHistory }, setLocal] = useState(() => ({ encounter: readEncounter({ version: 1, round: 3, activeId: 1, combatants: initialCombatants }), history: emptyHistory() }))
   const state = multiplayer?.snapshot.state ?? localState
   const { combatants, activeId, round, usedAbilities, battleMap } = state
   const [selectedId, setSelectedId] = useState(1)
@@ -96,14 +98,17 @@ function App({ multiplayer = null }) {
   const heroesStanding = useMemo(() => combatants.filter((c) => c.side === 'hero' && c.hp > 0).length, [combatants])
 
   const canChange = !multiplayer || multiplayer.connected
-  const perform = (input) => {
-    if (!canChange) return
-    try {
-      const command = commandSchema.parse(input)
-      if (multiplayer) void multiplayer.send(command).catch(error => setFileMessage({ tone: 'error', text: error.message }))
-      else setLocalState(current => applyCommand(current, { role: 'dm', id: 'local' }, command))
-    } catch (error) { setFileMessage({ tone: 'error', text: error.message }) }
+  const send = async (input) => {
+    if (!canChange) throw new Error('Reconnect before changing the encounter.')
+    const parsedCommand = commandSchema.parse(input)
+    const command = !multiplayer && parsedCommand.type === 'map.generate' ? { type: 'map.load', document: generateDungeon(parsedCommand.options) } : parsedCommand
+    if (multiplayer) await multiplayer.send(command)
+    else if (isMapEdit(command)) {
+      const result = applyMapEdit(localState, { role: 'dm', id: 'local' }, command, localHistory)
+      setLocal({ encounter: { ...result.state, mapRevision: (localState.mapRevision ?? 0) + 1 }, history: result.history })
+    } else setLocal({ encounter: applyCommand(localState, { role: 'dm', id: 'local' }, command), history: command.type === 'encounter.restore' || command.type === 'encounter.clear' ? emptyHistory() : localHistory })
   }
+  const perform = input => { void send(input).catch(error => setFileMessage({ tone: 'error', text: error.message })) }
   const adjustHp = (direction) => {
     const parsed = Number.parseInt(amount, 10)
     if (!selected || !parsed || parsed < 1) return
@@ -172,7 +177,7 @@ function App({ multiplayer = null }) {
     <main className={`app-shell ${!canChange ? 'game-disconnected' : ''}`}>
       <header>
         <div className="brand"><span className="brand-mark"><Swords size={20} /></span><span>ENCOUNTER <b>LEDGER</b></span></div>
-        <div className="encounter-title"><div><span className="eyebrow">CURRENT ENCOUNTER</span><h1>{multiplayer?.snapshot.name ?? 'Goblin Ambush'}</h1></div><div className="round"><span>ROUND</span><strong>{round}</strong></div><div className="view-switcher" aria-label="Choose encounter view"><button className={view === 'tracker' ? 'active' : ''} onClick={() => setView('tracker')}><List size={15} /> Tracker</button><button className={view === 'map' ? 'active' : ''} onClick={() => setView('map')}><Map size={15} /> 3D Map</button></div></div>
+        <div className="encounter-title"><div><span className="eyebrow">CURRENT ENCOUNTER</span><h1>{multiplayer?.snapshot.name ?? 'Goblin Ambush'}</h1></div><div className="round"><span>ROUND</span><strong>{round}</strong></div><div className="view-switcher" aria-label="Choose encounter view"><button className={view === 'tracker' ? 'active' : ''} onClick={() => setView('tracker')}><List size={15} /> Tracker</button><button className={view === 'map' ? 'active' : ''} onClick={() => setView('map')}><Map size={15} /> 3D Map</button><button className={view === 'editor' ? 'active' : ''} onClick={() => setView('editor')}>Map editor</button></div></div>
         <div className="header-actions"><button className="clear-button" onClick={clearEncounter} disabled={!canChange || !combatants.length}><Trash2 size={16} /> Clear</button><div className="file-actions"><button className="ghost icon-button" disabled={!canChange} onClick={() => encounterInputRef.current?.click()} title="Import encounter"><Upload size={16} /><span>Import</span></button><button className="ghost icon-button" onClick={exportEncounter} title="Export encounter"><Download size={16} /><span>Export</span></button></div><button className="ghost" disabled={!canChange} onClick={() => setShowAddCombatant(true)}><Plus size={17} /> Add combatant</button><button className="primary" onClick={nextTurn} disabled={!canChange || !combatants.length}>Next turn <ChevronRight size={18} /></button></div>
       </header>
 
@@ -180,7 +185,7 @@ function App({ multiplayer = null }) {
       <input ref={artworkInputRef} className="visually-hidden" type="file" accept="image/*" onChange={updateArtwork} />
       {fileMessage && <div className={`file-message ${fileMessage.tone}`} role="status"><FileJson size={16} /><span>{fileMessage.text}</span><button onClick={() => setFileMessage(null)} aria-label="Dismiss message"><X size={14} /></button></div>}
 
-      {view === 'map' ? <BattleMap3D canMove={canChange} combatants={combatants} map={battleMap} round={round} selectedId={selected?.id ?? null} activeId={activeId} onSelectToken={setSelectedId} onMoveToken={moveToken} onToggleGrid={() => mapSettings({ showGrid: !battleMap.showGrid })} onToggleLabels={() => mapSettings({ showLabels: !battleMap.showLabels })} onReturnToTracker={() => setView('tracker')} /> : <div className="workspace">
+      {view !== 'tracker' ? <DungeonBuilder state={state} editing={view === 'editor'} connected={canChange} send={send} library={multiplayer?.library} battlefield={{ combatants, round, selectedId: selected?.id ?? null, activeId, onSelectToken: setSelectedId, onMoveToken: moveToken, onToggleGrid: () => mapSettings({ showGrid: !battleMap.showGrid }), onToggleLabels: () => mapSettings({ showLabels: !battleMap.showLabels }), onReturnToTracker: () => setView('tracker'), canMove: canChange }} /> : <div className="workspace">
         <aside className="initiative-panel">
           <div className="panel-heading"><div><span className="eyebrow">COMBAT QUEUE</span><h2>Initiative order</h2></div><span className="count">{combatants.length}</span></div>
           <div className="initiative-list">

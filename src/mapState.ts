@@ -47,7 +47,7 @@ export function reconcileBattleMap(map: BattleMapState, ids: Array<string | numb
   const width = Number.isInteger(map.width) && map.width > 0 ? map.width : DEFAULT_MAP_SIZE
   const height = Number.isInteger(map.height) && map.height > 0 ? map.height : DEFAULT_MAP_SIZE
   const tokens: Record<string, GridPosition> = {}
-  const used = new Set<string>()
+  const used = new Set(ids.map(id => map.tokens?.[String(id)]).filter(p => isGridPosition(p, width, height)).map(p => `${p.x}:${p.z}`))
 
   ids.forEach((id) => {
     const key = String(id)

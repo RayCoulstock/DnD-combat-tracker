@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { io, type Socket } from 'socket.io-client'
 import App from './App.jsx'
 import BattleMap3D from './BattleMap3D'
-import { acceptsSessionState } from '../shared/domain'
+import { acceptsSessionState, mergeMapSnapshot } from '../shared/domain'
 import type { SessionState, Actor, ClientEvents, CommandResult, GameCommand, Member, ServerEvents, Snapshot } from '../shared/domain'
 import './multiplayer.css'
 
@@ -92,6 +92,11 @@ export default function Multiplayer() {
     })
     socket.on('session.state', data => {
       if (disposed || !acceptsSessionState(sessionRef.current, data, campaignId)) return
+      if (data.snapshot) {
+        const merged = mergeMapSnapshot(snapshotRef.current, data.snapshot)
+        if (!merged) { socket.emit('campaign.join', campaignId, () => {}); return }
+        data = { ...data, snapshot: merged }
+      }
       sessionRef.current = data; setSessionState(data)
       setDetails(current => current?.id === campaignId ? { ...current, activeEncounterId: data.encounterId, sessionActive: data.sessionActive } : current)
       if (data.snapshot) { snapshotRef.current = data.snapshot; setSnapshot(data.snapshot) }
@@ -170,13 +175,13 @@ export default function Multiplayer() {
           {checkpoints.map(c => <div className="online-row" key={c.id}><span>Revision {c.revision} · {new Date(c.created_at).toLocaleString()}</span><button disabled={busy} onClick={() => { if (confirm('Restore this saved session? Current state will be replaced.')) void run(() => api(`/campaigns/${campaignId}/checkpoints/${c.id}/restore`, {})) }}>Restore save</button></div>)}</details>
         </>}
         {details && <div className="online-row" aria-label="Campaign players">{members.map(m => <span key={m.id}>{m.displayName} · {m.connected ? 'Connected' : 'Offline'} {!player && <button onClick={() => void run(() => api(`/campaigns/${campaignId}/members/${m.id}/revoke`, {}))}>Revoke access</button>}</span>)}</div>}
-        {snapshot && !player && <form className="online-row" onSubmit={e => { e.preventDefault(); const f = new FormData(e.currentTarget); void run(() => send({ type: 'map.settings', showGrid: snapshot.state.battleMap.showGrid, showLabels: snapshot.state.battleMap.showLabels, width: Number(f.get('width')), height: Number(f.get('height')) })) }}><label>Map width<input name="width" type="number" min={1} max={100} defaultValue={snapshot.state.battleMap.width} required /></label><label>Map height<input name="height" type="number" min={1} max={100} defaultValue={snapshot.state.battleMap.height} required /></label><button disabled={!online}>Resize map</button></form>}
+        {snapshot && !player && !snapshot.state.dungeonMap && <form className="online-row" onSubmit={e => { e.preventDefault(); const f = new FormData(e.currentTarget); void run(() => send({ type: 'map.settings', showGrid: snapshot.state.battleMap.showGrid, showLabels: snapshot.state.battleMap.showLabels, width: Number(f.get('width')), height: Number(f.get('height')) })) }}><label>Map width<input name="width" type="number" min={1} max={100} defaultValue={snapshot.state.battleMap.width} required /></label><label>Map height<input name="height" type="number" min={1} max={100} defaultValue={snapshot.state.battleMap.height} required /></label><button disabled={!online}>Resize map</button></form>}
         {snapshot && !player && <details><summary>Token ownership, visibility and combatant settings</summary>{snapshot.state.combatants.map(c => <div className="online-row" key={c.id}><strong>{c.name}</strong><label>Owner<select disabled={!online} value={c.ownerId ?? ''} onChange={e => void run(() => send({ type: 'token.assign', combatantId: c.id, playerId: e.target.value || null }))}><option value="">DM only</option>{members.map(m => <option key={m.id} value={m.id}>{m.displayName}</option>)}</select></label><button disabled={!online} onClick={() => void run(() => send({ type: 'combatant.visibility', combatantId: c.id, visible: !c.visible }))}>{c.visible ? 'Hide' : 'Reveal'}</button>
           <form className="online-row" onSubmit={e => { e.preventDefault(); const f = new FormData(e.currentTarget); void run(() => send({ type: 'combatant.edit', combatantId: c.id, combatant: { ...c, name: String(f.get('name')), initiative: Number(f.get('initiative')), maxHp: Number(f.get('maxHp')), hp: Math.min(c.hp, Number(f.get('maxHp'))), privateNotes: String(f.get('privateNotes')) } })) }}><label>Name<input name="name" defaultValue={c.name} required maxLength={200} /></label><label>Initiative<input name="initiative" type="number" defaultValue={c.initiative} min={-1000} max={1000} required /></label><label>Max HP<input name="maxHp" type="number" min={1} max={100000} defaultValue={c.maxHp} required /></label><label>DM notes<input name="privateNotes" defaultValue={c.privateNotes} maxLength={10000} /></label><button disabled={!online}>Update combatant</button></form>
         </div>)}</details>}
         </section>
-        {snapshot && !player && <App multiplayer={{ snapshot, connected: online, send, exportFile: () => api(`/campaigns/${campaignId}/export`) }} />}
-        {snapshot && player && <div hidden={!sessionState?.sessionActive}><BattleMap3D combatants={snapshot.state.combatants} map={snapshot.state.battleMap} round={snapshot.state.round} selectedId={selectedCombatant?.id ?? null} activeId={snapshot.state.activeId} onSelectToken={setSelected}
+        {snapshot && !player && <App multiplayer={{ snapshot, connected: online, send, library: { api, campaignId, encounterId: snapshot.encounterId, revision: snapshot.revision }, exportFile: () => api(`/campaigns/${campaignId}/export`) }} />}
+        {snapshot && player && <div hidden={!sessionState?.sessionActive}><BattleMap3D dungeonMap={snapshot.state.dungeonMap} combatants={snapshot.state.combatants} map={snapshot.state.battleMap} round={snapshot.state.round} selectedId={selectedCombatant?.id ?? null} activeId={snapshot.state.activeId} onSelectToken={setSelected}
           onMoveToken={(combatantId, destination) => { if (online && sessionState?.sessionActive && snapshot.state.combatants.find(c => c.id === combatantId)?.ownerId === actor.id) void send({ type: 'token.move', combatantId, destination }).catch(e => setError(e.message)) }}
           canMove={online && Boolean(sessionState?.sessionActive) && selectedCombatant?.ownerId === actor.id} showSharedControls={false} playerId={actor.id} onToggleGrid={() => {}} onToggleLabels={() => {}} onReturnToTracker={() => {}} />
           {selectedCombatant && <article className="online-card"><h2>{selectedCombatant.name}</h2>{selectedCombatant.ownerId === actor.id ? <><p>{selectedCombatant.hp}/{selectedCombatant.maxHp} HP · AC {selectedCombatant.ac} · {selectedCombatant.speed}</p>{selectedCombatant.artwork && <img className="player-artwork" src={selectedCombatant.artwork} alt={`${selectedCombatant.name} artwork`} />}{selectedCombatant.actions.map(a => <p key={a.name}><strong>{a.name}</strong> {a.text}</p>)}</> : <p>Visible on the battlefield. Statistics are private.</p>}</article>}

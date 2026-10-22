@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Page, type Locator } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 async function api(page: Page, path: string, body?: unknown) {
   return page.evaluate(async ({ path, body }) => {
@@ -26,6 +26,19 @@ async function imageDifference(page: Page, before: Buffer, after: Buffer): Promi
     for (let i = 0; i < a.data.length; i++) difference += Math.abs(a.data[i] - b.data[i])
     return difference / a.data.length
   }, { before: before.toString('base64'), after: after.toString('base64') })
+}
+// Software WebGL can render slowly with several canvases; wait for actual damping
+// convergence rather than assuming a fixed number of milliseconds means a settled view.
+async function settledView(page: Page, canvas: Locator) {
+  let previous = await canvas.screenshot(), stable = 0
+  await expect.poll(async () => {
+    const next = await canvas.screenshot()
+    const difference = await imageDifference(page, previous, next)
+    stable = difference < .05 ? stable + 1 : 0
+    previous = next
+    return stable
+  }, { intervals: [500], timeout: 20000 }).toBeGreaterThanOrEqual(2)
+  return previous
 }
 test('local ledger, DM and two browsers, camera isolation and offline camera', async ({ browser, page }) => {
   const errors: string[] = []
@@ -154,8 +167,7 @@ test('waiting players see first activation and restart without refresh or camera
     await early.mouse.move(box.x + box.width * .5, box.y + box.height * .4)
     await early.mouse.down(); await early.mouse.move(box.x + box.width * .7, box.y + box.height * .5, { steps: 20 }); await early.mouse.up()
     // Wait for local OrbitControls damping to finish before comparing camera views.
-    await early.waitForTimeout(2000)
-    const cameraView = await canvas.screenshot()
+    const cameraView = await settledView(early, canvas)
     expect(await imageDifference(early, defaultView, cameraView)).toBeGreaterThan(3)
     await page.getByRole('button', { name: 'End session', exact: true }).click()
     await expect(canvas).toBeHidden({ timeout: 5000 })
@@ -165,7 +177,8 @@ test('waiting players see first activation and restart without refresh or camera
     await page.getByRole('button', { name: 'Start multiplayer session', exact: true }).click()
     await expect(canvas).toBeVisible({ timeout: 5000 })
     expect(await element!.evaluate(el => el.isConnected)).toBe(true)
-    expect(await imageDifference(early, cameraView, await canvas.screenshot())).toBeLessThan(2)
+    // ResizeObserver and the demand renderer settle after the hidden canvas becomes visible.
+    await expect.poll(async () => imageDifference(early, cameraView, await canvas.screenshot())).toBeLessThan(2)
     // Rapid switches can lower the encounter revision, but never the campaign revision.
     await api(page, `/campaigns/${campaignId}/encounters`, { name: 'Temporary', file: { ...file, round: 2 } })
     await expect(early.getByRole('heading', { name: 'Round 2', exact: true })).toBeVisible({ timeout: 5000 })
@@ -174,4 +187,140 @@ test('waiting players see first activation and restart without refresh or camera
     expect(navigations).toBe(0)
     expect(apiRequests).toBe(0)
   } finally { for (const context of contexts) await context.close() }
+})
+
+test('DM paints and generates a reusable dungeon while two players see live read-only geometry', async ({ browser, page }) => {
+  const errors: string[] = []
+  page.on('pageerror', e => errors.push(e.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Multiplayer', exact: true }).click()
+  await page.getByLabel('Email', { exact: true }).fill(`builder-${randomUUID()}@example.test`)
+  await page.getByLabel('Password (12+ characters)', { exact: true }).fill('Dungeon Builder Password 2049!')
+  await page.getByRole('button', { name: 'Create account', exact: true }).click()
+  await page.getByLabel('New campaign', { exact: true }).fill('Builder campaign')
+  await page.getByRole('button', { name: 'Create campaign', exact: true }).click()
+  await expect(page.getByLabel('New encounter', { exact: true })).toBeVisible()
+  const campaign = await page.getByRole('combobox', { name: 'Campaign', exact: true }).inputValue()
+  const path = `/campaigns/${campaign}`
+  const encounter = await api(page, `${path}/encounters`, { name: 'Builder encounter', file: { version: 1, round: 4, combatants: [
+    { id: 1, name: 'Builder hero', side: 'hero', hp: 9, maxHp: 10, ac: 15, initiative: 15, conditions: [], saves: [], actions: [] },
+  ] } })
+  await page.getByRole('button', { name: 'Start multiplayer session', exact: true }).click()
+  const contexts = [await browser.newContext(), await browser.newContext()]
+  const players: Page[] = []
+  try {
+    for (const [index, context] of contexts.entries()) {
+      const invitation = await api(page, `${path}/invitations`, {})
+      const player = await context.newPage(); players.push(player); player.on('pageerror', e => errors.push(e.message))
+      await player.goto(invitation.url); await player.getByLabel('Display name').fill(`Builder player ${index + 1}`)
+      await player.getByRole('button', { name: 'Join campaign', exact: true }).click()
+      await expect(player.locator('.connection')).toHaveText('Connected')
+      await expect(player.getByRole('button', { name: 'Map editor', exact: true })).toHaveCount(0)
+    }
+    await page.getByRole('button', { name: 'Map editor', exact: true }).click()
+    const tools = page.locator('.builder-tools:visible'), canvas = page.locator('canvas:visible')
+    await tools.getByLabel('Map name', { exact: true }).fill('Hand-painted room')
+    await tools.getByRole('button', { name: 'Create blank map', exact: true }).click()
+    await expect(players[0].getByRole('region', { name: 'Dungeon map: Hand-painted room', exact: true })).toBeVisible()
+    await tools.getByRole('button', { name: 'Paint floor', exact: true }).click()
+    await tools.getByLabel('Floor material', { exact: true }).selectOption('grass')
+    await canvas.scrollIntoViewIfNeeded()
+    let box = (await canvas.boundingBox())!
+    await page.mouse.move(box.x + box.width * .45, box.y + box.height * .6)
+    await page.mouse.down(); await page.mouse.move(box.x + box.width * .6, box.y + box.height * .6, { steps: 10 }); await page.mouse.up()
+    await expect.poll(async () => (await api(page, `${path}/snapshot`)).state.dungeonMap.floors.length).toBeGreaterThan(1)
+    const painted = await api(page, `${path}/snapshot`)
+    expect(painted.state.combatants[0].hp).toBe(9)
+    expect(painted.state.round).toBe(4)
+    await tools.getByRole('button', { name: 'Generate dungeon', exact: true }).click()
+    await tools.getByLabel('Random seed', { exact: true }).fill('browser-generator')
+    await tools.getByLabel('Theme', { exact: true }).selectOption('mining-outpost')
+    await tools.getByRole('button', { name: 'Preview dungeon', exact: true }).click()
+    await expect(tools.getByText('Preview only — the encounter has not changed.')).toBeVisible()
+    expect((await api(page, `${path}/snapshot`)).revision).toBe(painted.revision)
+    await tools.getByRole('button', { name: 'Cancel generation', exact: true }).click()
+    await expect(page.getByRole('region', { name: 'Dungeon map: Hand-painted room', exact: true })).toBeVisible()
+    await tools.getByRole('button', { name: 'Preview dungeon', exact: true }).click()
+    page.once('dialog', dialog => dialog.accept())
+    await tools.getByRole('button', { name: 'Accept generated map', exact: true }).click()
+    for (const player of players) await expect(player.getByRole('region', { name: 'Dungeon map: mining-outpost: browser-generator', exact: true })).toBeVisible()
+    const generated = await api(page, `${path}/snapshot`)
+    expect(generated.state.dungeonMap.walls.length).toBeGreaterThan(0)
+    expect(generated.state.dungeonMap.props.length).toBeGreaterThan(0)
+    expect(generated.state.combatants[0].hp).toBe(9)
+    await tools.getByRole('button', { name: 'Undo map edit', exact: true }).click()
+    await expect(players[1].getByRole('region', { name: 'Dungeon map: Hand-painted room', exact: true })).toBeVisible()
+    await tools.getByRole('button', { name: 'Redo map edit', exact: true }).click()
+    await expect(players[1].getByRole('region', { name: 'Dungeon map: mining-outpost: browser-generator', exact: true })).toBeVisible()
+    await tools.getByLabel('Map name', { exact: true }).fill('Shared dungeon template')
+    await tools.getByRole('button', { name: 'Save map', exact: true }).click()
+    await expect(tools.getByRole('status')).toContainText('Map saved')
+    await tools.getByLabel('Saved maps', { exact: true }).selectOption({ label: 'Shared dungeon template · v1' })
+    page.once('dialog', dialog => dialog.accept())
+    await tools.getByRole('button', { name: 'Open saved map', exact: true }).click()
+    await expect(players[0].getByRole('region', { name: 'Dungeon map: Shared dungeon template', exact: true })).toBeVisible()
+    const playerCanvas = players[0].locator('canvas')
+    await playerCanvas.scrollIntoViewIfNeeded(); box = (await playerCanvas.boundingBox())!
+    await players[0].mouse.move(box.x + box.width * .4, box.y + box.height * .4); await players[0].mouse.down(); await players[0].mouse.move(box.x + box.width * .65, box.y + box.height * .5, { steps: 20 }); await players[0].mouse.up()
+    const view = await settledView(players[0], playerCanvas)
+    // A combat-only server update must not rebuild/reset the map camera.
+    await page.getByRole('button', { name: 'Tracker', exact: true }).click()
+    await page.locator('main:visible').getByLabel('Hit point amount').fill('1'); await page.locator('main:visible').getByRole('button', { name: 'Damage', exact: true }).click()
+    await expect.poll(async () => (await api(page, `${path}/snapshot`)).state.combatants[0].hp).toBe(8)
+    expect(await imageDifference(players[0], view, await settledView(players[0], playerCanvas))).toBeLessThan(2)
+    // Replacing the instance with the same template forces a full map snapshot;
+    // geometry updates must preserve the already-rotated local camera too.
+    const mapRevision = (await api(page, `${path}/snapshot`)).state.mapRevision
+    await page.getByRole('button', { name: 'Map editor', exact: true }).click()
+    await tools.getByLabel('Saved maps', { exact: true }).selectOption({ label: 'Shared dungeon template · v1' })
+    page.once('dialog', dialog => dialog.accept())
+    await tools.getByRole('button', { name: 'Open saved map', exact: true }).click()
+    await expect.poll(async () => (await api(page, `${path}/snapshot`)).state.mapRevision).toBeGreaterThan(mapRevision)
+    expect(await imageDifference(players[0], view, await settledView(players[0], playerCanvas))).toBeLessThan(2)
+    await contexts[0].setOffline(true); await expect(players[0].locator('.connection')).toHaveText('Reconnecting')
+    await contexts[0].setOffline(false); await expect(players[0].locator('.connection')).toHaveText('Connected')
+    await expect(players[0].getByRole('region', { name: 'Dungeon map: Shared dungeon template', exact: true })).toBeVisible()
+    expect((await api(page, `${path}/snapshot`)).encounterId).toBe(encounter.id)
+    expect(errors).toEqual([])
+  } finally { for (const context of contexts) await context.close() }
+})
+
+test('local map editing, template recovery and encounter JSON stay compatible', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Map editor', exact: true }).click()
+  const tools = page.locator('.builder-tools:visible')
+  await tools.getByLabel('Map name', { exact: true }).fill('Local reusable room')
+  await tools.getByRole('button', { name: 'Create blank map', exact: true }).click()
+  await tools.getByRole('button', { name: 'Generate dungeon', exact: true }).click()
+  await tools.getByRole('button', { name: 'Preview dungeon', exact: true }).click()
+  page.once('dialog', dialog => dialog.accept())
+  await tools.getByRole('button', { name: 'Accept generated map', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Dungeon map: stone-dungeon: my-dungeon', exact: true })).toBeVisible()
+  await tools.getByRole('button', { name: 'Undo map edit', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Dungeon map: Local reusable room', exact: true })).toBeVisible()
+  await tools.getByRole('button', { name: 'Redo map edit', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Dungeon map: stone-dungeon: my-dungeon', exact: true })).toBeVisible()
+  await tools.getByLabel('Map name', { exact: true }).fill('Local reusable room')
+  await tools.getByRole('button', { name: 'Save map', exact: true }).click()
+  await expect(tools.getByRole('status')).toContainText('Map saved')
+  // Local export must retain the generated document and token placement.
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Export', exact: true }).click()
+  const download = await downloadPromise
+  const stream = await download.createReadStream(), chunks: Buffer[] = []
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk))
+  const exported = JSON.parse(Buffer.concat(chunks).toString())
+  expect(exported.dungeonMap.schemaVersion).toBe(1)
+  expect(exported.dungeonMap.floors.length).toBeGreaterThan(0)
+  expect(Object.keys(exported.battleMap.tokens).length).toBeGreaterThan(0)
+  await page.reload()
+  await page.getByRole('button', { name: 'Map editor', exact: true }).click()
+  await tools.getByLabel('Saved maps', { exact: true }).selectOption({ label: 'Local reusable room · v1' })
+  await tools.getByRole('button', { name: 'Open saved map', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Dungeon map: Local reusable room', exact: true })).toBeVisible()
+  await tools.getByRole('button', { name: 'Undo map edit', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Flat battlefield', exact: true })).toBeVisible()
+  await tools.getByRole('button', { name: 'Redo map edit', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Dungeon map: Local reusable room', exact: true })).toBeVisible()
+  await page.screenshot({ path: '/tmp/dungeon-builder.png', fullPage: true })
 })
