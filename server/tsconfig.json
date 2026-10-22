@@ -6,5 +6,5 @@
     "types": ["node"]
   },
   "include": ["./**/*.ts", "../shared/**/*.ts", "../src/mapState.ts"],
-  "exclude": ["./tests", "../shared/**/*.test.ts"]
+  "exclude": ["./tests", "./**/*.test.ts", "../shared/**/*.test.ts"]
 }

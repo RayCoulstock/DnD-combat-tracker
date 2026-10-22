@@ -14,5 +14,22 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+  app:
+    profiles: ["app"]
+    build: .
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://ledger:${POSTGRES_PASSWORD:-ledger_dev_only}@postgres:5432/ledger
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      APP_ORIGIN: ${APP_ORIGIN:-https://localhost}
+      ASSET_STORAGE_DIR: /var/lib/encounter-ledger/assets
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - ledger-assets:/var/lib/encounter-ledger/assets
+    depends_on:
+      postgres:
+        condition: service_healthy
 volumes:
+  ledger-assets:
   ledger-data:
