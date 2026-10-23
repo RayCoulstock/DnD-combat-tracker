@@ -11,13 +11,16 @@ import { rateLimit } from 'express-rate-limit'
 import { Server, type Socket } from 'socket.io'
 import { z } from 'zod'
 import { PgSessionStore, hashSecret } from './sessions.ts'
+import { registerAssetRoutes } from './assets.ts'
+import { FilesystemAssetStorage, type AssetStorage } from './asset-storage.ts'
+import { assetLimits, type AssetLimits } from './asset-config.ts'
 import { registerMapRoutes } from './maps.ts'
 import { transaction, type Pool } from './db.ts'
 import { authorize, execute, loadState, persistState, snapshot, sessionState } from './game.ts'
 import { artworkStorage, embedArtwork } from './artwork.ts'
 import { DomainError, emptyEncounter, envelopeSchema, importEncounter, type Actor, type ClientEvents, type ServerEvents } from '../shared/domain.ts'
 
-interface Options { pool: Pool; secret: string; origin: string; production?: boolean }
+interface Options { pool: Pool; secret: string; origin: string; production?: boolean; assetStorage?: AssetStorage; assetValidationLimits?: AssetLimits }
 const uuid = z.uuid()
 const nameSchema = z.object({ name: z.string().trim().min(1).max(150) }).strict()
 const credentials = z.object({ email: z.email().max(254).transform(s => s.toLowerCase()), password: z.string().min(12).max(128) }).strict()
@@ -25,7 +28,7 @@ const freshToken = () => randomBytes(32).toString('base64url')
 const saveSession = (req: Request) => new Promise<void>((resolve, reject) => req.session.save(e => e ? reject(e) : resolve()))
 const rotateSession = (req: Request) => new Promise<void>((resolve, reject) => req.session.regenerate(e => e ? reject(e) : resolve()))
 const equal = (a: unknown, b: string) => typeof a === 'string' && Buffer.byteLength(a) === Buffer.byteLength(b) && timingSafeEqual(Buffer.from(a), Buffer.from(b))
-export function createApplication({ pool, secret, origin, production = false }: Options) {
+export function createApplication({ pool, secret, origin, production = false, assetStorage = new FilesystemAssetStorage(process.env.ASSET_STORAGE_DIR ?? '../.ledger-assets'), assetValidationLimits = assetLimits() }: Options) {
   if (secret.length < 32 || secret.startsWith('replace-with')) throw new Error('SESSION_SECRET must contain at least 32 characters')
   if (new URL(origin).origin !== origin || (production && !origin.startsWith('https://'))) throw new Error('APP_ORIGIN must be an exact origin (HTTPS in production)')
   const app = express()
@@ -34,8 +37,10 @@ export function createApplication({ pool, secret, origin, production = false }: 
     allowRequest: (req, cb) => cb(null, req.headers.origin === origin),
   })
   if (production) app.set('trust proxy', 1)
-  app.use(helmet({ contentSecurityPolicy: { directives: { 'img-src': ["'self'", 'data:', 'blob:'], 'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'], 'font-src': ["'self'", 'https://fonts.gstatic.com'], 'script-src': ["'self'"], 'connect-src': ["'self'", origin.replace(/^http/, 'ws')], 'upgrade-insecure-requests': production ? [] : null } } }))
-  app.use(express.json({ limit: '12mb' }))
+  app.use(helmet({ contentSecurityPolicy: { directives: { 'img-src': ["'self'", 'data:', 'blob:'], 'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'], 'font-src': ["'self'", 'https://fonts.gstatic.com'], 'script-src': ["'self'"], 'connect-src': ["'self'", 'blob:', origin.replace(/^http/, 'ws')], 'upgrade-insecure-requests': production ? [] : null } } }))
+  const jsonBody = express.json({ limit: '12mb' })
+  // Authenticate asset uploads before consuming any body, including a forged JSON MIME.
+  app.use((req, res, next) => req.method === 'POST' && req.path.replace(/\/+$/, '').toLowerCase() === '/api/assets' ? next() : jsonBody(req, res, next))
   const sessionMiddleware = session({ name: 'ledger.sid', secret, store: new PgSessionStore(pool), resave: false, saveUninitialized: false,
     cookie: { httpOnly: true, sameSite: 'lax', secure: production, maxAge: 7 * 86400000 } })
   app.use(sessionMiddleware)
@@ -108,6 +113,7 @@ export function createApplication({ pool, secret, origin, production = false }: 
   }
   const requireDM = (req: Request) => { const actor = requireActor(req); if (actor.role !== 'dm') throw new DomainError('FORBIDDEN', 'Dungeon Master access required.'); return actor }
   registerMapRoutes(app, pool, requireDM)
+  registerAssetRoutes(app, pool, assetStorage, requireDM, assetValidationLimits)
   app.get('/api/campaigns', async (req, res) => {
     const actor = requireActor(req)
     const query = actor.role === 'dm' ? 'SELECT id,name,session_active FROM campaigns WHERE owner_id=$1 ORDER BY created_at' : 'SELECT c.id,c.name,c.session_active FROM campaigns c JOIN memberships m ON m.campaign_id=c.id WHERE m.id=$1 AND m.revoked_at IS NULL'

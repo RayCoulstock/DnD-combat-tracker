@@ -88,3 +88,12 @@ Apply `npm run db:migrate` when upgrading multiplayer installations.
 See [the builder guide](docs/dungeon-builder-development.md) for controls, map lifecycle,
 generation, two-player checks and limitations, and [the architecture](docs/dungeon-builder-architecture.md)
 for the schema, authority and persistence design.
+
+## 3D Asset Library (Milestone 4A)
+
+Authenticated DMs can open **Asset Library** from Multiplayer navigation to upload,
+organise and preview private GLB models. Apply migrations and set `ASSET_STORAGE_DIR`
+to a persistent directory outside the checkout. Models are not assigned to tokens
+or placed in maps in this milestone. See the [asset-library guide](docs/3d-asset-library-development.md)
+and [architecture](docs/3d-asset-library-architecture.md) for supported exports,
+limits, storage/backup configuration and future integration contracts.

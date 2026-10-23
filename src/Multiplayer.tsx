@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { io, type Socket } from 'socket.io-client'
 import App from './App.jsx'
+import AssetLibrary from './AssetLibrary'
 import BattleMap3D from './BattleMap3D'
 import { acceptsSessionState, mergeMapSnapshot } from '../shared/domain'
 import type { SessionState, Actor, ClientEvents, CommandResult, GameCommand, Member, ServerEvents, Snapshot } from '../shared/domain'
@@ -14,6 +15,7 @@ interface Details extends Campaign {
   invitations: { id: string; expires_at: string; redeemed_at: string | null; revoked_at: string | null }[]
 }
 export default function Multiplayer() {
+  const [libraryOpen, setLibraryOpen] = useState(false)
   const [mode, setMode] = useState<'local' | 'online'>(() => location.hash.startsWith('#invite=') || localStorage.getItem('ledger.playMode') === 'online' ? 'online' : 'local')
   useEffect(() => { localStorage.setItem('ledger.playMode', mode) }, [mode])
   const [inviteToken, setInviteToken] = useState(() => new URLSearchParams(location.hash.slice(1)).get('invite') ?? '')
@@ -145,9 +147,11 @@ export default function Multiplayer() {
   const selectedCombatant = snapshot?.state.combatants.find(c => c.id === selected) ?? snapshot?.state.combatants[0]
   const player = actor?.role === 'player'
   return <>
-    <nav className="multiplayer-nav" aria-label="Play mode"><strong>Encounter Ledger</strong><button onClick={() => setMode('local')} aria-pressed={mode === 'local'}>Local tracker</button><button onClick={() => setMode('online')} aria-pressed={mode === 'online'}>Multiplayer</button>{mode === 'online' && <span role="status" className={`connection ${status.toLowerCase()}`}>{status}</span>}</nav>
+    <nav className="multiplayer-nav" aria-label="Play mode"><strong>Encounter Ledger</strong><button onClick={() => setMode('local')} aria-pressed={mode === 'local'}>Local tracker</button><button onClick={() => setMode('online')} aria-pressed={mode === 'online'}>Multiplayer</button>{mode === 'online' && actor?.role === 'dm' && <button onClick={() => setLibraryOpen(value => !value)} aria-pressed={libraryOpen}>Asset Library</button>}{mode === 'online' && <span role="status" className={`connection ${status.toLowerCase()}`}>{status}</span>}</nav>
     <div hidden={mode !== 'local'}><App /></div>
     {mode === 'online' && <>
+      {libraryOpen && actor?.role === 'dm' && <AssetLibrary key={actor.id} api={api} csrf={csrf} onClose={() => setLibraryOpen(false)} />}
+      <div hidden={libraryOpen && actor?.role === 'dm'}>
       {error && <p className="online-message" role="alert">{error}</p>}
       {!actor ? <section className="online-card"><h1>{inviteToken ? 'Join a campaign' : 'Dungeon Master account'}</h1>
         {inviteToken ? <form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); void run(async () => { const data = await api('/invitations/redeem', { token: inviteToken, displayName: form.get('displayName') }); setActor(data.actor); chooseCampaign(data.campaignId); setInviteToken(''); history.replaceState(null, '', location.pathname) }) }}>
@@ -188,6 +192,7 @@ export default function Multiplayer() {
         </div>}
         {(!snapshot || (player && !sessionState?.sessionActive)) && details && <p className="online-card">{player ? 'Waiting for the DM to open and start an encounter.' : 'Create or open an encounter to begin.'}</p>}
       </>}
+      </div>
     </>}
   </>
 }
