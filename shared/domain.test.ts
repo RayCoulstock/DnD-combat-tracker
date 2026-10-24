@@ -55,3 +55,17 @@ test('map snapshot omission keeps geometry references and requests recovery on m
   assert.equal(mergeMapSnapshot(full, { ...patch, state: { ...patch.state, mapRevision: 5 } }), null)
   assert.equal(mergeMapSnapshot(full, { ...patch, encounterId: 'different' }), null)
 })
+
+test('HP sharing is DM-only, defaults to private, and exposes no other private combatant statistics',()=>{
+  const dm={role:'dm' as const,id:'dm'},other={role:'player' as const,id:'other'}
+  let state=fixture();state.combatants[0].ownerId=member
+  assert.equal(projectEncounter(state,other).combatants[0].hp,0)
+  state=applyCommand(state,dm,{type:'combatant.hp.visibility',combatantId:1,shown:true})
+  const shared=projectEncounter(state,other).combatants[0]
+  assert.equal(shared.hp,10);assert.equal(shared.maxHp,20);assert.equal(shared.ac,0);assert.equal(shared.privateNotes,'');assert.deepEqual(shared.actions,[])
+  assert.throws(()=>applyCommand(state,other,{type:'combatant.hp.visibility',combatantId:1,shown:true}),/not permitted/)
+  state=applyCommand(state,dm,{type:'combatant.hp.visibility',combatantId:1,shown:false})
+  assert.equal(projectEncounter(state,other).combatants[0].hp,0);assert.equal(projectEncounter(state,{role:'player',id:member}).combatants[0].hp,10)
+  assert.equal(importEncounter(JSON.parse(JSON.stringify(state))).combatants[0].hpShown,false)
+  assert.equal(commandSchema.safeParse({type:'combatant.hp.visibility',combatantId:1,shown:'yes'}).success,false)
+})

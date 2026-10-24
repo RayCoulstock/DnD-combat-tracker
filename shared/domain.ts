@@ -8,7 +8,7 @@ import { createBattleMapState, isGridPosition, moveToken, normalizeBattleMap, re
 export const idSchema = z.union([z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/), z.number().int().safe().nonnegative()]).refine(v => !['__proto__', 'constructor', 'prototype'].includes(String(v)))
 const text = z.string().max(10000)
 export const combatantSchema = z.object({
-  miniature: miniatureSchema.optional(),
+  miniature: miniatureSchema.optional(), hpShown: z.boolean().optional(),
   id: idSchema, name: z.string().trim().min(1).max(200), short: z.string().max(20).default('?'),
   side: z.enum(['hero', 'enemy']), role: text.default(''), initiative: z.number().finite().min(-1000).max(1000),
   hp: z.number().int().min(0).max(100000), maxHp: z.number().int().min(1).max(100000),
@@ -51,6 +51,7 @@ export const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('token.assign'), ...target, playerId: z.uuid().nullable() }).strict(),
   z.object({ type: z.literal('combatant.hp.update'), ...target, hp: z.number().int().min(0).max(100000) }).strict(),
   z.object({ type: z.literal('combatant.conditions'), ...target, conditions: z.array(z.string().max(100)).max(50) }).strict(),
+  z.object({ type: z.literal('combatant.hp.visibility'), ...target, shown: z.boolean() }).strict(),
   z.object({ type: z.literal('combatant.visibility'), ...target, visible: z.boolean() }).strict(),
   z.object({ type: z.literal('combatant.add'), combatants: z.array(combatantSchema).min(1).max(20) }).strict(),
   z.object({ type: z.literal('combatant.edit'), ...target, combatant: combatantSchema }).strict(),
@@ -85,6 +86,7 @@ export function applyCommand(state: EncounterState, actor: Actor, command: GameC
     case 'token.assign': return update({ ownerId: command.playerId })
     case 'combatant.hp.update': return update({ hp: Math.min(command.hp, c!.maxHp) })
     case 'combatant.conditions': return update({ conditions: command.conditions })
+    case 'combatant.hp.visibility': return update({ hpShown: command.shown })
     case 'combatant.visibility': return update({ visible: command.visible })
     case 'combatant.edit': {
       if (String(command.combatant.id) !== String(c!.id)) throw new DomainError('INVALID', 'Combatant identity cannot change.')
@@ -134,7 +136,7 @@ export function projectEncounter(state: EncounterState, actor: Actor): Encounter
   const combatants = state.combatants.filter(c => c.visible).map(c => {
     const publicData = { id: c.id, name: c.name, short: c.short, side: c.side, initiative: c.initiative,
       miniature: c.miniature, miniatureStatus: c.miniatureStatus,
-      ownerId: c.ownerId, visible: true, hp: 0, maxHp: 1, ac: 0, role: '', speed: '', conditions: c.conditions,
+      ownerId: c.ownerId, visible: true, hpShown: c.hpShown === true, hp: c.hpShown === true ? c.hp : 0, maxHp: c.hpShown === true ? c.maxHp : 1, ac: 0, role: '', speed: '', conditions: c.conditions,
       saves: [], actions: [], privateNotes: '' }
     if (c.ownerId !== actor.id) return publicData as Combatant
     return { ...publicData, hp: c.hp, maxHp: c.maxHp, ac: c.ac, role: c.role, speed: c.speed,
