@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { Check, ChevronRight, Copy, Download, FileJson, HeartPulse, ImagePlus, List, Map, Minus, Plus, RotateCcw, Shield, Skull, Sparkles, Swords, Trash2, Upload, UserPlus, X } from 'lucide-react'
+import MiniatureSettings from './MiniatureSettings'
 import DungeonBuilder from './DungeonBuilder'
 import { emptyHistory } from '../shared/dungeon'
 import { generateDungeon } from '../shared/generator'
@@ -77,11 +78,12 @@ function HealthBar({ value, max }) {
 const uniqueId = () => crypto.randomUUID()
 const maxArtworkSize = 3 * 1024 * 1024
 
-/** @param {{ multiplayer?: null | { snapshot: import('../shared/domain').Snapshot, connected: boolean, send: (command: import('../shared/domain').GameCommand) => Promise<void>, library?: import('./DungeonBuilder').MapLibrary, exportFile: () => Promise<import('../shared/domain').EncounterState> } }} props */
-function App({ multiplayer = null }) {
+/** @param {{ assetScope?: string, multiplayer?: null | { snapshot: import('../shared/domain').Snapshot, connected: boolean, send: (command: import('../shared/domain').GameCommand) => Promise<void>, library?: import('./DungeonBuilder').MapLibrary, csrf?: string, exportFile: () => Promise<import('../shared/domain').EncounterState> } }} props */
+function App({ multiplayer = null, assetScope = undefined }) {
   const [{ encounter: localState, history: localHistory }, setLocal] = useState(() => ({ encounter: readEncounter({ version: 1, round: 3, activeId: 1, combatants: initialCombatants }), history: emptyHistory() }))
   const state = multiplayer?.snapshot.state ?? localState
   const { combatants, activeId, round, usedAbilities, battleMap } = state
+  const [miniatureOpen, setMiniatureOpen] = useState(false)
   const [selectedId, setSelectedId] = useState(1)
   const [amount, setAmount] = useState('')
   const [showConditions, setShowConditions] = useState(false)
@@ -181,11 +183,13 @@ function App({ multiplayer = null }) {
         <div className="header-actions"><button className="clear-button" onClick={clearEncounter} disabled={!canChange || !combatants.length}><Trash2 size={16} /> Clear</button><div className="file-actions"><button className="ghost icon-button" disabled={!canChange} onClick={() => encounterInputRef.current?.click()} title="Import encounter"><Upload size={16} /><span>Import</span></button><button className="ghost icon-button" onClick={exportEncounter} title="Export encounter"><Download size={16} /><span>Export</span></button></div><button className="ghost" disabled={!canChange} onClick={() => setShowAddCombatant(true)}><Plus size={17} /> Add combatant</button><button className="primary" onClick={nextTurn} disabled={!canChange || !combatants.length}>Next turn <ChevronRight size={18} /></button></div>
       </header>
 
+      {multiplayer?.library && selected && <button className="miniature-action" disabled={!canChange} onClick={() => setMiniatureOpen(true)}>Assign 3D Miniature</button>}
+      {miniatureOpen && multiplayer?.library && selected && <MiniatureSettings key={`${multiplayer.snapshot.encounterId}:${selected.id}`} combatant={selected} api={multiplayer.library.api} csrf={multiplayer.csrf ?? ''} send={send} connected={canChange} onClose={() => setMiniatureOpen(false)} />}
       <input ref={encounterInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={importEncounter} />
       <input ref={artworkInputRef} className="visually-hidden" type="file" accept="image/*" onChange={updateArtwork} />
       {fileMessage && <div className={`file-message ${fileMessage.tone}`} role="status"><FileJson size={16} /><span>{fileMessage.text}</span><button onClick={() => setFileMessage(null)} aria-label="Dismiss message"><X size={14} /></button></div>}
 
-      {view !== 'tracker' ? <DungeonBuilder state={state} editing={view === 'editor'} connected={canChange} send={send} library={multiplayer?.library} battlefield={{ combatants, round, selectedId: selected?.id ?? null, activeId, onSelectToken: setSelectedId, onMoveToken: moveToken, onToggleGrid: () => mapSettings({ showGrid: !battleMap.showGrid }), onToggleLabels: () => mapSettings({ showLabels: !battleMap.showLabels }), onReturnToTracker: () => setView('tracker'), canMove: canChange }} /> : <div className="workspace">
+      {view !== 'tracker' ? <DungeonBuilder state={state} editing={view === 'editor'} connected={canChange} send={send} library={multiplayer?.library} battlefield={{ assetScope: multiplayer?.snapshot.actor.id ?? assetScope, assetContext: multiplayer ? { campaignId: multiplayer.snapshot.campaignId, encounterId: multiplayer.snapshot.encounterId } : undefined, combatants, round, selectedId: selected?.id ?? null, activeId, onSelectToken: setSelectedId, onMoveToken: moveToken, onToggleGrid: () => mapSettings({ showGrid: !battleMap.showGrid }), onToggleLabels: () => mapSettings({ showLabels: !battleMap.showLabels }), onReturnToTracker: () => setView('tracker'), canMove: canChange }} /> : <div className="workspace">
         <aside className="initiative-panel">
           <div className="panel-heading"><div><span className="eyebrow">COMBAT QUEUE</span><h2>Initiative order</h2></div><span className="count">{combatants.length}</span></div>
           <div className="initiative-list">

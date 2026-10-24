@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { miniatureSchema } from './miniatures.ts'
 import { generationOptionsSchema, generateDungeon } from './generator.ts'
 import { dungeonSchema, editMap, emptyHistory, mapCommandSchemas, type DungeonMap, type MapCommand, type MapHistory } from './dungeon.ts'
 import { createBattleMapState, isGridPosition, moveToken, normalizeBattleMap, reconcileBattleMap } from '../src/mapState.ts'
@@ -6,6 +7,7 @@ import { createBattleMapState, isGridPosition, moveToken, normalizeBattleMap, re
 export const idSchema = z.union([z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/), z.number().int().safe().nonnegative()]).refine(v => !['__proto__', 'constructor', 'prototype'].includes(String(v)))
 const text = z.string().max(10000)
 export const combatantSchema = z.object({
+  miniature: miniatureSchema.optional(),
   id: idSchema, name: z.string().trim().min(1).max(200), short: z.string().max(20).default('?'),
   side: z.enum(['hero', 'enemy']), role: text.default(''), initiative: z.number().finite().min(-1000).max(1000),
   hp: z.number().int().min(0).max(100000), maxHp: z.number().int().min(1).max(100000),
@@ -44,6 +46,7 @@ export const commandSchema = z.discriminatedUnion('type', [
   ...mapCommandSchemas,
   z.object({ type: z.literal('map.generate'), options: generationOptionsSchema }).strict(),
   z.object({ type: z.literal('token.move'), ...target, destination: z.object({ x: z.number().int(), z: z.number().int() }).strict() }).strict(),
+  z.object({ type: z.literal('combatant.miniature.update'), ...target, miniature: miniatureSchema }).strict(),
   z.object({ type: z.literal('token.assign'), ...target, playerId: z.uuid().nullable() }).strict(),
   z.object({ type: z.literal('combatant.hp.update'), ...target, hp: z.number().int().min(0).max(100000) }).strict(),
   z.object({ type: z.literal('combatant.conditions'), ...target, conditions: z.array(z.string().max(100)).max(50) }).strict(),
@@ -77,6 +80,7 @@ export function applyCommand(state: EncounterState, actor: Actor, command: GameC
     case 'token.move':
       if (!isGridPosition(command.destination, state.battleMap.width, state.battleMap.height)) throw new DomainError('INVALID', 'Destination is outside the battlefield.')
       return { ...state, battleMap: moveToken(state.battleMap, command.combatantId, command.destination) }
+    case 'combatant.miniature.update': return update({ miniature: command.miniature })
     case 'token.assign': return update({ ownerId: command.playerId })
     case 'combatant.hp.update': return update({ hp: Math.min(command.hp, c!.maxHp) })
     case 'combatant.conditions': return update({ conditions: command.conditions })
@@ -128,6 +132,7 @@ export function projectEncounter(state: EncounterState, actor: Actor): Encounter
   if (actor.role === 'dm') return state
   const combatants = state.combatants.filter(c => c.visible).map(c => {
     const publicData = { id: c.id, name: c.name, short: c.short, side: c.side, initiative: c.initiative,
+      miniature: c.miniature, miniatureStatus: c.miniatureStatus,
       ownerId: c.ownerId, visible: true, hp: 0, maxHp: 1, ac: 0, role: '', speed: '', conditions: c.conditions,
       saves: [], actions: [], privateNotes: '' }
     if (c.ownerId !== actor.id) return publicData as Combatant

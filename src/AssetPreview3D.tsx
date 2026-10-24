@@ -1,24 +1,11 @@
 import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
-import { Component, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { Box3, Group, LoadingManager, Mesh, SkinnedMesh, Texture, Vector3, type Material, type Object3D } from 'three'
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { Component, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Box3, Group, Vector3 } from 'three'
+import { loadGlb, cloneMiniature, disposeInstance } from './modelResources'
+import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import type { Asset3D } from '../shared/assets'
-function disposeModel(root: Object3D) {
-  const geometries = new Set<Mesh['geometry']>(), materials = new Set<Material>(), textures = new Set<Texture>()
-  root.traverse(object => {
-    const mesh = object as Mesh
-    if (mesh instanceof SkinnedMesh) mesh.skeleton.dispose()
-    if (mesh.geometry) geometries.add(mesh.geometry)
-    for (const material of mesh.material ? Array.isArray(mesh.material) ? mesh.material : [mesh.material] : []) {
-      materials.add(material)
-      for (const value of Object.values(material)) if (value instanceof Texture) textures.add(value)
-    }
-  })
-  geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose())
-  textures.forEach(texture => { const image = texture.image as { close?: () => void } | undefined; image?.close?.(); texture.dispose() })
-}
 class PreviewBoundary extends Component<{ children: ReactNode }, { error: boolean }> {
   state = { error: false }
   static getDerivedStateFromError() { return { error: true } }
@@ -45,34 +32,31 @@ function PreviewScene({ model, reset }: { model: Group; reset: number }) {
     <OrbitControls ref={controls} makeDefault enableDamping dampingFactor={.1} />
   </>
 }
-export default function AssetPreview3D({ asset }: { asset: Asset3D }) {
-  const [loaded, setLoaded] = useState<{ key: string; root: Group } | null>(null), [error, setError] = useState<{ key: string; message: string } | null>(null), [reset, setReset] = useState(0)
+export default function AssetPreview3D({ asset, normalize = false }: { asset: Asset3D; normalize?: boolean }) {
+  const [loaded, setLoaded] = useState<{ id: string; source: Group } | null>(null), [error, setError] = useState<{ id: string; message: string } | null>(null), [reset, setReset] = useState(0)
   const p = asset.presentation
-  const loadKey = `${asset.id}:${p.defaultScale}:${p.defaultRotation}:${p.verticalOffset}`
   useEffect(() => {
-    const controller = new AbortController(); let disposed = false, root: Group | undefined, resources: Group | undefined
-    const load = async () => {
-      const response = await fetch(`/api/assets/${asset.id}/file`, { credentials: 'same-origin', signal: controller.signal })
-      if (!response.ok) throw new Error('Model is unavailable or you no longer have access. Refresh the library and retry.')
-      const bytes = await response.arrayBuffer()
-      const manager = new LoadingManager()
-      manager.setURLModifier(url => { if (!url.startsWith('blob:')) throw new Error('External model resources are disabled.'); return url })
-      const gltf = await new GLTFLoader(manager).parseAsync(bytes, '')
-      resources = new Group(); gltf.scenes.forEach(scene => resources!.add(scene))
-      root = new Group(); root.add(gltf.scene)
+    const controller = new AbortController(); let disposed = false, release: (() => void) | undefined
+    void loadGlb(`/api/assets/${asset.id}/file`, controller.signal).then(resource => {
+      release = resource.dispose
+      if (disposed) { release(); return }
+      setLoaded({ id: asset.id, source: resource.value })
+    }).catch(e => { if (!disposed) setError({ id: asset.id, message: e.message || 'Unable to load model.' }) })
+    return () => { disposed = true; controller.abort(); release?.() }
+  }, [asset.id])
+  const prepared = useMemo(() => {
+    if (loaded?.id !== asset.id) return null
+    try {
+      const root = new Group(); root.add(normalize ? cloneMiniature(loaded.source) : clone(loaded.source))
       root.scale.setScalar(p.defaultScale); root.rotation.y = p.defaultRotation * Math.PI / 180; root.updateMatrixWorld(true)
       const bounds = new Box3().setFromObject(root)
-      if (bounds.isEmpty() || ![...bounds.min.toArray(), ...bounds.max.toArray()].every(Number.isFinite)) { disposeModel(root); root = undefined; throw new Error('Model has no usable preview bounds.') }
-      const centre = bounds.getCenter(new Vector3())
-      root.position.set(-centre.x, -bounds.min.y + p.verticalOffset, -centre.z); root.updateMatrixWorld(true)
-      // No loader cache: every preview owns and disposes its GPU resources.
-      if (disposed) { disposeModel(root); if (resources) disposeModel(resources); return }
-      setLoaded({ key: loadKey, root })
-    }
-    void load().catch(e => { if (!disposed) setError({ key: loadKey, message: e.message || 'Unable to load model.' }) })
-    return () => { disposed = true; controller.abort(); if (root) disposeModel(root); if (resources) disposeModel(resources) }
-  }, [asset.id, p.defaultScale, p.defaultRotation, p.verticalOffset, loadKey])
-  if (error?.key === loadKey) return <p role="alert">Preview failed: {error.message}</p>
-  if (loaded?.key !== loadKey) return <p role="status">Loading model preview…</p>
-  return <section className="asset-preview" aria-label="3D asset preview"><p>Drag to orbit · wheel to zoom · right-drag to pan</p><button onClick={() => setReset(n => n + 1)}>Reset preview camera</button><PreviewBoundary><div className="asset-preview-viewport"><Canvas frameloop="demand" camera={{ fov: 40 }}><PreviewScene model={loaded.root} reset={reset} /></Canvas></div></PreviewBoundary></section>
+      if (bounds.isEmpty() || ![...bounds.min.toArray(), ...bounds.max.toArray()].every(Number.isFinite)) throw new Error('Model has no usable preview bounds.')
+      const centre = bounds.getCenter(new Vector3()); root.position.set(-centre.x, -bounds.min.y + p.verticalOffset, -centre.z); root.updateMatrixWorld(true)
+      return { model: root }
+    } catch { return { error: 'Model has no usable preview bounds.' } }
+  }, [loaded, asset.id, normalize, p.defaultScale, p.defaultRotation, p.verticalOffset])
+  useEffect(() => () => { if (prepared?.model) disposeInstance(prepared.model) }, [prepared])
+  if (error?.id === asset.id || prepared?.error) return <p role="alert">Preview failed: {error?.id === asset.id ? error.message : prepared?.error}</p>
+  if (!prepared?.model) return <p role="status">Loading model preview…</p>
+  return <section className="asset-preview" aria-label="3D asset preview"><p>Drag to orbit · wheel to zoom · right-drag to pan</p><button onClick={() => setReset(n => n + 1)}>Reset preview camera</button><PreviewBoundary><div className="asset-preview-viewport"><Canvas frameloop="demand" camera={{ fov: 40 }}><PreviewScene model={prepared.model} reset={reset} /></Canvas></div></PreviewBoundary></section>
 }

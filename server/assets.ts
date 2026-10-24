@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { assetMetadataSchema, assetCategories, type Asset3D } from '../shared/assets.ts'
 import type { Actor } from '../shared/domain.ts'
-import type { Pool } from './db.ts'
+import { transaction, type Pool } from './db.ts'
 import { assetLimits, type AssetLimits } from './asset-config.ts'
 import { AssetError, type AssetStorage, type StagedAsset } from './asset-storage.ts'
 import { validateAsset } from './asset-validation.ts'
@@ -55,11 +55,33 @@ export async function recoverAssets(pool: Pool, storage: AssetStorage) {
   }
   await storage.cleanStaging()
 }
-export function registerAssetRoutes(app: Express, pool: Pool, storage: AssetStorage, requireDM: (req: Request) => Actor, limits = assetLimits()) {
+export function registerAssetRoutes(app: Express, pool: Pool, storage: AssetStorage, requireDM: (req: Request) => Actor, limits = assetLimits(), requireActor: (req: Request) => Actor = requireDM) {
   let active = 0
   const owners = new Set<string>()
   const managementLimit = rateLimit({ windowMs: 15 * 60000, limit: 120, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: { code: 'RATE_LIMIT', message: 'Too many asset changes. Try again shortly.' } } })
   const uploadLimit = rateLimit({ windowMs: 15 * 60000, limit: 20, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: { code: 'RATE_LIMIT', message: 'Too many uploads. Try again shortly.' } } })
+  app.get('/api/assets/:assetId/file', async (req, res) => {
+    const actor = requireActor(req), id = uuid.parse(req.params.assetId)
+    let row
+    if (actor.role === 'dm') row = (await pool.query("SELECT * FROM assets_3d WHERE id=$1 AND owner_id=$2 AND upload_status <> 'deleted'", [id, actor.id])).rows[0]
+    else {
+      const context = z.object({ campaignId: z.uuid().optional(), encounterId: z.uuid().optional() }).strict().parse(req.query)
+      if (!context.campaignId || !context.encounterId) throw new AssetError(403, 'An active encounter is required.')
+      row = (await pool.query(`SELECT a.* FROM assets_3d a
+        JOIN combatant_asset_references r ON r.asset_id=a.id
+        JOIN combatants b ON b.encounter_id=r.encounter_id AND b.id=r.combatant_id
+        JOIN encounters e ON e.id=b.encounter_id JOIN campaigns c ON c.id=e.campaign_id
+        JOIN memberships m ON m.campaign_id=c.id AND m.id=$2 AND m.revoked_at IS NULL
+        WHERE a.id=$1 AND c.id=$3 AND e.id=$4 AND c.active_encounter_id=e.id AND c.session_active
+          AND b.visible AND a.owner_id=c.owner_id AND a.upload_status='ready' LIMIT 1`, [id, actor.id, context.campaignId, context.encounterId])).rows[0]
+    }
+    if (!row) throw new AssetError(404, 'Asset is unavailable.')
+    if (row.upload_status !== 'ready') throw new AssetError(409, 'Asset is not ready for preview.')
+    let stream
+    try { stream = await storage.read(row.storage_key) } catch { throw new AssetError(503, 'Asset file is unavailable. Restore storage and retry.') }
+    res.set({ 'Content-Type': 'model/gltf-binary', 'Content-Length': String(row.file_size), 'Content-Disposition': `inline; filename="${row.id}.glb"`, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "sandbox; default-src 'none'", 'Cross-Origin-Resource-Policy': 'same-origin' })
+    stream.on('error', () => res.destroy()); res.on('close', () => stream.destroy()); stream.pipe(res)
+  })
   app.use('/api/assets', (req, _res, next) => { try { requireDM(req); next() } catch (e) { next(e) } })
   const owned = async (req: Request) => {
     const actor = requireDM(req), id = uuid.parse(req.params.assetId)
@@ -79,6 +101,8 @@ export function registerAssetRoutes(app: Express, pool: Pool, storage: AssetStor
     const actor = requireDM(req)
     if (active >= 2 || owners.has(actor.id)) throw new AssetError(429, 'Another model is processing. Try again when it finishes.')
     active++; owners.add(actor.id)
+    let released = false
+    const release = () => { if (!released) { released = true; active--; owners.delete(actor.id) } }
     let staged: StagedAsset | undefined
     try {
       const upload = await multipart(req, storage, limits); staged = upload.staged
@@ -95,23 +119,17 @@ export function registerAssetRoutes(app: Express, pool: Pool, storage: AssetStor
         if (res.destroyed) throw new AssetError(400, 'Upload cancelled.')
         await storage.publish(staged, actor.id)
         const row = (await pool.query("UPDATE assets_3d SET upload_status='ready',updated_at=now() WHERE id=$1 RETURNING *", [id])).rows[0]
+        await storage.remove(staged.key)
+        release() // A successful acknowledgement must permit the next sequential upload.
         res.status(201).json(publicAsset(row))
       } catch (e) {
         await storage.remove(key).catch(() => {})
         await pool.query('DELETE FROM assets_3d WHERE id=$1', [id]).catch(() => {})
         throw e
       }
-    } finally { if (staged) await storage.remove(staged.key).catch(() => {}); active--; owners.delete(actor.id) }
+    } finally { if (staged) await storage.remove(staged.key).catch(() => {}); release() }
   })
   app.get('/api/assets/:assetId', async (req, res) => res.json(publicAsset(await owned(req))))
-  app.get('/api/assets/:assetId/file', async (req, res) => {
-    const row = await owned(req)
-    if (row.upload_status !== 'ready') throw new AssetError(409, 'Asset is not ready for preview.')
-    let stream
-    try { stream = await storage.read(row.storage_key) } catch { throw new AssetError(503, 'Asset file is unavailable. Restore storage and retry.') }
-    res.set({ 'Content-Type': 'model/gltf-binary', 'Content-Length': String(row.file_size), 'Content-Disposition': `inline; filename="${row.id}.glb"`, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "sandbox; default-src 'none'", 'Cross-Origin-Resource-Policy': 'same-origin' })
-    stream.on('error', () => res.destroy()); res.on('close', () => stream.destroy()); stream.pipe(res)
-  })
   app.post('/api/assets/:assetId/update', managementLimit, async (req, res) => {
     const row = await owned(req), data = z.object({ revision: z.number().int().positive(), metadata: assetMetadataSchema }).strict().parse(req.body), m = data.metadata
     const result = await pool.query("UPDATE assets_3d SET name=$3,description=$4,category=$5,tags=$6,source=$7,presentation=$8,revision=revision+1,updated_at=now() WHERE id=$1 AND owner_id=$2 AND revision=$9 AND upload_status='ready' RETURNING *", [row.id, requireDM(req).id, m.name, m.description, m.category, JSON.stringify(m.tags), m.source, m.presentation, data.revision])
@@ -120,9 +138,12 @@ export function registerAssetRoutes(app: Express, pool: Pool, storage: AssetStor
   })
   app.post('/api/assets/:assetId/delete', managementLimit, async (req, res) => {
     const row = await owned(req), data = z.object({ revision: z.number().int().positive() }).strict().parse(req.body)
-    // Future reference tables must guard this transition before instances can use assets.
-    const result = await pool.query("UPDATE assets_3d SET upload_status='deleting',revision=revision+1,updated_at=now() WHERE id=$1 AND owner_id=$2 AND revision=$3 AND upload_status IN ('ready','deleting') RETURNING storage_key", [row.id, requireDM(req).id, data.revision])
-    if (!result.rowCount) throw new AssetError(409, 'Asset changed. Refresh its details and try again.')
+    await transaction(pool, async db => {
+      const locked = (await db.query('SELECT revision,upload_status FROM assets_3d WHERE id=$1 AND owner_id=$2 FOR UPDATE', [row.id, requireDM(req).id])).rows[0]
+      if (!locked || locked.revision !== data.revision || !['ready', 'deleting'].includes(locked.upload_status)) throw new AssetError(409, 'Asset changed. Refresh its details and try again.')
+      if ((await db.query('SELECT 1 FROM combatant_asset_references WHERE asset_id=$1 LIMIT 1', [row.id])).rowCount) throw new AssetError(409, 'This asset is assigned to an encounter. Remove its miniature assignments before deleting it.')
+      await db.query("UPDATE assets_3d SET upload_status='deleting',revision=revision+1,updated_at=now() WHERE id=$1", [row.id])
+    })
     try { await storage.remove(row.storage_key) } catch { throw new AssetError(503, 'Deletion is pending. Restore storage and retry deletion or restart the backend.') }
     await pool.query("UPDATE assets_3d SET upload_status='deleted',updated_at=now() WHERE id=$1", [row.id]); res.json({ ok: true })
   })

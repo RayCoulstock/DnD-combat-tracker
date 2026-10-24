@@ -97,3 +97,13 @@ to a persistent directory outside the checkout. Models are not assigned to token
 or placed in maps in this milestone. See the [asset-library guide](docs/3d-asset-library-development.md)
 and [architecture](docs/3d-asset-library-architecture.md) for supported exports,
 limits, storage/backup configuration and future integration contracts.
+
+## Playable 3D miniatures (Milestone 4B)
+
+After applying migrations, select a combatant in a DM encounter and choose
+**Assign 3D Miniature**. Pick an existing owned GLB, preview it, adjust its
+scale/rotation/base, and save. Players receive the model through authorised
+encounter-scoped delivery and keep the existing token movement controls.
+See [miniature usage and testing](docs/3d-miniatures-development.md) and
+[architecture](docs/3d-miniatures-architecture.md) for normalisation, migration,
+access rules, fallbacks and the visual-only multi-square base limitation.

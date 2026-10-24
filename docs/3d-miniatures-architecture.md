@@ -1,0 +1,39 @@
+# Milestone 4B: playable 3D miniatures
+
+## Inspection and staged plan
+
+Combatants persist flexible, validated JSON in `combatants.data`; positions are separate and use integer X/Z cells. `BattleMap3D` currently renders cylinder tokens at cell centres with local OrbitControls. Existing command envelopes provide authentication, ownership, duplicate receipts, encounter/campaign revisions and transaction locking. Asset Library records are account-private GLBs with authenticated streaming retrieval and validated presentation defaults; its preview currently owns a separate GLTFLoader lifecycle. Dungeon documents contain procedural props only. Existing unit, PostgreSQL and browser suites cover combat, cameras, builder, asset library and furniture selection.
+
+A: add optional validated miniature appearance and reference persistence; B: shared GLB loading/normalisation and token renderer; C: reuse the library as a picker and its preview for per-combatant settings; D: authorise visible active-encounter asset retrieval and synchronise through existing commands; E: bounded shared caching, failure recovery, security/rendering/multiplayer regressions and runbook. Keep existing IDs, positions, movement and camera contracts. No uploaded dungeon props or animation playback.
+
+## Domain, defaults and persistence
+
+Optional `miniature` JSON stores nullable asset UUID, uniform scale, Y rotation in degrees, vertical offset, showBase and baseSize (Small/Medium/Large/Huge). Missing appearance retains the original token. Assigning copies asset defaults into explicit combatant overrides; later library edits do not silently change instances. `combatant.miniature.update` is DM-only, schema validated and subject to the normal revision/receipt transaction. Other combatant mutations may not bypass asset ownership checks.
+
+Migration 005 adds an encounter/combatant-to-asset reference table with foreign keys and an asset index. Appearance remains in existing combatant JSON and normal encounter version-1 import/export. References are rebuilt atomically by `persistState` for every persistence entry point (commands, initial imports and checkpoints), under ordered asset-row locks. Asset deletion takes the same lock and refuses live encounter references, including inactive/hidden encounters. Checkpoints/exports remain historical JSON: restoring references to deleted/missing/private assets produces a visible placeholder, never a new access grant. No binary bytes enter encounter JSON or Socket.IO.
+
+Explicit assignment rejects assets that are not ready and owned by the campaign's DM. Imports may preserve unresolved UUIDs/overrides for portability; those IDs do not create reference rows or retrieval rights. Existing unresolved assignments can survive ordinary combat/movement saves. Snapshots derive availability rather than trusting client claims. Legacy combatants load unchanged.
+
+## Retrieval and multiplayer boundary
+
+Reuse `/api/assets/:id/file`. Owner DMs retain normal library access. Player requests must include campaign and encounter context, and the server checks live membership, session active, active encounter identity, a visible combatant reference, ready asset status and the campaign owner's asset ownership. Unrelated/ended/revoked/hidden-only/historical encounters grant nothing; no library metadata or unrestricted URLs are exposed. Membership, visibility and encounter switching are rechecked on every request. Snapshot appearance for visible combatants reaches all authorised participants; hidden appearances are excluded with hidden combatants. No new room or binary socket event is needed.
+
+## Loading, instances and normalisation
+
+Extract shared defensive GLB parsing/disposal from the preview. A browser-context-scoped, reference-counted cache shares one network fetch/parse across identical URLs, coalesces concurrent loads, bounds retained resources, and releases geometry/material/texture/image resources only after all instances release. Authorisation context is part of the cache key; session/campaign/visibility transitions remove mounted instances. Requests still authenticate on cache misses; browser memory cannot revoke already-delivered bytes, so private data must never be sent before authorisation. Failed loads retain the selectable original token and a visible status, with explicit retry rather than polling.
+
+Use SkeletonUtils.clone for per-instance skeletons; share immutable source geometry/materials/textures. Instance transforms live on wrapper groups. Never mutate shared model transforms/materials or dispose shared resources from an instance. HP/conditions/initiative updates do not reload or reparse GLBs. Preview loading uses the same utilities, while keeping its own camera and framing behaviour.
+
+Miniatures are Y-up, centred in X/Z and grounded at their transformed lowest Y. Normalise the raw model's vertical extent to one world unit (one square is five feet); use a safe largest-dimension fallback for flat/near-zero-height models and reject unusable/non-finite bounds to the token fallback. Multiply by explicit combatant scale, rotate around +Y (0 preserves GLB +Z-facing convention) and add verticalOffset above the ground/base. No automatic semantic facing/axis detection is attempted; rotation adjusts unusual exports. Library scale is copied as a multiplier in this miniature convention, so preview the assignment before saving. Original files remain unchanged.
+
+## Battlefield and bases
+
+`CombatantMiniature3D` wraps the same logical token centre and selection handler. Small/Medium use a one-square base, Large two squares, Huge three, centred on the token anchor. A base is visual only: movement still validates one anchor cell with no collision/multi-cell occupancy. Default Medium; infer recognised size from existing stat-block role when no explicit size exists. A selected outline and active ring have different geometry and text labels/accessible roster states, not colour alone. Keep HP/conditions access through the existing tracker/player projection. Loading/unavailable/render failure uses the cylinder and remains selectable/movable. Cameras stay browser-local and mounted during appearance updates.
+
+## Tests
+
+Pure tests cover schema/serialization/legacy files, projection/DM permissions, bounds normalisation, footprints and independent cloned transforms. Cache tests cover single fetch/parse, independent instances, bounded retention and delayed disposal. HTTP/PostgreSQL integration covers assignment broadcasts to a DM/two players, ready/owner validation including bypass routes, visibility/context/revocation/cross-campaign delivery, deletion guards, unknown imports, movement, reconnect/checkpoint/restart recovery. Browser tests exercise library selection, preview/overrides, actual model rendering, selection/movement, shared loading, fallback and independent cameras, alongside all existing regressions.
+
+## Delivered integration points
+
+`shared/miniatures.ts` defines appearance defaults/validation and footprints; `shared/domain.ts` includes the command and explicit public projection. `server/miniatures.ts` validates references under ordered locks, called by every `persistState` path. `server/assets.ts` retains owner-only metadata/management while extending only authenticated binary delivery, and refuses deletion while encounter references remain. `assetResourceCache.ts` and `modelResources.ts` implement bounded scoped loading, defensive parsing, normalisation, cloning and resource ownership; `AssetPreview3D` reuses those utilities without fetching again on transform-only changes. `CombatantMiniature3D` renders inside the original token anchor. `MiniatureSettings` reuses `AssetLibrary` in picker mode and submits the existing encounter command transport. `BattleMap3D`, `App` and `Multiplayer` preserve movement/cameras while supplying appearance and authorisation context. The runbook records completed verification and constraints.
