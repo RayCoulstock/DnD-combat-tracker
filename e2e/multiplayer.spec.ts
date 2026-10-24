@@ -88,8 +88,7 @@ test('local ledger, DM and two browsers, camera isolation and offline camera', a
       await expect(player.getByRole('button', { name: 'Next turn' })).toHaveCount(0)
       await expect(player.getByRole('button', { name: 'Invite player' })).toHaveCount(0)
     }
-    await page.getByText('Token ownership, visibility and combatant settings', { exact: true }).click()
-    await page.getByRole('combobox', { name: 'Owner', exact: true }).first().selectOption({ label: 'Player 1' })
+    await page.getByRole('combobox', { name: /^Controlled by / }).first().selectOption({ label: 'Player 1' })
     await expect(players[0].locator('.online-card').filter({ hasText: '10/10 HP · AC 15' })).toBeVisible()
     // A real floor click moves the assigned token, and all authorised views receive it.
     const canvas = players[0].locator('canvas')

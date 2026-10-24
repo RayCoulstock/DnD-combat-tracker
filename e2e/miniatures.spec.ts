@@ -28,8 +28,7 @@ test('DM assigns shared miniatures live; two players retain movement, fallback a
       await player.goto(invitation.url);await player.getByLabel('Display name').fill('Player '+(index+1));await player.getByRole('button',{name:'Join campaign',exact:true}).click();await expect(player.locator('.connection')).toHaveText('Connected')
       await expect(player.getByRole('button',{name:'Assign 3D Miniature',exact:true})).toHaveCount(0)
     }
-    await page.getByText('Token ownership, visibility and combatant settings',{exact:true}).click()
-    await page.getByRole('combobox',{name:'Owner',exact:true}).nth(0).selectOption({label:'Player 1'});await page.getByRole('combobox',{name:'Owner',exact:true}).nth(1).selectOption({label:'Player 2'})
+    await page.getByRole('combobox',{name:/^Controlled by /}).nth(0).selectOption({label:'Player 1'});await page.getByRole('combobox',{name:/^Controlled by /}).nth(1).selectOption({label:'Player 2'})
     for(const[id,scale,rotation,size]of[[1,'1.5','90','Large'],[2,'.75','180','Small']]as const){
       await page.locator('.initiative-item:visible').filter({hasText:'Hero '+id}).click()
       await page.getByRole('button',{name:'Assign 3D Miniature',exact:true}).click();const dialog=page.getByRole('dialog')

@@ -20,6 +20,7 @@ interface Combatant {
   miniature?: MiniatureAppearance
   miniatureStatus?: unknown
   conditions?: string[]
+  hpShown?: boolean
   ownerId?: string | null
 }
 
@@ -126,7 +127,7 @@ export default function BattleMap3D(props: BattleMap3DProps) {
   return <section className="tabletop-shell" aria-label={props.dungeonMap ? `Dungeon map: ${props.dungeonMap.name}` : 'Flat battlefield'}>
     <aside className="tabletop-panel tabletop-roster">
       <span className="eyebrow">CURRENT ENCOUNTER</span><h2>Round {props.round}</h2>
-      <div className="map-initiative-list">{props.combatants.map((combatant) => <button key={combatant.id} aria-pressed={combatant.id === props.selectedId} aria-current={combatant.id === props.activeId ? 'step' : undefined} className={`${combatant.id === props.selectedId ? 'selected' : ''} ${combatant.id === props.activeId ? 'active' : ''}`} onClick={() => props.onSelectToken(combatant.id)}><span className={`map-token-dot ${combatant.side}`} /><span><strong>{combatant.name}</strong>{combatant.id === props.selectedId && <small>◇ Selected</small>}{combatant.id === props.activeId && <small>▶ Active turn</small>}{combatant.conditions?.length ? <small>{combatant.conditions.join(', ')}</small> : null}<small>Initiative {combatant.initiative}</small></span>{(!props.playerId || combatant.ownerId === props.playerId) && <em>{combatant.hp}/{combatant.maxHp} HP</em>}</button>)}</div>
+      <div className="map-initiative-list">{props.combatants.map((combatant) => <button key={combatant.id} aria-pressed={combatant.id === props.selectedId} aria-current={combatant.id === props.activeId ? 'step' : undefined} className={`${combatant.id === props.selectedId ? 'selected' : ''} ${combatant.id === props.activeId ? 'active' : ''}`} onClick={() => props.onSelectToken(combatant.id)}><span className={`map-token-dot ${combatant.side}`} /><span><strong>{combatant.name}</strong>{combatant.id === props.selectedId && <small>◇ Selected</small>}{combatant.id === props.activeId && <small>▶ Active turn</small>}{combatant.conditions?.length ? <small>{combatant.conditions.join(', ')}</small> : null}<small>Initiative {combatant.initiative}</small></span>{(!props.playerId || combatant.ownerId === props.playerId || combatant.hpShown === true) && <em>{combatant.hp}/{combatant.maxHp} HP</em>}</button>)}</div>
       {!props.combatants.length && <p className="map-empty">Add combatants in the tracker to place tokens.</p>}
     </aside>
     <div className="battlefield-wrap">

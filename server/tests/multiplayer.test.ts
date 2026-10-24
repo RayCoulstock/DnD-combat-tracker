@@ -182,6 +182,17 @@ test('PostgreSQL multiplayer lifecycle with DM and two players', { timeout: 9000
       await accepted(dc, { type: 'initiative.next' })
       assert.equal(c1.snapshot!.state.activeId, 3)
     })
+    await t.test('DM HP-sharing preference persists and broadcasts without exposing other statistics',async()=>{
+      await accepted(dc,{type:'combatant.hp.visibility',combatantId:1,shown:true})
+      assert.equal(c2.snapshot!.state.combatants.find(c=>c.id===1)!.hp,7)
+      assert.equal(c2.snapshot!.state.combatants.find(c=>c.id===1)!.ac,0)
+      assert.equal(c2.snapshot!.state.combatants.find(c=>c.id===1)!.privateNotes,'')
+      const persisted=await dm.request(path+'/export');assert.equal(persisted.combatants.find((c:{id:number})=>c.id===1).hpShown,true)
+      const denied=await send(c1,{type:'combatant.hp.visibility',combatantId:1,shown:false});assert.equal(denied.ok,false)
+      await accepted(dc,{type:'combatant.hp.visibility',combatantId:1,shown:false})
+      assert.equal(c2.snapshot!.state.combatants.find(c=>c.id===1)!.hp,0)
+      assert.equal(c1.snapshot!.state.combatants.find(c=>c.id===1)!.hp,7)
+    })
     await t.test('concurrent commands serialize, duplicates are idempotent and stale revisions reject', async () => {
       const revision = dc.snapshot!.revision
       const [a, b] = await Promise.all([
