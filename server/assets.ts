@@ -90,10 +90,10 @@ export function registerAssetRoutes(app: Express, pool: Pool, storage: AssetStor
   }
   app.get('/api/assets', async (req, res) => {
     const actor = requireDM(req)
-    const query = z.object({ q: z.string().max(150).default(''), category: z.enum(assetCategories).optional(), offset: z.coerce.number().int().min(0).max(100000).default(0) }).strict().parse(req.query)
-    const params = [actor.id, `%${query.q.replace(/[\\%_]/g, '\\$&')}%`, query.category ?? null]
-    const where = "owner_id=$1 AND upload_status <> 'deleted' AND (name ILIKE $2 OR description ILIKE $2 OR tags::text ILIKE $2) AND ($3::text IS NULL OR category=$3)"
-    const rows = await pool.query(`SELECT * FROM assets_3d WHERE ${where} ORDER BY created_at DESC,id LIMIT 50 OFFSET $4`, [...params, query.offset])
+    const query = z.object({ q: z.string().max(150).default(''), category: z.enum(assetCategories).optional(), role: z.enum(['wall','door']).optional(), offset: z.coerce.number().int().min(0).max(100000).default(0) }).strict().parse(req.query)
+    const params = [actor.id, `%${query.q.replace(/[\\%_]/g, '\\$&')}%`, query.category ?? null, query.role ?? null]
+    const where = "owner_id=$1 AND upload_status <> 'deleted' AND (name ILIKE $2 OR description ILIKE $2 OR tags::text ILIKE $2) AND ($3::text IS NULL OR category=$3) AND ($4::text IS NULL OR presentation->'architecture'->>'role'=$4)"
+    const rows = await pool.query(`SELECT * FROM assets_3d WHERE ${where} ORDER BY created_at DESC,id LIMIT 50 OFFSET $5`, [...params, query.offset])
     res.json({ assets: rows.rows.map(publicAsset), total: Number((await pool.query(`SELECT count(*) FROM assets_3d WHERE ${where}`, params)).rows[0].count), maxBytes: limits.maxBytes })
   })
   app.post('/api/assets', uploadLimit, async (req, res) => {

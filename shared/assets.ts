@@ -1,9 +1,11 @@
 import { z } from 'zod'
+import { architecturalMetadataSchema } from './architecture.ts'
 export const assetCategories = ['miniature', 'monster', 'furniture', 'architecture', 'terrain', 'decoration'] as const
 export const assetPresentationSchema = z.object({
   defaultScale: z.number().finite().min(.0001).max(10000).default(1),
   defaultRotation: z.number().finite().min(0).max(360).default(0),
   verticalOffset: z.number().finite().min(-10000).max(10000).default(0),
+  architecture: architecturalMetadataSchema.optional(),
   displayName: z.string().trim().max(150).default(''),
 }).strict()
 export const assetMetadataSchema = z.object({

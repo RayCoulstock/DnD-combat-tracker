@@ -11,7 +11,7 @@ test('version 1 stays compatible; version 2 permits strictly validated mixed sce
   assert.deepEqual(readDungeon(JSON.parse(JSON.stringify(map))),map)
   for(const patch of [{assetId:'https://external/model.glb'},{scale:0},{scale:21},{rotation:361},{verticalOffset:Infinity},{url:'evil'}])assert.throws(()=>scenerySchema.parse({...scenery(),...patch}))
   assert.throws(()=>readDungeon({...map,width:4,props:[{...scenery(),position:{x:3.5,z:1}}]}))
-  assert.throws(()=>readDungeon({...map,schemaVersion:3}))
+  assert.throws(()=>readDungeon({...map,schemaVersion:4}))
   assert.deepEqual(sceneryAtPoint(2.8,3.7,20,20,true),{x:2,z:3});assert.deepEqual(sceneryAtPoint(2.8,3.7,20,20,false),{x:2.3,z:3.2})
 })
 test('scenery place/update/duplicate/remove and bounded authoritative undo/redo share map history',()=>{
