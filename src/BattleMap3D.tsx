@@ -109,7 +109,7 @@ function BattlefieldScene({ combatants, map, selectedId, activeId, onSelectToken
       <mesh position={[-map.width / 2, 0.75, -map.height / 4]} castShadow receiveShadow><boxGeometry args={[0.3, 1.5, map.height / 2]} /><meshStandardMaterial color="#4a4943" roughness={0.88} /></mesh>
       <mesh position={[map.width / 2, 0.75, map.height / 4]} castShadow receiveShadow><boxGeometry args={[0.3, 1.5, map.height / 2]} /><meshStandardMaterial color="#4a4943" roughness={0.88} /></mesh>
     </group>}
-    {dungeonMap && <DungeonScene map={dungeonMap} editor={editor} />}
+    {dungeonMap && <DungeonScene map={dungeonMap} editor={editor} assetScope={assetScope} assetContext={assetContext} />}
     {editor && <EditorSurface width={map.width} height={map.height} editor={editor} />}
     {combatants.map((combatant) => {
       const position = map.tokens[String(combatant.id)]

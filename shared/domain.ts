@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { isScenery } from './scenery.ts'
 import { miniatureSchema } from './miniatures.ts'
 import { generationOptionsSchema, generateDungeon } from './generator.ts'
 import { dungeonSchema, editMap, emptyHistory, mapCommandSchemas, type DungeonMap, type MapCommand, type MapHistory } from './dungeon.ts'
@@ -141,7 +142,7 @@ export function projectEncounter(state: EncounterState, actor: Actor): Encounter
   })
   const ids = new Set(combatants.map(c => String(c.id)))
   const owned = combatants.filter(c => c.ownerId === actor.id)
-  return { ...state, mapUndoDepth: undefined, mapRedoDepth: undefined, combatants, selectedId: null, activeId: ids.has(String(state.activeId)) ? state.activeId : null,
+  return { ...state, dungeonMap: state.dungeonMap ? { ...state.dungeonMap, props: state.dungeonMap.props.filter(p => !isScenery(p) || p.visible) } : undefined, mapUndoDepth: undefined, mapRedoDepth: undefined, combatants, selectedId: null, activeId: ids.has(String(state.activeId)) ? state.activeId : null,
     usedAbilities: Object.fromEntries(Object.entries(state.usedAbilities).filter(([key]) => owned.some(c => key.startsWith(`${c.id}:`)))),
     battleMap: { ...state.battleMap, tokens: Object.fromEntries(Object.entries(state.battleMap.tokens).filter(([id]) => ids.has(id))) } }
 }

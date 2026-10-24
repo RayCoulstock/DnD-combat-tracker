@@ -88,3 +88,7 @@ For 4C, add a versioned uploaded dungeon-prop variant using this loader/normalis
 - Browser screenshots were inspected for loaded textured geometry, bases, status rings and the assignment action. No private Meshy model or physical-laptop benchmark was used.
 
 The integration test also guards a 4A upload timing correction: upload success now releases the processing slot before acknowledgement, so an immediately following sequential upload is not incorrectly rejected as still processing.
+
+## Milestone 4C extension
+
+[Custom scenery](custom-3d-scenery-development.md) now uses the same cached model-instance renderer and normalisation. Miniature base/selection/movement behaviour is preserved. Binary grants and asset deletion guards also account for current visible scenery, map history and reusable map templates; library management remains DM-only.

@@ -78,3 +78,7 @@ Browser camera checks wait for actual rendered-view convergence rather than a fi
 ## Furniture selection fix
 
 Chair/table selection previously depended entirely on raycasting their narrow component meshes. Clicking the floor within the furniture's occupied square cleared selection, so gaps around legs/seats could make furniture difficult to select. The Select tool now falls back to the prop occupying a clicked floor cell. Direct mesh hits on props, walls and doors retain priority; rotation commands and server permissions are unchanged. A browser regression reproduces the missed chair selection before the fix, then selects and rotates both furniture types and verifies their exported rotations.
+
+## Milestone 4C extension
+
+[Custom GLB scenery](custom-3d-scenery-development.md) now adds map schema version 2 in the same props collection; version-1 maps and procedural generation remain compatible. The DM editor includes 3D Scenery, snap/free transforms and the existing map undo/redo. Asset references in current maps, retained history and templates protect GLBs from deletion; only current visible encounter references grant player file access. Use the scenery guide for current version/access/history rules.

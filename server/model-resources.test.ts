@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Bone, Box3, BoxGeometry, Float32BufferAttribute, Group, Mesh, MeshStandardMaterial, Skeleton, SkinnedMesh, Uint16BufferAttribute, Vector3 } from 'three'
-import { cloneMiniature, disposeInstance } from '../src/modelResources.ts'
+import { cloneMiniature, disposeInstance, cloneModelInstance } from '../src/modelResources.ts'
 import { AssetResourceCache } from '../src/assetResourceCache.ts'
 test('normalisation grounds/centres tiny, large, flat and multi-mesh models with independent clones', () => {
   for (const size of [1e-12, 2, 1e12]) {
@@ -42,4 +42,13 @@ test('skinned instances have independent bones and releasing one never disposes 
   let disposed=0;geometry.addEventListener('dispose',()=>disposed++)
   disposeInstance(first);assert.equal(disposed,0);assert.equal(skins[1].geometry,geometry)
   disposeInstance(second);geometry.dispose()
+})
+
+test('translucent placement ghosts never mutate or dispose shared model materials', () => {
+  const material=new MeshStandardMaterial(),geometry=new BoxGeometry(1,2,1),source=new Group();source.add(new Mesh(geometry,material))
+  const preview=cloneModelInstance(source,true),placed=cloneModelInstance(source)
+  let ghost:Mesh|undefined,normal:Mesh|undefined;preview.root.traverse(o=>{if(o instanceof Mesh)ghost=o});placed.root.traverse(o=>{if(o instanceof Mesh)normal=o})
+  assert.equal((ghost!.material as MeshStandardMaterial).opacity,.35);assert.equal((normal!.material as MeshStandardMaterial).opacity,1)
+  assert.notEqual(ghost!.material,material);assert.equal(normal!.material,material);assert.equal(ghost!.geometry,geometry)
+  let disposed=0;material.addEventListener('dispose',()=>disposed++);preview.dispose();assert.equal(disposed,0);placed.dispose();geometry.dispose();material.dispose()
 })

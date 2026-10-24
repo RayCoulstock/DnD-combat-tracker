@@ -2,6 +2,7 @@ import type { Express, Request } from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { transaction, type Pool } from './db.ts'
+import { syncTemplateScenery } from './scenery.ts'
 import { authorize, loadState } from './game.ts'
 import { DomainError, type Actor } from '../shared/domain.ts'
 import { readDungeon } from '../shared/dungeon.ts'
@@ -37,11 +38,14 @@ export function registerMapRoutes(app: Express, pool: Pool, requireDM: (req: Req
         if (!state.dungeonMap) throw new DomainError('INVALID', 'Create or load a dungeon map first.')
         const document = readDungeon({ ...state.dungeonMap, name: data.name })
         if (overwrite) {
-          const saved = await db.query('UPDATE map_templates SET name=$3,document=$4,revision=revision+1,updated_at=now() WHERE id=$1 AND campaign_id=$2 AND revision=$5 RETURNING id,revision', [id, campaignId, data.name, document, data.revision])
+          const saved = await db.query('UPDATE map_templates SET name=$3,document=$4,schema_version=$6,revision=revision+1,updated_at=now() WHERE id=$1 AND campaign_id=$2 AND revision=$5 RETURNING id,revision', [id, campaignId, data.name, document, data.revision, document.schemaVersion])
           if (!saved.rowCount) throw new DomainError('CONFLICT', 'Template changed or is unavailable. Refresh the library.')
+          await syncTemplateScenery(db, id, actor.id, document)
           return saved.rows[0]
         }
-        return (await db.query('INSERT INTO map_templates(id,campaign_id,owner_id,name,document) VALUES($1,$2,$3,$4,$5) RETURNING id,revision', [id, campaignId, actor.id, data.name, document])).rows[0]
+        const saved = (await db.query('INSERT INTO map_templates(id,campaign_id,owner_id,name,document,schema_version) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,revision', [id, campaignId, actor.id, data.name, document, document.schemaVersion])).rows[0]
+        await syncTemplateScenery(db, id, actor.id, document)
+        return saved
       })
       res.status(overwrite ? 200 : 201).json(result)
     })
@@ -58,10 +62,12 @@ export function registerMapRoutes(app: Express, pool: Pool, requireDM: (req: Req
         if (action === 'delete') { await db.query('DELETE FROM map_templates WHERE id=$1', [id]); return { ok: true } }
         const newName = name.parse(data.name)
         if (action === 'rename') {
-          await db.query('UPDATE map_templates SET name=$2,document=$3,revision=revision+1,updated_at=now() WHERE id=$1', [id, newName, readDungeon({ ...map.document, name: newName })]); return { id, revision: map.revision + 1 }
+          await db.query('UPDATE map_templates SET name=$2,document=$3,revision=revision+1,updated_at=now() WHERE id=$1', [id, newName, readDungeon({ ...map.document, name: newName })]); await syncTemplateScenery(db, id, actor.id, map.document); return { id, revision: map.revision + 1 }
         }
         const copyId = randomUUID()
-        await db.query('INSERT INTO map_templates(id,campaign_id,owner_id,name,document) VALUES($1,$2,$3,$4,$5)', [copyId, campaignId, actor.id, newName, readDungeon({ ...map.document, id: copyId, name: newName })])
+        const document = readDungeon({ ...map.document, id: copyId, name: newName })
+        await db.query('INSERT INTO map_templates(id,campaign_id,owner_id,name,document,schema_version) VALUES($1,$2,$3,$4,$5,$6)', [copyId, campaignId, actor.id, newName, document, document.schemaVersion])
+        await syncTemplateScenery(db, copyId, actor.id, document)
         return { id: copyId, revision: 1 }
       }); res.status(action === 'duplicate' ? 201 : 200).json(result)
     })

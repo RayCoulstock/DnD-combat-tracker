@@ -2,3 +2,4 @@
 .dungeon-builder[data-editing=true] canvas{cursor:crosshair}
 .builder-tools fieldset{display:grid;grid-template-columns:minmax(0,1fr) 210px;gap:8px 16px}.builder-tools fieldset>.builder-row{grid-column:1}.builder-properties{grid-column:2;grid-row:1/span 5;display:flex;flex-direction:column;gap:12px;padding:12px;background:#ece9df;border-radius:6px}.builder-properties label{width:100%}
 @media(max-width:900px){.builder-tools fieldset{display:block}.builder-properties{margin:12px 0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}}
+.scenery-properties{padding-top:12px;border-top:1px solid #b5af9f;overflow-wrap:anywhere}.scenery-properties h3{font-size:14px}.scenery-properties input:not([type=checkbox]),.scenery-properties select{max-width:100%;box-sizing:border-box}.scenery-properties button{margin:4px 0;width:100%}.scenery-properties label{margin:8px 0}.builder-properties{min-width:0}

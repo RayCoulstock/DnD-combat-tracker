@@ -15,7 +15,7 @@ export function disposeModel(root: Object3D) {
 }
 export async function loadGlb(url: string, signal: AbortSignal) {
   const response = await fetch(url, { credentials: 'same-origin', signal })
-  if (!response.ok) throw new Error('Model unavailable or access ended. Showing the original token.')
+  if (!response.ok) throw new Error('Model unavailable or access ended. Showing a placeholder.')
   const buffer = await response.arrayBuffer()
   const manager = new LoadingManager()
   manager.setURLModifier(resource => { if (!resource.startsWith('blob:')) throw new Error('External model resources are disabled.'); return resource })
@@ -51,3 +51,12 @@ export function cloneMiniature(source: Group) {
 }
 export function disposeInstance(root: Object3D) { root.traverse(o => { if (o instanceof SkinnedMesh) o.skeleton.dispose() }) }
 export const miniatureModels = new AssetResourceCache<Group>(loadGlb)
+
+export function cloneModelInstance(source: Group, ghost = false) {
+  const root = cloneMiniature(source), owned: Material[] = []
+  if (ghost) root.traverse(object => { if (object instanceof Mesh) {
+    const copy = (material: Material) => { const m = material.clone(); m.transparent = true; m.opacity = .35; m.depthWrite = false; owned.push(m); return m }
+    object.material = Array.isArray(object.material) ? object.material.map(copy) : copy(object.material)
+  } })
+  return { root, dispose: () => { disposeInstance(root); owned.forEach(m => m.dispose()) } }
+}

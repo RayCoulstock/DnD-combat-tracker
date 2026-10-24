@@ -107,3 +107,12 @@ encounter-scoped delivery and keep the existing token movement controls.
 See [miniature usage and testing](docs/3d-miniatures-development.md) and
 [architecture](docs/3d-miniatures-architecture.md) for normalisation, migration,
 access rules, fallbacks and the visual-only multi-square base limitation.
+
+## Custom 3D scenery (Milestone 4C)
+
+DMs can choose **3D Scenery** in the dungeon editor to browse existing Asset Library
+models, place them with snapped/free anchors, and edit independent instance transforms.
+Apply migration 006 before starting the backend. Procedural props and logical walls/doors
+remain available. See [the scenery guide](docs/custom-3d-scenery-development.md) and
+[architecture](docs/custom-3d-scenery-architecture.md) for version compatibility,
+map/template/history persistence, player access and deletion safeguards.

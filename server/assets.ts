@@ -68,12 +68,11 @@ export function registerAssetRoutes(app: Express, pool: Pool, storage: AssetStor
       const context = z.object({ campaignId: z.uuid().optional(), encounterId: z.uuid().optional() }).strict().parse(req.query)
       if (!context.campaignId || !context.encounterId) throw new AssetError(403, 'An active encounter is required.')
       row = (await pool.query(`SELECT a.* FROM assets_3d a
-        JOIN combatant_asset_references r ON r.asset_id=a.id
-        JOIN combatants b ON b.encounter_id=r.encounter_id AND b.id=r.combatant_id
-        JOIN encounters e ON e.id=b.encounter_id JOIN campaigns c ON c.id=e.campaign_id
+        JOIN campaigns c ON c.owner_id=a.owner_id JOIN encounters e ON e.campaign_id=c.id
         JOIN memberships m ON m.campaign_id=c.id AND m.id=$2 AND m.revoked_at IS NULL
         WHERE a.id=$1 AND c.id=$3 AND e.id=$4 AND c.active_encounter_id=e.id AND c.session_active
-          AND b.visible AND a.owner_id=c.owner_id AND a.upload_status='ready' LIMIT 1`, [id, actor.id, context.campaignId, context.encounterId])).rows[0]
+          AND (EXISTS(SELECT 1 FROM combatant_asset_references r JOIN combatants b ON b.encounter_id=r.encounter_id AND b.id=r.combatant_id WHERE r.asset_id=a.id AND r.encounter_id=e.id AND b.visible)
+            OR EXISTS(SELECT 1 FROM encounter_scenery_asset_references s WHERE s.asset_id=a.id AND s.encounter_id=e.id AND s.visible_current)) AND a.owner_id=c.owner_id AND a.upload_status='ready' LIMIT 1`, [id, actor.id, context.campaignId, context.encounterId])).rows[0]
     }
     if (!row) throw new AssetError(404, 'Asset is unavailable.')
     if (row.upload_status !== 'ready') throw new AssetError(409, 'Asset is not ready for preview.')
@@ -141,7 +140,7 @@ export function registerAssetRoutes(app: Express, pool: Pool, storage: AssetStor
     await transaction(pool, async db => {
       const locked = (await db.query('SELECT revision,upload_status FROM assets_3d WHERE id=$1 AND owner_id=$2 FOR UPDATE', [row.id, requireDM(req).id])).rows[0]
       if (!locked || locked.revision !== data.revision || !['ready', 'deleting'].includes(locked.upload_status)) throw new AssetError(409, 'Asset changed. Refresh its details and try again.')
-      if ((await db.query('SELECT 1 FROM combatant_asset_references WHERE asset_id=$1 LIMIT 1', [row.id])).rowCount) throw new AssetError(409, 'This asset is assigned to an encounter. Remove its miniature assignments before deleting it.')
+      if ((await db.query('SELECT 1 FROM combatant_asset_references WHERE asset_id=$1 UNION ALL SELECT 1 FROM encounter_scenery_asset_references WHERE asset_id=$1 UNION ALL SELECT 1 FROM template_scenery_asset_references WHERE asset_id=$1 LIMIT 1', [row.id])).rowCount) throw new AssetError(409, 'This asset is referenced by an encounter, map history or template. Remove those references before deleting it.')
       await db.query("UPDATE assets_3d SET upload_status='deleting',revision=revision+1,updated_at=now() WHERE id=$1", [row.id])
     })
     try { await storage.remove(row.storage_key) } catch { throw new AssetError(503, 'Deletion is pending. Restore storage and retry deletion or restart the backend.') }
