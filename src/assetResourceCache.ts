@@ -19,11 +19,11 @@ export class AssetResourceCache<T> {
     let entry = this.entries.get(key)
     if (!entry) {
       for (const [k, candidate] of this.entries) if (this.entries.size >= this.maxEntries && !candidate.users) this.remove(k, candidate)
-      if (this.entries.size >= this.maxEntries) return { promise: Promise.reject<T>(new Error('Miniature model budget reached. Use fewer distinct models.')), release() {} }
+      if (this.entries.size >= this.maxEntries) return { promise: Promise.reject<T>(new Error('3D model budget reached. Use fewer distinct models.')), release() {} }
       const created: Entry<T> = { users: 0, controller: new AbortController(), discarded: false, promise: undefined! }
       created.promise = this.limited(() => this.load(key, created.controller.signal)).then(resource => {
         for (const [k, candidate] of this.entries) if (this.bytes + resource.bytes > this.maxBytes && !candidate.users && candidate !== created) this.remove(k, candidate)
-        if (created.discarded || this.bytes + resource.bytes > this.maxBytes) { resource.dispose(); throw new Error('Miniature exceeds the available model memory budget.') }
+        if (created.discarded || this.bytes + resource.bytes > this.maxBytes) { resource.dispose(); throw new Error('Model exceeds the available model memory budget.') }
         created.resource = resource; this.bytes += resource.bytes; return resource.value
       }).catch(error => { if (this.entries.get(key) === created) this.entries.delete(key); throw error })
       entry = created; this.entries.set(key, entry)

@@ -1,7 +1,11 @@
 import { z } from 'zod'
 import { useEffect, useState } from 'react'
+import AssetLibrary from './AssetLibrary'
+import SceneryProperties from './SceneryProperties'
+import { isScenery, scenerySchema, sceneryLimits, type SceneryProp } from '../shared/scenery'
+import type { Asset3D } from '../shared/assets'
 import BattleMap3D, { type BattleMap3DProps } from './BattleMap3D'
-import { floorTypes, propTypes, themes, dungeonSchema, readDungeon, type DungeonMap } from '../shared/dungeon'
+import { floorTypes, propTypes, themes, dungeonSchema, readDungeon, type DungeonMap, type ProceduralProp } from '../shared/dungeon'
 import { generateDungeon, type GenerationOptions } from '../shared/generator'
 import { reconcileBattleMap } from './mapState'
 import type { EncounterState, GameCommand } from '../shared/domain'
@@ -15,10 +19,11 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
   state: EncounterState; editing: boolean; send: (command: GameCommand) => Promise<void>; connected: boolean; library?: MapLibrary
   battlefield: Omit<BattleMap3DProps, 'map' | 'dungeonMap' | 'editor'>
 }) {
+  const [sceneryAsset, setSceneryAsset] = useState<SceneryProp | null>(null), [pickingScenery, setPickingScenery] = useState(false), [snap, setSnap] = useState(true)
   const [tool, setTool] = useState<EditorInteraction['tool']>('select')
   const [floor, setFloor] = useState<DungeonMap['floors'][number]['type']>('stone')
   const [wallMaterial, setWallMaterial] = useState<'stone' | 'wood'>('stone')
-  const [propType, setPropType] = useState<DungeonMap['props'][number]['type']>('crate')
+  const [propType, setPropType] = useState<ProceduralProp['type']>('crate')
   const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0)
   const [doorState, setDoorState] = useState<'open' | 'closed' | 'locked'>('closed')
   const [selected, setSelected] = useState<EditorHit | null>(null)
@@ -87,10 +92,16 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
     if (action === 'delete') setTemplateId('')
   })
   const hit = (value: EditorHit) => {
+    if (tool === 'scenery' && sceneryAsset) { void dispatch({ type: 'map.scenery.place', prop: { ...sceneryAsset, id: crypto.randomUUID(), position: value.position ?? value.cell } }); return }
+    if (tool === 'sceneryMove') {
+      const moving = document?.props.find(p => p.id === selected?.objectId)
+      if (moving && isScenery(moving)) void dispatch({ type: 'map.scenery.update', propId: moving.id, transform: { position: value.position ?? value.cell, rotation: moving.rotation, scale: moving.scale, verticalOffset: moving.verticalOffset, visible: moving.visible } })
+      setTool('select'); return
+    }
     if (tool === 'select') {
       // Sparse furniture geometry leaves gaps in its occupied cell. Preserve direct
       // wall/door/prop hits, but let a floor hit select the prop on that square.
-      const occupant = !value.objectId && document?.props.find(p => p.position.x === value.cell.x && p.position.z === value.cell.z)
+      const occupant = !value.objectId && document?.props.find(p => Math.floor(p.position.x + .5) === value.cell.x && Math.floor(p.position.z + .5) === value.cell.z)
       setSelected(occupant ? { ...value, kind: 'prop', objectId: occupant.id } : value)
       return
     }
@@ -111,19 +122,38 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
     }
   }
   const prop = document?.props.find(p => p.id === selected?.objectId), door = document?.doors.find(d => d.id === selected?.objectId)
-  const editor: EditorInteraction = { tool, selectedId: selected?.objectId, previewRotation: rotation, onHit: hit, onPaint: cells => { void dispatch({ type: 'map.floor.paint', cells, material: floor }) } }
+  useEffect(() => {
+    if (!editing) return
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setTool('select'); setSelected(null); setPickingScenery(false); return }
+      if (!connected || busy || preview || pickingScenery || e.repeat || !prop || !isScenery(prop) || (e.target instanceof HTMLElement && (e.target.isContentEditable || e.target.closest('input,textarea,select')))) return
+      const command: GameCommand | null = e.key === 'Delete' ? { type:'map.scenery.remove', propId:prop.id } : e.shiftKey && e.key.toLowerCase() === 'd' ? { type:'map.scenery.duplicate', propId:prop.id, newId:crypto.randomUUID(), position:{x:Math.min(document!.width-1,prop.position.x+1),z:Math.min(document!.height-1,prop.position.z+1)} } : null
+      if (command) { e.preventDefault(); setBusy(true); void send(command).catch(error => setMessage(error.message)).finally(() => setBusy(false)) }
+    }
+    window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key)
+  }, [editing, connected, busy, preview, pickingScenery, prop, document, send])
+  const chooseScenery = (asset: Asset3D) => {
+    setSceneryAsset(scenerySchema.parse({ id: 'placement-preview', type: 'asset', assetId: asset.id, label: asset.presentation.displayName || asset.name, category: asset.category, position: {x:0,z:0}, rotation: asset.presentation.defaultRotation, scale: Math.max(sceneryLimits.minScale, Math.min(sceneryLimits.maxScale, asset.presentation.defaultScale)), verticalOffset: Math.max(sceneryLimits.minOffset, Math.min(sceneryLimits.maxOffset, asset.presentation.verticalOffset)), visible: true })); setPickingScenery(false); setTool('scenery')
+  }
+  const editor: EditorInteraction = { snap, scenery: tool === 'sceneryMove' && prop && isScenery(prop) ? prop : sceneryAsset ?? undefined, assetScope: battlefield.assetScope, assetContext: battlefield.assetContext, tool, selectedId: selected?.objectId, previewRotation: rotation, onHit: hit, onPaint: cells => { void dispatch({ type: 'map.floor.paint', cells, material: floor }) } }
   return <section className="dungeon-builder" data-editing={editing}>
+    {pickingScenery && library && <div className="miniature-dialog" role="dialog" aria-modal="true" aria-label="Choose 3D scenery"><AssetLibrary api={library.api} csrf="" onClose={() => setPickingScenery(false)} onPick={chooseScenery} /></div>}
     <div className="builder-tools" hidden={!editing}>
       <h2>Dungeon builder</h2><button onClick={() => setShowGenerator(value => !value)}>Generate dungeon</button><p>{document ? `${document.name} · ${document.width} × ${document.height} · map revision ${state.mapRevision ?? 0}` : 'Flat battlefield · create or load a dungeon to edit geometry.'}</p>
-      <fieldset disabled={!connected || busy || Boolean(preview)}><legend>Map tools</legend><div className="builder-row">{(['select', 'floor', 'wall', 'door', 'object', 'erase'] as const).map(t => <button key={t} aria-pressed={tool === t} onClick={() => setTool(t)}>{({ select: 'Select', floor: 'Paint floor', wall: 'Draw wall', door: 'Place door', object: 'Place object', erase: 'Erase' })[t]}</button>)}<button disabled={!state.mapUndoDepth} onClick={() => void dispatch({ type: 'map.undo' })}>Undo map edit</button><button disabled={!state.mapRedoDepth} onClick={() => void dispatch({ type: 'map.redo' })}>Redo map edit</button></div>
+      <fieldset disabled={!connected || busy || Boolean(preview)}><legend>Map tools</legend><div className="builder-row">{(['select', 'floor', 'wall', 'door', 'object', 'erase'] as const).map(t => <button key={t} aria-pressed={tool === t} onClick={() => setTool(t)}>{({ select: 'Select', floor: 'Paint floor', wall: 'Draw wall', door: 'Place door', object: 'Place object', erase: 'Erase' })[t]}</button>)}<button aria-pressed={tool === 'scenery'} disabled={!library || !document} onClick={() => { if (sceneryAsset) setTool('scenery'); else setPickingScenery(true) }}>3D Scenery</button><button disabled={!state.mapUndoDepth} onClick={() => void dispatch({ type: 'map.undo' })}>Undo map edit</button><button disabled={!state.mapRedoDepth} onClick={() => void dispatch({ type: 'map.redo' })}>Redo map edit</button><button onClick={() => { if (confirm('Clear map undo and redo history? This cannot be undone.')) void dispatch({ type: 'map.history.clear' }) }}>Clear map history</button></div>
         <aside className="builder-properties" aria-label="Tool properties">
+          <label><input type="checkbox" checked={snap} onChange={e => setSnap(e.target.checked)} />Snap scenery to grid</label>
+          {library && <button onClick={() => setPickingScenery(true)}>Choose scenery asset</button>}
+          {(tool === 'scenery' || tool === 'sceneryMove') && <p>Click the floor to {tool === 'sceneryMove' ? 'move' : 'place'} scenery. Escape cancels. Middle-drag rotates; right-drag pans.</p>}
+          {document?.props.some(isScenery) && <label>Scenery instances<select aria-label="Scenery instances" value={prop && isScenery(prop) ? prop.id : ''} onChange={e => { const item = document.props.find(p => p.id === e.target.value); if (item) { setTool('select'); setSelected({cell:{x:Math.floor(item.position.x),z:Math.floor(item.position.z)},wall:{id:'H:0:0',x:0,z:0,axis:'H',material:'stone'},kind:'prop',objectId:item.id}) } }}><option value="">Select scenery</option>{document.props.filter(isScenery).map(p => <option key={p.id} value={p.id}>{p.label} · {p.id.slice(0,8)}{p.visible ? '' : ' (hidden)'}</option>)}</select></label>}
+          {prop && isScenery(prop) && <SceneryProperties key={`${prop.id}:${state.mapRevision}`} prop={prop} width={document!.width} height={document!.height} send={command => { void dispatch(command) }} onMove={() => setTool('sceneryMove')} />}
           <label>Floor material<select aria-label="Floor material" value={floor} onChange={e => setFloor(e.target.value as typeof floor)}>{floorTypes.map(t => <option key={t}>{t}</option>)}</select></label>
           <label>Wall material<select aria-label="Wall material" value={wallMaterial} onChange={e => setWallMaterial(e.target.value as typeof wallMaterial)}><option>stone</option><option>wood</option></select></label>
           <label>Door state<select aria-label="Door state" value={doorState} onChange={e => setDoorState(e.target.value as typeof doorState)}><option>closed</option><option>open</option><option>locked</option></select></label>
           <label>Object palette<select aria-label="Object palette" value={propType} onChange={e => setPropType(e.target.value as typeof propType)}>{propTypes.map(t => <option key={t}>{t}</option>)}</select></label>
           <label>Object rotation<select aria-label="Object rotation" value={rotation} onChange={e => setRotation(Number(e.target.value) as typeof rotation)}>{[0,90,180,270].map(n => <option key={n} value={n}>{n}°</option>)}</select></label>
         </aside>
-        {selected?.objectId && <div className="builder-row"><strong>Selected {selected.kind}: {selected.objectId}</strong>{prop && <button onClick={() => void dispatch({ type: 'map.prop.rotate', propId: prop.id, rotation: ((prop.rotation + 90) % 360) as typeof rotation })}>Rotate selected object</button>}{door && <button onClick={() => void dispatch({ type: 'map.door.update', doorId: door.id, state: doorState })}>Apply selected door state</button>}<button onClick={() => void dispatch(selected.kind === 'prop' ? { type: 'map.prop.remove', propId: selected.objectId! } : selected.kind === 'door' ? { type: 'map.door.remove', doorId: selected.objectId! } : { type: 'map.wall.remove', wallId: selected.objectId! })}>Remove selected</button></div>}
+        {selected?.objectId && <div className="builder-row"><strong>Selected {selected.kind}: {selected.objectId}</strong>{prop && !isScenery(prop) && <button onClick={() => void dispatch({ type: 'map.prop.rotate', propId: prop.id, rotation: ((prop.rotation + 90) % 360) as typeof rotation })}>Rotate selected object</button>}{door && <button onClick={() => void dispatch({ type: 'map.door.update', doorId: door.id, state: doorState })}>Apply selected door state</button>}<button onClick={() => void dispatch(selected.kind === 'prop' ? { type: 'map.prop.remove', propId: selected.objectId! } : selected.kind === 'door' ? { type: 'map.door.remove', doorId: selected.objectId! } : { type: 'map.wall.remove', wallId: selected.objectId! })}>Remove selected</button></div>}
         <div className="builder-row"><label>Map name<input value={name} onChange={e => setName(e.target.value)} maxLength={150} /></label><label>Map width<input type="number" min={4} max={50} value={width} onChange={e => setWidth(Number(e.target.value))} /></label><label>Map height<input type="number" min={4} max={50} value={height} onChange={e => setHeight(Number(e.target.value))} /></label><button onClick={() => { if (!document || confirm('Replace the current environment with a blank map? Combatants are preserved; invalid token positions relocate deterministically.')) void dispatch({ type: 'map.blank', id: crypto.randomUUID(), name, width, height }) }}>Create blank map</button></div>
         <div className="builder-row"><button onClick={() => void save(false)}>Save map</button><label>Saved maps<select aria-label="Saved maps" value={templateId} onChange={e => setTemplateId(e.target.value)}><option value="">Choose a template</option>{maps.map(m => <option key={m.id} value={m.id}>{m.name} · v{m.revision}</option>)}</select></label><button disabled={!selectedTemplate} onClick={loadTemplate}>Open saved map</button><button disabled={!selectedTemplate} onClick={() => void save(true)}>Overwrite selected template</button>{(['rename', 'duplicate', 'delete'] as const).map(action => <button key={action} disabled={!selectedTemplate} onClick={() => void manageTemplate(action)}>{action[0].toUpperCase() + action.slice(1)} template</button>)}</div>
       </fieldset>

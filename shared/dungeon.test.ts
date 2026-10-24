@@ -7,7 +7,7 @@ test('canonical shared walls, strict versions, bounds, duplicate cells and orpha
   assert.deepEqual(canonicalWall(1, 1, 'east'), canonicalWall(2, 1, 'west'))
   assert.deepEqual(canonicalWall(1, 1, 'south'), canonicalWall(1, 2, 'north'))
   const map = blankDungeon('test', 'Test')
-  assert.throws(() => readDungeon({ ...map, schemaVersion: 2 }))
+  assert.throws(() => readDungeon({ ...map, schemaVersion: 3 }))
   assert.throws(() => readDungeon({ ...map, floors: [{ x: 20, z: 0, type: 'stone' }] }))
   assert.throws(() => readDungeon({ ...map, doors: [{ id: 'door', wallId: 'H:0:0', state: 'open' }] }))
   assert.throws(() => readDungeon({ ...map, props: [{ id: 'bad', type: 'external.glb', position: { x: 0, z: 0 }, rotation: 0 }] }))

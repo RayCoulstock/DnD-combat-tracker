@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { scenerySchema, sceneryTransformSchema, sceneryPositionSchema, sceneryLimits, isScenery } from './scenery.ts'
 export const floorTypes = ['stone', 'wood', 'dirt', 'grass', 'lava'] as const
 export const propTypes = ['crate', 'barrel', 'chest', 'table', 'chair', 'pillar', 'torch', 'rock', 'anvil', 'brazier'] as const
 export const themes = ['stone-dungeon', 'cavern', 'mining-outpost'] as const
@@ -8,9 +9,11 @@ export const cellSchema = z.object({ x: coordinate, z: coordinate }).strict()
 const size = z.number().int().min(4).max(50)
 export const wallSchema = z.object({ id: objectId, x: coordinate, z: coordinate, axis: z.enum(['H', 'V']), material: z.enum(['stone', 'wood']) }).strict()
 export const doorSchema = z.object({ id: objectId, wallId: objectId, state: z.enum(['open', 'closed', 'locked']) }).strict()
-export const propSchema = z.object({ id: objectId, type: z.enum(propTypes), position: cellSchema, rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]) }).strict()
+export const proceduralPropSchema = z.object({ id: objectId, type: z.enum(propTypes), position: cellSchema, rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]) }).strict()
+export type ProceduralProp = z.infer<typeof proceduralPropSchema>
+export const propSchema = z.discriminatedUnion('type', [proceduralPropSchema, scenerySchema])
 const documentShape = z.object({
-  schemaVersion: z.literal(1), id: objectId, name: z.string().trim().min(1).max(150), width: size, height: size,
+  schemaVersion: z.union([z.literal(1), z.literal(2)]), id: objectId, name: z.string().trim().min(1).max(150), width: size, height: size,
   theme: z.enum(themes), floors: z.array(cellSchema.extend({ type: z.enum(floorTypes) })).max(2500),
   walls: z.array(wallSchema).max(5100), doors: z.array(doorSchema).max(1000), props: z.array(propSchema).max(200),
 }).strict()
@@ -41,7 +44,9 @@ export const dungeonSchema = documentShape.superRefine((map, ctx) => {
     if (!walls.has(d.wallId) || openings.has(d.wallId) || ids.has(d.id)) invalid('Doors require one unique wall opening and ID.')
     ids.add(d.id); openings.add(d.wallId)
   }
+  if (map.props.filter(isScenery).length > sceneryLimits.maxInstances) invalid('Too many uploaded scenery instances.')
   for (const p of map.props) {
+    if (isScenery(p) && (map.schemaVersion !== 2 || p.position.x > map.width-1 || p.position.z > map.height-1)) invalid('Custom scenery requires map version 2 and an anchor within map bounds.')
     if (p.position.x >= map.width || p.position.z >= map.height || ids.has(p.id)) invalid('Invalid prop position or duplicate object ID.')
     ids.add(p.id)
   }
@@ -49,7 +54,7 @@ export const dungeonSchema = documentShape.superRefine((map, ctx) => {
 export function blankDungeon(id: string, name: string, width = 20, height = 20): DungeonMap {
   return dungeonSchema.parse({ schemaVersion: 1, id, name, width, height, theme: 'stone-dungeon', floors: [], walls: [], doors: [], props: [] })
 }
-// Version 1 is the first map format. Unsupported future versions fail rather than being guessed.
+// Old maps retain version 1. A custom placement explicitly upgrades to version 2; future versions fail safely.
 export const readDungeon = (value: unknown): DungeonMap => dungeonSchema.parse(value)
 export const mapCommandSchemas = [
   z.object({ type: z.literal('map.blank'), id: objectId, name: z.string().min(1).max(150), width: size, height: size }).strict(),
@@ -62,8 +67,13 @@ export const mapCommandSchemas = [
   z.object({ type: z.literal('map.door.update'), doorId: objectId, state: z.enum(['open', 'closed', 'locked']) }).strict(),
   z.object({ type: z.literal('map.door.remove'), doorId: objectId }).strict(),
   z.object({ type: z.literal('map.prop.place'), prop: propSchema }).strict(),
-  z.object({ type: z.literal('map.prop.rotate'), propId: objectId, rotation: propSchema.shape.rotation }).strict(),
+  z.object({ type: z.literal('map.prop.rotate'), propId: objectId, rotation: proceduralPropSchema.shape.rotation }).strict(),
   z.object({ type: z.literal('map.prop.remove'), propId: objectId }).strict(),
+  z.object({ type: z.literal('map.scenery.place'), prop: scenerySchema }).strict(),
+  z.object({ type: z.literal('map.scenery.update'), propId: objectId, transform: sceneryTransformSchema }).strict(),
+  z.object({ type: z.literal('map.scenery.duplicate'), propId: objectId, newId: objectId, position: sceneryPositionSchema }).strict(),
+  z.object({ type: z.literal('map.scenery.remove'), propId: objectId }).strict(),
+  z.object({ type: z.literal('map.history.clear') }).strict(),
   z.object({ type: z.literal('map.undo') }).strict(), z.object({ type: z.literal('map.redo') }).strict(),
 ] as const
 export const mapCommandSchema = z.discriminatedUnion('type', mapCommandSchemas)
@@ -77,6 +87,7 @@ const bounded = (frames: MapFrame[]) => {
   return result
 }
 export function editMap(frame: MapFrame, history: MapHistory, command: MapCommand): { frame: MapFrame; history: MapHistory } {
+  if (command.type === 'map.history.clear') return { frame: structuredClone(frame), history: emptyHistory() }
   if (command.type === 'map.undo' || command.type === 'map.redo') {
     const undo = command.type === 'map.undo', source = undo ? history.undo : history.redo
     if (!source.length) throw new Error(undo ? 'Nothing to undo.' : 'Nothing to redo.')
@@ -105,10 +116,25 @@ export function editMap(frame: MapFrame, history: MapHistory, command: MapComman
       case 'map.door.place': map.doors = [...map.doors.filter(d => d.wallId !== command.door.wallId), command.door]; break
       case 'map.door.update': requireId(map.doors, command.doorId); map.doors = map.doors.map(d => d.id === command.doorId ? { ...d, state: command.state } : d); break
       case 'map.door.remove': requireId(map.doors, command.doorId); map.doors = map.doors.filter(d => d.id !== command.doorId); break
+      case 'map.scenery.place':
       case 'map.prop.place':
+        if (isScenery(command.prop)) map.schemaVersion = 2;
         if (map.props.some(p => p.id === command.prop.id)) throw new Error('Duplicate prop ID.')
         map.props.push(command.prop); break
       case 'map.prop.rotate': requireId(map.props, command.propId); map.props = map.props.map(p => p.id === command.propId ? { ...p, rotation: command.rotation } : p); break
+      case 'map.scenery.update': {
+        const prop = map.props.filter(isScenery).find(p => p.id === command.propId)
+        if (!prop) throw new Error('Scenery instance no longer exists.')
+        map.props = map.props.map(p => p.id === prop.id && isScenery(p) ? { ...p, ...command.transform } : p); break
+      }
+      case 'map.scenery.duplicate': {
+        const prop = map.props.filter(isScenery).find(p => p.id === command.propId)
+        if (!prop) throw new Error('Scenery instance no longer exists.')
+        if (map.props.some(p => p.id === command.newId)) throw new Error('Duplicate prop ID.')
+        map.props.push({ ...prop, id: command.newId, position: command.position }); break
+      }
+      case 'map.scenery.remove':
+        requireId(map.props.filter(isScenery), command.propId); map.props = map.props.filter(p => p.id !== command.propId); break
       case 'map.prop.remove': requireId(map.props, command.propId); map.props = map.props.filter(p => p.id !== command.propId); break
     }
   }

@@ -2,8 +2,8 @@ import type { PoolClient } from 'pg'
 import type { EncounterState } from '../shared/domain.ts'
 import { DomainError } from '../shared/domain.ts'
 // Lock rows in stable order so deletion cannot race validation/reference publication.
-export async function miniatureReferences(db: PoolClient, encounterId: string, state: EncounterState, allowUnresolved: boolean, requiredAssetId?: string) {
-  const ids = [...new Set(state.combatants.map(c => c.miniature?.assetId).filter((id): id is string => Boolean(id)))].sort()
+export async function miniatureReferences(db: PoolClient, encounterId: string, state: EncounterState, allowUnresolved: boolean, requiredAssetId?: string, additionalAssetIds: string[] = []) {
+  const ids = [...new Set([...additionalAssetIds, ...state.combatants.map(c => c.miniature?.assetId).filter((id): id is string => Boolean(id))])].sort()
   const owner = (await db.query('SELECT c.owner_id FROM campaigns c JOIN encounters e ON e.campaign_id=c.id WHERE e.id=$1', [encounterId])).rows[0].owner_id
   const rows = ids.length ? (await db.query('SELECT id,owner_id,upload_status FROM assets_3d WHERE id=ANY($1::uuid[]) AND owner_id=$2 ORDER BY id FOR UPDATE', [ids, owner])).rows : []
   const available = new Set<string>(rows.filter(r => r.owner_id === owner && r.upload_status === 'ready').map(r => r.id))

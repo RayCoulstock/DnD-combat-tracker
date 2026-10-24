@@ -5,6 +5,8 @@ import { applyCommand, applyMapEdit, isMapEdit, DomainError, projectEncounter, t
 import { transaction, type Pool } from './db.ts'
 import { generateDungeon } from '../shared/generator.ts'
 import { emptyHistory, readDungeon, type MapHistory } from '../shared/dungeon.ts'
+import { isScenery } from '../shared/scenery.ts'
+import { sceneryAssets, historyAssets, syncEncounterScenery } from './scenery.ts'
 import { miniatureReferences } from './miniatures.ts'
 import { storeArtwork } from './artwork.ts'
 
@@ -24,14 +26,18 @@ export async function loadState(db: PoolClient, encounterId: string): Promise<En
   return { ...encounter.state, dungeonMap: instance?.document ? readDungeon(instance.document) : undefined, mapRevision: instance?.revision ?? 0, mapUndoDepth: instance?.history.undo.length ?? 0, mapRedoDepth: instance?.history.redo.length ?? 0, combatants: rows.map(r => ({ ...r.data, miniatureStatus: r.data.miniature?.assetId ? (references.has(r.id) ? 'ready' : 'unavailable') : undefined, ownerId: r.owner_id, visible: r.visible })),
     battleMap: { ...encounter.state.battleMap, tokens: Object.fromEntries(rows.map(r => [r.id, r.position])) } }
 }
-export async function persistState(db: PoolClient, encounterId: string, input: EncounterState, history?: MapHistory, allowUnresolved = false, requiredAssetId?: string) {
-  const available = await miniatureReferences(db, encounterId, input, allowUnresolved, requiredAssetId)
+export async function persistState(db: PoolClient, encounterId: string, input: EncounterState, history?: MapHistory, allowUnresolved = false, requiredAssetId?: string, requiredScenery: string[] = []) {
+  const saved = (await db.query('SELECT document,history FROM encounter_maps WHERE encounter_id=$1', [encounterId])).rows[0]
+  const mapHistory: MapHistory = history ?? saved?.history ?? emptyHistory()
+  const priorScenery = new Set([...sceneryAssets(saved?.document ? readDungeon(saved.document) : undefined), ...historyAssets(saved?.history ?? emptyHistory())])
+  const sceneryIds = [...sceneryAssets(input.dungeonMap), ...historyAssets(mapHistory)]
+  const available = await miniatureReferences(db, encounterId, input, allowUnresolved, requiredAssetId, sceneryIds)
   const state = await storeArtwork(db, input)
   const existing = (await db.query('SELECT document FROM encounter_maps WHERE encounter_id=$1', [encounterId])).rows[0]
   if (history || !isDeepStrictEqual(existing?.document ?? null, state.dungeonMap ?? null)) {
     if (state.dungeonMap) readDungeon(state.dungeonMap)
-    await db.query(`INSERT INTO encounter_maps(encounter_id,document,history) VALUES($1,$2,$3)
-      ON CONFLICT(encounter_id) DO UPDATE SET document=$2,history=$3,revision=encounter_maps.revision+1,updated_at=now()`, [encounterId, state.dungeonMap ?? null, history ?? emptyHistory()])
+    await db.query(`INSERT INTO encounter_maps(encounter_id,document,history,schema_version) VALUES($1,$2,$3,$4)
+      ON CONFLICT(encounter_id) DO UPDATE SET document=$2,history=$3,schema_version=$4,revision=encounter_maps.revision+1,updated_at=now()`, [encounterId, state.dungeonMap ?? null, history ?? emptyHistory(), state.dungeonMap?.schemaVersion ?? 1])
   }
   await db.query('UPDATE encounters SET state=$2,updated_at=now() WHERE id=$1', [encounterId, { ...state, dungeonMap: undefined, mapRevision: undefined, mapUndoDepth: undefined, mapRedoDepth: undefined, combatants: [], battleMap: { ...state.battleMap, tokens: {} } }])
   await db.query('DELETE FROM combatants WHERE encounter_id=$1', [encounterId])
@@ -40,6 +46,7 @@ export async function persistState(db: PoolClient, encounterId: string, input: E
       [encounterId, String(c.id), ordinal, { ...c, miniatureStatus: undefined }, c.ownerId, c.visible, state.battleMap.tokens[String(c.id)]])
     if (c.miniature?.assetId && available.has(c.miniature.assetId)) await db.query('INSERT INTO combatant_asset_references(encounter_id,combatant_id,asset_id) VALUES($1,$2,$3)', [encounterId, String(c.id), c.miniature.assetId])
   }
+  await syncEncounterScenery(db, encounterId, state.dungeonMap, mapHistory, available, allowUnresolved, priorScenery, requiredScenery)
   return state
 }
 export async function snapshot(db: PoolClient, actor: Actor, campaignId: string): Promise<Snapshot> {
@@ -96,7 +103,9 @@ export async function execute(pool: Pool, actor: Actor, campaignId: string, data
       const result = applyMapEdit(current, actor, command, saved?.history ?? emptyHistory())
       next = result.state; history = result.history
     } else { next = applyCommand(current, actor, command); if (command.type === 'encounter.restore' || command.type === 'encounter.clear') history = emptyHistory() }
-    await persistState(db, encounter.id, next, history, command.type === 'encounter.restore', data.command.type === 'combatant.miniature.update' ? data.command.miniature.assetId ?? undefined : undefined)
+    const incoming = data.command
+    const requiredScenery = incoming.type === 'map.scenery.place' ? [incoming.prop.assetId] : incoming.type === 'map.prop.place' && isScenery(incoming.prop) ? [incoming.prop.assetId] : incoming.type === 'map.scenery.duplicate' ? next.dungeonMap?.props.filter(isScenery).filter(p => p.id === incoming.newId).map(p => p.assetId) ?? [] : []
+    await persistState(db, encounter.id, next, history, command.type === 'encounter.restore' || data.command.type === 'map.template.load', data.command.type === 'combatant.miniature.update' ? data.command.miniature.assetId ?? undefined : undefined, requiredScenery)
     const revision = encounter.revision + 1
     await db.query('UPDATE encounters SET revision=$2 WHERE id=$1', [encounter.id, revision])
     await db.query('UPDATE campaigns SET state_revision=state_revision+1 WHERE id=$1', [campaignId])
