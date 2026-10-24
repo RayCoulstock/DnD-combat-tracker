@@ -113,7 +113,7 @@ export function createApplication({ pool, secret, origin, production = false, as
   }
   const requireDM = (req: Request) => { const actor = requireActor(req); if (actor.role !== 'dm') throw new DomainError('FORBIDDEN', 'Dungeon Master access required.'); return actor }
   registerMapRoutes(app, pool, requireDM)
-  registerAssetRoutes(app, pool, assetStorage, requireDM, assetValidationLimits)
+  registerAssetRoutes(app, pool, assetStorage, requireDM, assetValidationLimits, requireActor)
   app.get('/api/campaigns', async (req, res) => {
     const actor = requireActor(req)
     const query = actor.role === 'dm' ? 'SELECT id,name,session_active FROM campaigns WHERE owner_id=$1 ORDER BY created_at' : 'SELECT c.id,c.name,c.session_active FROM campaigns c JOIN memberships m ON m.campaign_id=c.id WHERE m.id=$1 AND m.revoked_at IS NULL'
@@ -153,7 +153,7 @@ export function createApplication({ pool, secret, origin, production = false, as
       // Imported files must embed their art; opaque references cannot import another campaign's media.
       if (state.combatants.some(c => c.artwork?.startsWith('/'))) throw new DomainError('INVALID', 'Import embedded artwork, not server references.')
       await db.query('INSERT INTO encounters(id,campaign_id,name,state) VALUES($1,$2,$3,$4)', [id, campaignId, data.name, emptyEncounter()])
-      await persistState(db, id, state)
+      await persistState(db, id, state, undefined, true)
       await db.query('UPDATE campaigns SET active_encounter_id=$2,state_revision=state_revision+1,updated_at=now() WHERE id=$1', [campaignId, id])
     })
     await broadcast(campaignId); res.status(201).json({ id })
@@ -223,7 +223,7 @@ export function createApplication({ pool, secret, origin, production = false, as
       const state = checkpoint.state
       const members = new Set((await db.query('SELECT id FROM memberships WHERE campaign_id=$1 AND revoked_at IS NULL', [campaignId])).rows.map(r => r.id))
       for (const combatant of state.combatants) if (!members.has(combatant.ownerId)) combatant.ownerId = null
-      await persistState(db, c.active_encounter_id, state, { undo: [], redo: [] })
+      await persistState(db, c.active_encounter_id, state, { undo: [], redo: [] }, true)
       await db.query('UPDATE encounters SET revision=revision+1 WHERE id=$1', [c.active_encounter_id])
       await db.query('UPDATE campaigns SET state_revision=state_revision+1 WHERE id=$1', [campaignId])
     }); await broadcast(campaignId); res.json({ ok: true })

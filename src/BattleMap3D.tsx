@@ -3,6 +3,8 @@ import { Html, OrbitControls } from '@react-three/drei'
 import { ChevronLeft, Eye, EyeOff, LocateFixed, RotateCcw } from 'lucide-react'
 import { Suspense, useMemo, useRef } from 'react'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
+import CombatantMiniature3D from './CombatantMiniature3D'
+import { baseFootprint, type MiniatureAppearance } from '../shared/miniatures'
 import { DungeonScene, EditorSurface, type EditorInteraction } from './DungeonScene'
 import type { DungeonMap } from '../shared/dungeon'
 import type { BattleMapState, GridPosition } from './mapState'
@@ -15,10 +17,15 @@ interface Combatant {
   hp: number
   maxHp: number
   initiative: number
+  miniature?: MiniatureAppearance
+  miniatureStatus?: unknown
+  conditions?: string[]
   ownerId?: string | null
 }
 
 export interface BattleMap3DProps {
+  assetScope?: string
+  assetContext?: { campaignId: string; encounterId: string }
   dungeonMap?: DungeonMap
   editor?: EditorInteraction
   combatants: Combatant[]
@@ -40,7 +47,7 @@ function toWorld(position: GridPosition, map: BattleMapState): [number, number, 
   return [position.x - map.width / 2 + 0.5, 0.32, position.z - map.height / 2 + 0.5]
 }
 
-function Token({ combatant, position, map, selected, active, showLabel, onSelect }: {
+function Token({ combatant, position, map, selected, active, showLabel, onSelect, assetScope, assetContext }: {
   combatant: Combatant
   position: GridPosition
   map: BattleMapState
@@ -48,17 +55,21 @@ function Token({ combatant, position, map, selected, active, showLabel, onSelect
   active: boolean
   showLabel: boolean
   onSelect: () => void
+  assetScope?: string
+  assetContext?: BattleMap3DProps['assetContext']
 }) {
   const color = combatant.side === 'hero' ? '#3c8465' : combatant.side === 'enemy' ? '#a84338' : '#777b7c'
-  return <group position={toWorld(position, map)} onClick={(event) => { event.stopPropagation(); onSelect() }}>
-    {active && <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.24, 0]}><torusGeometry args={[0.42, 0.055, 10, 32]} /><meshStandardMaterial color="#efb83f" emissive="#a56a00" emissiveIntensity={0.45} /></mesh>}
-    {selected && <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.21, 0]}><torusGeometry args={[0.51, 0.035, 10, 32]} /><meshStandardMaterial color="#70c8ff" emissive="#2584ba" emissiveIntensity={0.5} /></mesh>}
-    <mesh castShadow position={[0, 0.1, 0]}>
-      <cylinderGeometry args={[0.32, 0.4, 0.55, 24]} />
-      <meshStandardMaterial color={color} roughness={0.56} metalness={0.08} />
-    </mesh>
-    {showLabel && <Html center position={[0, 1.05, 0]} distanceFactor={11} style={{ pointerEvents: 'none' }}><span className="token-label">{combatant.name}</span></Html>}
+  const [x, , z] = toWorld(position, map), appearance = combatant.miniature
+  const footprint = appearance?.assetId ? baseFootprint(appearance.baseSize) : 1
+  const placeholder = <mesh castShadow position={[0, .42, 0]}><cylinderGeometry args={[.32, .4, .55, 24]} /><meshStandardMaterial color={color} roughness={.56} metalness={.08} /></mesh>
+  const url = appearance?.assetId ? `/api/assets/${appearance.assetId}/file${assetContext ? `?campaignId=${assetContext.campaignId}&encounterId=${assetContext.encounterId}` : ''}#${assetScope ?? 'signed-out'}` : ''
+  return <group position={[x, 0, z]} onClick={event => { event.stopPropagation(); if (event.delta <= 3) onSelect() }}>
+    {active && <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, .16, 0]}><torusGeometry args={[footprint * .42, .055, 10, 32]} /><meshStandardMaterial color="#efb83f" emissive="#a56a00" emissiveIntensity={.45} /></mesh>}
+    {selected && <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, .18, 0]}><ringGeometry args={[footprint * .5, footprint * .54, 4]} /><meshStandardMaterial color="#70c8ff" emissive="#2584ba" emissiveIntensity={.5} /></mesh>}
+    {appearance?.assetId ? <CombatantMiniature3D appearance={appearance} url={url} unavailable={!assetScope || combatant.miniatureStatus === 'unavailable'} fallback={placeholder} color={color} /> : placeholder}
+    {showLabel && <Html center position={[0, Math.max(1.37, appearance?.assetId ? appearance.scale + appearance.verticalOffset + .45 : 0), 0]} distanceFactor={11} style={{ pointerEvents: 'none' }}><span className="token-label">{active ? '▶ ' : ''}{selected ? '◇ ' : ''}{combatant.name}</span></Html>}
   </group>
+
 }
 
 function BattlefieldGrid({ width, height }: { width: number; height: number }) {
@@ -74,7 +85,7 @@ function BattlefieldGrid({ width, height }: { width: number; height: number }) {
   </lineSegments>
 }
 
-function BattlefieldScene({ combatants, map, selectedId, activeId, onSelectToken, onMoveToken, controlsRef, canMove, dungeonMap, editor }: Omit<BattleMap3DProps, 'round' | 'onToggleGrid' | 'onToggleLabels' | 'onReturnToTracker'> & { controlsRef: React.RefObject<OrbitControlsImpl | null> }) {
+function BattlefieldScene({ combatants, map, selectedId, activeId, onSelectToken, onMoveToken, controlsRef, canMove, dungeonMap, editor, assetScope, assetContext }: Omit<BattleMap3DProps, 'round' | 'onToggleGrid' | 'onToggleLabels' | 'onReturnToTracker'> & { controlsRef: React.RefObject<OrbitControlsImpl | null> }) {
   const handleFloorClick = (event: ThreeEvent<MouseEvent>) => {
     if (editor || canMove === false || selectedId === null || event.delta > 3) return
     const destination = {
@@ -102,7 +113,7 @@ function BattlefieldScene({ combatants, map, selectedId, activeId, onSelectToken
     {editor && <EditorSurface width={map.width} height={map.height} editor={editor} />}
     {combatants.map((combatant) => {
       const position = map.tokens[String(combatant.id)]
-      return position && <Token key={combatant.id} combatant={combatant} position={position} map={map} selected={combatant.id === selectedId} active={combatant.id === activeId} showLabel={map.showLabels} onSelect={() => onSelectToken(combatant.id)} />
+      return position && <Token key={combatant.id} assetScope={assetScope} assetContext={assetContext} combatant={combatant} position={position} map={map} selected={combatant.id === selectedId} active={combatant.id === activeId} showLabel={map.showLabels} onSelect={() => onSelectToken(combatant.id)} />
     })}
     <OrbitControls ref={controlsRef} makeDefault enableDamping dampingFactor={0.08} minDistance={7} maxDistance={Math.max(35, Math.max(map.width, map.height) * 2)} maxPolarAngle={Math.PI / 2.08} target={[0, 0, 0]} mouseButtons={{ LEFT: editor ? undefined : 0, MIDDLE: editor ? 0 : 2, RIGHT: 2 }} />
   </>
@@ -115,7 +126,7 @@ export default function BattleMap3D(props: BattleMap3DProps) {
   return <section className="tabletop-shell" aria-label={props.dungeonMap ? `Dungeon map: ${props.dungeonMap.name}` : 'Flat battlefield'}>
     <aside className="tabletop-panel tabletop-roster">
       <span className="eyebrow">CURRENT ENCOUNTER</span><h2>Round {props.round}</h2>
-      <div className="map-initiative-list">{props.combatants.map((combatant) => <button key={combatant.id} className={`${combatant.id === props.selectedId ? 'selected' : ''} ${combatant.id === props.activeId ? 'active' : ''}`} onClick={() => props.onSelectToken(combatant.id)}><span className={`map-token-dot ${combatant.side}`} /><span><strong>{combatant.name}</strong><small>Initiative {combatant.initiative}</small></span>{(!props.playerId || combatant.ownerId === props.playerId) && <em>{combatant.hp}/{combatant.maxHp} HP</em>}</button>)}</div>
+      <div className="map-initiative-list">{props.combatants.map((combatant) => <button key={combatant.id} aria-pressed={combatant.id === props.selectedId} aria-current={combatant.id === props.activeId ? 'step' : undefined} className={`${combatant.id === props.selectedId ? 'selected' : ''} ${combatant.id === props.activeId ? 'active' : ''}`} onClick={() => props.onSelectToken(combatant.id)}><span className={`map-token-dot ${combatant.side}`} /><span><strong>{combatant.name}</strong>{combatant.id === props.selectedId && <small>◇ Selected</small>}{combatant.id === props.activeId && <small>▶ Active turn</small>}{combatant.conditions?.length ? <small>{combatant.conditions.join(', ')}</small> : null}<small>Initiative {combatant.initiative}</small></span>{(!props.playerId || combatant.ownerId === props.playerId) && <em>{combatant.hp}/{combatant.maxHp} HP</em>}</button>)}</div>
       {!props.combatants.length && <p className="map-empty">Add combatants in the tracker to place tokens.</p>}
     </aside>
     <div className="battlefield-wrap">

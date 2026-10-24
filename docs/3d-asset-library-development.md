@@ -101,3 +101,7 @@ For 4B, introduce a versioned miniature appearance reference (`assetId`, scale, 
 - Lint, frontend/backend TypeScript checks and production build passed. The build retains a large-chunk advisory (approximately 1.71 MB / 473 KB gzip).
 - Source and compiled migration commands passed; a compiled production worker validated a GLB successfully using plain Node. Default and app-profile Compose configuration validated. The Docker image was not rebuilt in this run.
 - The library layout and rendered preview were inspected in browser screenshots. No private Meshy export was supplied, so a real Meshy-model smoke test and representative laptop/GPU profiling remain recommended.
+
+## Milestone 4B integration
+
+[Playable miniatures](3d-miniatures-development.md) now extend binary delivery for visible combatants in an authorised player's active encounter. Library listing/metadata/upload/edit/delete remain DM account-private; possessing a UUID still grants nothing. Assigned encounter references block deletion, including references in inactive encounters. The original 4A scope/security descriptions above describe the library-only milestone; use the miniature guide for current player delivery rules. Uploaded dungeon-prop placement remains outside 4B.
