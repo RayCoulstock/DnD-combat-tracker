@@ -52,3 +52,19 @@ test('translucent placement ghosts never mutate or dispose shared model material
   assert.notEqual(ghost!.material,material);assert.equal(normal!.material,material);assert.equal(ghost!.geometry,geometry)
   let disposed=0;material.addEventListener('dispose',()=>disposed++);preview.dispose();assert.equal(disposed,0);placed.dispose();geometry.dispose();material.dispose()
 })
+
+test('architectural normalization fits corrected width, grounding and endpoint alignment without modifying shared resources', async () => {
+  const {cloneArchitecture}=await import('../src/modelResources.ts'),{calibrationSchema}=await import('../shared/architecture.ts')
+  for(const size of[1e-9,1,1e9]){
+    const source=new Group(),mesh=new Mesh(new BoxGeometry(size*4,size*6,size*.4));mesh.position.set(20*size,-3*size,8*size);source.add(mesh)
+    const model=cloneArchitecture(source,calibrationSchema.parse({})),bounds=new Box3().setFromObject(model),dims=bounds.getSize(new Vector3())
+    assert.ok(Math.abs(dims.x-1)<1e-6);assert.ok(Math.abs(bounds.min.y)<1e-6);assert.ok(Math.abs(bounds.getCenter(new Vector3()).x)<1e-6)
+    const other=cloneArchitecture(source,calibrationSchema.parse({scale:2,alignment:'start',verticalOffset:.2,horizontalOffset:.1}))
+    const b=new Box3().setFromObject(other);assert.ok(Math.abs(b.min.x+.4)<1e-6);assert.ok(Math.abs(b.min.y-.2)<1e-6)
+    assert.equal(mesh.position.x,20*size);assert.notEqual(other,model)
+  }
+  const source=new Group();source.add(new Mesh(new BoxGeometry(.2,2,4)))
+  const turned=new Box3().setFromObject(cloneArchitecture(source,calibrationSchema.parse({facing:'+X'}))).getSize(new Vector3())
+  assert.ok(Math.abs(turned.x-1)<1e-6);assert.ok(Math.abs(turned.y-.5)<1e-6)
+  assert.throws(()=>cloneArchitecture(new Group(),calibrationSchema.parse({})),/safely/)
+})

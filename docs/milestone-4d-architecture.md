@@ -1,0 +1,21 @@
+# Milestone 4D: unified placement and logical architectural visuals
+
+## Inspection and plan
+The editor currently exposes separate procedural `object` and uploaded `scenery` tools. Both already populate the same props array. Canonical walls are H/V grid edges; doors refer to wall IDs and suppress the solid wall behind their opening. Map edits are validated, persisted transactionally and broadcast through encounter revisions, with server-owned bounded undo/redo. Templates are independent snapshots. Asset access and deletion protection use encounter/template/history references. The shared GLB renderer caches immutable resources and clones independent instance transforms.
+
+A. Replace the two placement entry points with Add Object, a combined browser with source/search/category filters, built-in previews and the existing uploaded Asset Library picker. Keep both underlying prop types and commands.
+B. Add optional architecture calibration inside existing asset presentation JSON (no binary changes). Roles: scenery, wall, door, other. One-edge wall/door span only; facing, scale, vertical offset, horizontal alignment and rotation correction are validated. Existing assets default to scenery. Preview unsaved calibration.
+C. Add optional visual assignment to logical walls, using map document version 3 only when architectural visuals are present. Render normalized GLBs at canonical edge centres, aligned by axis, with procedural fallback. Appearance changes preserve IDs.
+D. Add the same optional visual to existing logical doors. An open custom door pivots at the edge endpoint; never render a wall behind any door. State/selection remain logical, including when model retrieval fails.
+E. Include architectural references in the existing scenery reference/grant/deletion system, including history and templates. Reuse revision checks, DM permissions, persistence, snapshots and undo/redo. Add domain, renderer math, integration and browser regression coverage; run all checks.
+
+## Data and migration
+`visual: {assetId, calibration}` is an optional wall/door field. Calibration is copied from asset defaults, so metadata changes cannot silently change existing encounters or templates. Version 1/2 documents load unchanged; visual assignment upgrades to version 3. Migration broadens version constraints only: JSONB already stores presentation, wall/door visuals and map history. No rewrite or deletion of existing data. Unknown imported references retain procedural fallbacks without authorisation grants. Replacing visual settings, not geometry, preserves logical wall/door identities and future LOS/collision semantics.
+
+## Placement, normalization and security
+General props remain cell/floor anchored. Architecture uses canonical edge centres (H along X, V along Z), unit grid span measured from the model's corrected horizontal bounds. Uniform scaling preserves proportions; no arbitrary multi-edge stretching. Y-up, authored facing +Z by default, optional facing correction. Horizontal alignment sets centre or endpoint anchor; offsets are local to the corrected edge. Door panels use the same one-edge sizing and hinge transform. GLBs share the existing loader/cache and independently cloned transforms. Previews never mutate authoritative state or camera settings.
+
+Only DM map commands introduce references, and every new explicit visual assignment must resolve to an owned ready asset. Imported unresolved references never grant access. Current architectural references grant active campaign players file retrieval; history/template references protect deletion but do not grant player retrieval. Asset metadata management remains owner-only. Revision checks and transactions precede acknowledgement and recipient broadcasts. No polling, browser reload or camera synchronisation.
+
+## Verification
+Test old documents, canonical north/east/south/west edges, calibration math, invalid transforms, logical relationships and fallback, appearance edits and undo/redo. Integration covers DM plus two players, forbidden/cross-owner assignments, stale commands, live snapshots, restart recovery, template isolation and secure file grants. Browser coverage exercises unified sources and architectural placement/state updates. Existing generation, miniatures, multiplayer and JSON suites remain required.

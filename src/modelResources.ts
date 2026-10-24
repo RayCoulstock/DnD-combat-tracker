@@ -1,6 +1,7 @@
 import { Box3, Group, LoadingManager, Mesh, MeshStandardMaterial, SkinnedMesh, Texture, Vector3, type Material, type Object3D } from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js'
+import { facingRotation, type Calibration } from '../shared/architecture.ts'
 import { AssetResourceCache } from './assetResourceCache'
 export function disposeModel(root: Object3D) {
   const geometries = new Set<Mesh['geometry']>(), materials = new Set<Material>(), textures = new Set<Texture>()
@@ -52,8 +53,19 @@ export function cloneMiniature(source: Group) {
 export function disposeInstance(root: Object3D) { root.traverse(o => { if (o instanceof SkinnedMesh) o.skeleton.dispose() }) }
 export const miniatureModels = new AssetResourceCache<Group>(loadGlb)
 
-export function cloneModelInstance(source: Group, ghost = false) {
-  const root = cloneMiniature(source), owned: Material[] = []
+export function cloneArchitecture(source:Group,calibration:Calibration){
+  const model=clone(source) as Group, corrected=new Group(),root=new Group()
+  corrected.rotation.y=facingRotation(calibration);corrected.add(model);corrected.updateMatrixWorld(true)
+  const bounds=new Box3().setFromObject(corrected),size=bounds.getSize(new Vector3()),centre=bounds.getCenter(new Vector3())
+  if(bounds.isEmpty()||![...bounds.min.toArray(),...bounds.max.toArray()].every(Number.isFinite)||size.x<=0||size.y/size.x>50||size.z/size.x>50)throw new Error('Model cannot be fitted safely to one grid edge. Check facing and calibration.')
+  const factor=calibration.scale/size.x
+  corrected.scale.setScalar(factor)
+  const alignment=calibration.alignment==='start'?(calibration.scale-1)/2:calibration.alignment==='end'?(1-calibration.scale)/2:0
+  corrected.position.set(-centre.x*factor+alignment+calibration.horizontalOffset,-bounds.min.y*factor+calibration.verticalOffset,-centre.z*factor)
+  root.add(corrected);root.updateMatrixWorld(true);return root
+}
+export function cloneModelInstance(source: Group, ghost = false, architecture?:Calibration) {
+  const root = architecture ? cloneArchitecture(source,architecture) : cloneMiniature(source), owned: Material[] = []
   if (ghost) root.traverse(object => { if (object instanceof Mesh) {
     const copy = (material: Material) => { const m = material.clone(); m.transparent = true; m.opacity = .35; m.depthWrite = false; owned.push(m); return m }
     object.material = Array.isArray(object.material) ? object.material.map(copy) : copy(object.material)

@@ -2,12 +2,20 @@ import type { PoolClient } from 'pg'
 import { DomainError } from '../shared/domain.ts'
 import { isScenery } from '../shared/scenery.ts'
 import { readDungeon, type DungeonMap, type MapHistory } from '../shared/dungeon.ts'
-export const sceneryAssets = (document?: DungeonMap | null) => [...new Set(document?.props.filter(isScenery).map(p=>p.assetId) ?? [])]
+export const visibleMapAssets = (document?: DungeonMap | null) => [...new Set([
+  ...(document?.props.filter(isScenery).filter(p=>p.visible).map(p=>p.assetId) ?? []),
+  ...(document?.walls.filter(w=>!document.doors.some(d=>d.wallId===w.id)).flatMap(w=>w.visual?[w.visual.assetId]:[]) ?? []),
+  ...(document?.doors.flatMap(d=>d.visual?[d.visual.assetId]:[]) ?? []),
+])]
+export const sceneryAssets = (document?: DungeonMap | null) => [...new Set([
+  ...(document?.props.filter(isScenery).map(p=>p.assetId) ?? []),
+  ...([...document?.walls ?? [],...document?.doors ?? []].flatMap(o=>o.visual?[o.visual.assetId]:[])),
+])]
 export const historyAssets = (history: MapHistory) => [...new Set([...history.undo,...history.redo].flatMap(f=>sceneryAssets(f.document)))]
 export async function syncEncounterScenery(db:PoolClient,encounterId:string,document:DungeonMap|undefined,history:MapHistory,available:Set<string>,allowUnresolved:boolean,prior:Set<string>,required:string[]=[]){
   const ids=[...new Set([...sceneryAssets(document),...historyAssets(history)])]
   for(const id of ids)if(!available.has(id)&&(!allowUnresolved&&!prior.has(id)||required.includes(id)))throw new DomainError('FORBIDDEN','Choose ready scenery assets from your own library.')
-  const visible=new Set(document?.props.filter(isScenery).filter(p=>p.visible).map(p=>p.assetId)??[])
+  const visible=new Set(visibleMapAssets(document))
   await db.query('DELETE FROM encounter_scenery_asset_references WHERE encounter_id=$1',[encounterId])
   for(const id of ids)if(available.has(id))await db.query('INSERT INTO encounter_scenery_asset_references(encounter_id,asset_id,visible_current) VALUES($1,$2,$3)',[encounterId,id,visible.has(id)])
 }

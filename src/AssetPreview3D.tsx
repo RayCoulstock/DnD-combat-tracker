@@ -2,7 +2,7 @@ import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import { Component, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Box3, Group, Vector3 } from 'three'
-import { loadGlb, cloneMiniature, disposeInstance } from './modelResources'
+import { loadGlb, cloneArchitecture, cloneMiniature, disposeInstance } from './modelResources'
 import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import type { Asset3D } from '../shared/assets'
@@ -32,9 +32,9 @@ function PreviewScene({ model, reset }: { model: Group; reset: number }) {
     <OrbitControls ref={controls} makeDefault enableDamping dampingFactor={.1} />
   </>
 }
-export default function AssetPreview3D({ asset, normalize = false }: { asset: Asset3D; normalize?: boolean }) {
+export default function AssetPreview3D({ asset, normalize = false, architecturalPreview = false }: { asset: Asset3D; normalize?: boolean; architecturalPreview?: boolean }) {
   const [loaded, setLoaded] = useState<{ id: string; source: Group } | null>(null), [error, setError] = useState<{ id: string; message: string } | null>(null), [reset, setReset] = useState(0)
-  const p = asset.presentation
+  const p = asset.presentation, architecture=architecturalPreview && p.architecture && ['wall','door'].includes(p.architecture.role) ? p.architecture : undefined
   useEffect(() => {
     const controller = new AbortController(); let disposed = false, release: (() => void) | undefined
     void loadGlb(`/api/assets/${asset.id}/file`, controller.signal).then(resource => {
@@ -47,14 +47,14 @@ export default function AssetPreview3D({ asset, normalize = false }: { asset: As
   const prepared = useMemo(() => {
     if (loaded?.id !== asset.id) return null
     try {
-      const root = new Group(); root.add(normalize ? cloneMiniature(loaded.source) : clone(loaded.source))
-      root.scale.setScalar(p.defaultScale); root.rotation.y = p.defaultRotation * Math.PI / 180; root.updateMatrixWorld(true)
+      const root = new Group(); root.add(architecture ? cloneArchitecture(loaded.source,architecture) : normalize ? cloneMiniature(loaded.source) : clone(loaded.source))
+      root.scale.setScalar(architecture ? 1 : p.defaultScale); root.rotation.y = architecture ? 0 : p.defaultRotation * Math.PI / 180; root.updateMatrixWorld(true)
       const bounds = new Box3().setFromObject(root)
       if (bounds.isEmpty() || ![...bounds.min.toArray(), ...bounds.max.toArray()].every(Number.isFinite)) throw new Error('Model has no usable preview bounds.')
-      const centre = bounds.getCenter(new Vector3()); root.position.set(-centre.x, -bounds.min.y + p.verticalOffset, -centre.z); root.updateMatrixWorld(true)
+      const centre = bounds.getCenter(new Vector3()); if(!architecture)root.position.set(-centre.x, -bounds.min.y + p.verticalOffset, -centre.z); root.updateMatrixWorld(true)
       return { model: root }
     } catch { return { error: 'Model has no usable preview bounds.' } }
-  }, [loaded, asset.id, normalize, p.defaultScale, p.defaultRotation, p.verticalOffset])
+  }, [loaded, asset.id, normalize, p.defaultScale, p.defaultRotation, p.verticalOffset, architecture])
   useEffect(() => () => { if (prepared?.model) disposeInstance(prepared.model) }, [prepared])
   if (error?.id === asset.id || prepared?.error) return <p role="alert">Preview failed: {error?.id === asset.id ? error.message : prepared?.error}</p>
   if (!prepared?.model) return <p role="status">Loading model preview…</p>

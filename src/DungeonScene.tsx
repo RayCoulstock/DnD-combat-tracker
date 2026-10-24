@@ -1,6 +1,8 @@
 import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { InstancedMesh, Object3D } from 'three'
 import type { ThreeEvent } from '@react-three/fiber'
+import ArchitecturalObject3D from './ArchitecturalObject3D'
+import type { ArchitecturalVisual } from '../shared/architecture'
 import { Scenery3D } from './Scenery3D'
 import { isScenery, sceneryAtPoint, type SceneryProp } from '../shared/scenery'
 import { canonicalWall, type Cell, type DungeonMap, type ProceduralProp, type Wall } from '../shared/dungeon'
@@ -10,6 +12,8 @@ export interface EditorInteraction {
   selectedId?: string
   onHit: (hit: EditorHit) => void
   onPaint: (cells: Cell[]) => void
+  wallVisual?: ArchitecturalVisual
+  doorVisual?: ArchitecturalVisual
   previewRotation?: number
   scenery?: SceneryProp
   snap?: boolean
@@ -29,7 +33,7 @@ function Instances({ transforms, color, shape = 'box', emissive = false, onHit }
     ref.current!.instanceMatrix.needsUpdate = true; ref.current!.computeBoundingSphere()
   }, [transforms])
   if (!transforms.length) return null
-  return <instancedMesh ref={ref} args={[undefined, undefined, transforms.length]} castShadow receiveShadow onPointerUp={e => { if (onHit && e.button === 0) { e.stopPropagation(); onHit(e.instanceId!) } }}>
+  return <instancedMesh ref={ref} args={[undefined, undefined, transforms.length]} castShadow receiveShadow onPointerUp={e => { if (onHit && e.button === 0 && e.delta <= 3) { e.stopPropagation(); onHit(e.instanceId!) } }}>
     {shape === 'box' ? <boxGeometry /> : shape === 'cylinder' ? <cylinderGeometry args={[.5, .5, 1, 12]} /> : <sphereGeometry args={[.5, 10, 8]} />}
     <meshStandardMaterial color={color} roughness={.85} emissive={emissive ? color : '#000'} emissiveIntensity={emissive ? .7 : 0} />
   </instancedMesh>
@@ -55,7 +59,7 @@ export const DungeonScene = memo(function DungeonScene({ map, editor, assetScope
   const groups = useMemo(() => {
     const floors = Object.entries(colors).map(([type, color]) => ({ color, type, transforms: map.floors.filter(f => f.type === type).map(f => ({ position: [f.x - map.width / 2 + .5, -.045, f.z - map.height / 2 + .5] as [number, number, number], scale: [.99, .08, .99] as [number, number, number] })) }))
     const openings = new Set(map.doors.map(d => d.wallId))
-    const walls = (['stone', 'wood'] as const).map(material => ({ material, walls: map.walls.filter(w => w.material === material && !openings.has(w.id)) }))
+    const walls = (['stone', 'wood'] as const).map(material => ({ material, walls: map.walls.filter(w => w.material === material && !w.visual && !openings.has(w.id)) }))
     return { floors, walls }
   }, [map])
   const hitWall = (w: Wall): EditorHit => ({ cell: { x: Math.min(w.x, map.width - 1), z: Math.min(w.z, map.height - 1) }, wall: w, objectId: w.id, kind: 'wall' })
@@ -63,16 +67,8 @@ export const DungeonScene = memo(function DungeonScene({ map, editor, assetScope
     {map.props.filter(isScenery).map(prop => <Scenery3D key={prop.id} prop={prop} width={map.width} height={map.height} editor={editor} scope={assetScope} context={assetContext} />)}
     {groups.floors.map(g => <Instances key={g.type} color={g.color} emissive={g.type === 'lava'} transforms={g.transforms} />)}
     {groups.walls.map(g => <Instances key={g.material} color={g.material === 'stone' ? '#666c6b' : '#775235'} transforms={g.walls.map(w => wallTransform(w, map))} onHit={editor && ['select', 'erase', 'wall', 'door'].includes(editor.tool) ? i => editor.onHit(hitWall(g.walls[i])) : undefined} />)}
-    {map.doors.map(door => {
-      const wall = map.walls.find(w => w.id === door.wallId)!, t = wallTransform(wall, map)
-      return <group key={door.id} position={[t.position[0], 0, t.position[2]]} rotation={[0, wall.axis === 'V' ? Math.PI / 2 : 0, 0]} onPointerUp={e => { if (editor && ['select', 'erase', 'wall', 'door'].includes(editor.tool) && e.button === 0) { e.stopPropagation(); editor.onHit({ ...hitWall(wall), kind: 'door', objectId: door.id }) } }}>
-        {[-.44, .44].map(x => <mesh key={x} position={[x, .8, 0]} castShadow><boxGeometry args={[.12, 1.6, .19]} /><meshStandardMaterial color="#646b67" /></mesh>)}
-        <group position={[-.38, 0, 0]} rotation={[0, door.state === 'open' ? -Math.PI / 2 : 0, 0]}>
-          <mesh position={[.38, .65, 0]} castShadow><boxGeometry args={[.76, 1.3, .09]} /><meshStandardMaterial color={door.state === 'locked' ? '#bd913c' : '#81522e'} /></mesh>
-          <mesh position={[.65, .68, .08]}><sphereGeometry args={[.06, 8, 8]} /><meshStandardMaterial color="#e9c369" /></mesh>
-        </group>
-      </group>
-    })}
+    {map.walls.filter(w=>w.visual&&!map.doors.some(d=>d.wallId===w.id)).map(wall=><ArchitecturalObject3D key={wall.id} wall={wall} map={map} editor={editor} scope={assetScope} context={assetContext}/>)}
+    {map.doors.map(door=><ArchitecturalObject3D key={door.id} wall={map.walls.find(w=>w.id===door.wallId)!} door={door} map={map} editor={editor} scope={assetScope} context={assetContext}/>)}
     {(Object.keys(propParts) as Array<keyof typeof propParts>).map(type => {
       const props = map.props.filter((p): p is ProceduralProp => p.type === type)
       return propParts[type].map((part, i) => <Instances key={`${type}:${i}`} color={part.color} shape={part.shape} emissive={part.glow} transforms={props.map(p => {
@@ -104,6 +100,7 @@ export function EditorSurface({ width, height, editor }: { width: number; height
     </mesh>
     {hover && editor.scenery && (editor.tool === 'scenery' || editor.tool === 'sceneryMove') && <Scenery3D prop={{ ...editor.scenery, position: hover.position! }} width={width} height={height} scope={editor.assetScope} context={editor.assetContext} preview />}
     {painted.map(cell => <mesh key={`${cell.x}:${cell.z}`} rotation={[-Math.PI / 2, 0, 0]} position={[cell.x - width / 2 + .5, .013, cell.z - height / 2 + .5]}><planeGeometry args={[.98,.98]} /><meshBasicMaterial color="#70c8ff" transparent opacity={.3} depthWrite={false} /></mesh>)}
+    {hover && ((editor.tool==='wall'&&editor.wallVisual)||(editor.tool==='door'&&editor.doorVisual)) && <ArchitecturalObject3D wall={hover.wall} door={editor.tool==='door'?{id:'door-preview',wallId:hover.wall.id,state:'closed'}:undefined} map={{width,height}} visual={editor.tool==='wall'?editor.wallVisual:editor.doorVisual} scope={editor.assetScope} context={editor.assetContext} preview/>}
     {hover && editor.tool === 'object' && <mesh position={[hover.cell.x - width / 2 + .5, .35, hover.cell.z - height / 2 + .5]} rotation={[0, (editor.previewRotation ?? 0) * Math.PI / 180, 0]}><boxGeometry args={[.7,.7,.7]} /><meshBasicMaterial color="#70c8ff" transparent opacity={.35} depthWrite={false} /></mesh>}
     {hover && (editor.tool === 'wall' || editor.tool === 'door' ? <mesh position={[hover.wall.x - width / 2 + (hover.wall.axis === 'H' ? .5 : 0), .1, hover.wall.z - height / 2 + (hover.wall.axis === 'V' ? .5 : 0)]}><boxGeometry args={hover.wall.axis === 'H' ? [1, .12, .18] : [.18, .12, 1]} /><meshBasicMaterial color="#70c8ff" transparent opacity={.6} depthWrite={false} /></mesh> : <mesh rotation={[-Math.PI / 2, 0, 0]} position={[hover.cell.x - width / 2 + .5, .012, hover.cell.z - height / 2 + .5]}><planeGeometry args={[.98, .98]} /><meshBasicMaterial color="#70c8ff" transparent opacity={.35} depthWrite={false} /></mesh>)}
   </>

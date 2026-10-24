@@ -12,7 +12,8 @@ import { migrate } from '../migrate.ts'
 import { FilesystemAssetStorage } from '../asset-storage.ts'
 import { makeGlb, triangleDocument } from '../../test-fixtures/glb.ts'
 import { scenerySchema, isScenery } from '../../shared/scenery.ts'
-import { blankDungeon } from '../../shared/dungeon.ts'
+import {calibrationSchema} from '../../shared/architecture.ts'
+import { blankDungeon, canonicalWall } from '../../shared/dungeon.ts'
 import { importEncounter, mergeMapSnapshot, type GameCommand, type Snapshot, type ClientEvents, type ServerEvents, type CommandResult } from '../../shared/domain.ts'
 const origin = 'http://localhost:5173'
 async function waitFor(condition: () => boolean) { const end = Date.now()+8000; while (!condition()) { if (Date.now()>end) throw new Error('Snapshot did not converge'); await new Promise(r => setTimeout(r, 20)) } }
@@ -77,6 +78,32 @@ test('custom scenery uses existing map transactions, snapshots, templates and sc
       await waitFor(()=>p1.snapshot!.revision===dm.snapshot!.revision)
       assert.equal(p1.snapshot!.state.dungeonMap!.props.some(p=>p.id==='hidden'),false)
       await p1.file(hidden.id,campaign.id,encounter.id,404)
+    })
+    await t.test('logical architectural visuals validate roles, broadcast door states and preserve edge identity',async()=>{
+      const wallAsset=await dm.upload('Wall edge'),doorAsset=await dm.upload('Door panel')
+      for(const[asset,role]of[[wallAsset,'wall'],[doorAsset,'door']]as const)await dm.api(`/assets/${asset.id}/update`,{revision:1,metadata:{name:asset.name,category:'architecture',presentation:{architecture:{role}}}})
+      assert.equal((await dm.api('/assets?role=wall')).assets[0].id,wallAsset.id)
+      const wall=canonicalWall(5,6,'east'),wallVisual={assetId:wallAsset.id,calibration:calibrationSchema.parse({facing:'+X',scale:1.1})},doorVisual={assetId:doorAsset.id,calibration:calibrationSchema.parse({verticalOffset:.1})}
+      await dm.command({type:'map.wall.place',wall:{...wall,visual:wallVisual}})
+      await waitFor(()=>p2.snapshot!.revision===dm.snapshot!.revision)
+      assert.equal(p2.snapshot!.state.dungeonMap!.schemaVersion,3);assert.deepEqual(p2.snapshot!.state.dungeonMap!.walls[0],{...wall,visual:wallVisual})
+      await p1.file(wallAsset.id,campaign.id,encounter.id)
+      await p1.command({type:'map.wall.visual',wallId:wall.id,visual:null},false)
+      await p1.command({type:'map.door.place',door:{id:'bad-door',wallId:wall.id,state:'closed',visual:doorVisual}},false)
+      await dm.command({type:'map.wall.visual',wallId:wall.id,visual:{...wallVisual,assetId:foreign.id}},false)
+      await dm.command({type:'map.wall.visual',wallId:wall.id,visual:doorVisual},false)
+      await dm.command({type:'map.wall.visual',wallId:wall.id,visual:{...wallVisual,calibration:{...wallVisual.calibration,rotationCorrection:15}}})
+      await dm.command({type:'map.undo'});assert.deepEqual(dm.snapshot!.state.dungeonMap!.walls[0].visual,wallVisual)
+      await dm.command({type:'map.redo'});assert.equal(dm.snapshot!.state.dungeonMap!.walls[0].id,wall.id)
+      await dm.command({type:'map.door.place',door:{id:'custom-door',wallId:wall.id,state:'closed',visual:doorVisual}})
+      for(const state of['open','locked','closed']as const){await dm.command({type:'map.door.update',doorId:'custom-door',state});await waitFor(()=>p1.snapshot!.revision===dm.snapshot!.revision);assert.equal(p1.snapshot!.state.dungeonMap!.doors[0].state,state);assert.equal(p1.snapshot!.state.dungeonMap!.doors[0].wallId,wall.id)}
+      await p1.file(doorAsset.id,campaign.id,encounter.id);await p1.file(wallAsset.id,campaign.id,encounter.id,404) // opening suppresses wall visual and its current grant
+      await outsider.file(doorAsset.id,campaign.id,encounter.id,404)
+      await dm.api(`/assets/${doorAsset.id}/delete`,{revision:2},409)
+      await dm.command({type:'map.door.visual',doorId:'custom-door',visual:null});await p1.file(doorAsset.id,campaign.id,encounter.id,404)
+      await dm.command({type:'map.undo'});await p1.file(doorAsset.id,campaign.id,encounter.id)
+      await dm.command({type:'map.wall.remove',wallId:wall.id});assert.equal(dm.snapshot!.state.dungeonMap!.doors.length,0)
+      await dm.command({type:'map.undo'});assert.equal(dm.snapshot!.state.dungeonMap!.doors[0].id,'custom-door')
     })
     await t.test('free transforms, visibility, duplicate/delete and undo/redo preserve unrelated combat',async()=>{
       const transform={position:{x:3.25,z:4.5},rotation:123.5,scale:2.4,verticalOffset:.2,visible:true}

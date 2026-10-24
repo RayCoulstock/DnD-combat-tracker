@@ -116,3 +116,5 @@ Apply migration 006 before starting the backend. Procedural props and logical wa
 remain available. See [the scenery guide](docs/custom-3d-scenery-development.md) and
 [architecture](docs/custom-3d-scenery-architecture.md) for version compatibility,
 map/template/history persistence, player access and deletion safeguards.
+
+Milestone 4D adds one **Add Object** browser plus calibrated GLB visuals on logical walls and doors. See [architecture](docs/milestone-4d-architecture.md) and the [Meshy calibration and multiplayer guide](docs/milestone-4d-development.md). Apply migration 007 before running this version.
