@@ -120,3 +120,5 @@ map/template/history persistence, player access and deletion safeguards.
 Milestone 4D adds one **Add Object** browser plus calibrated GLB visuals on logical walls and doors. See [architecture](docs/milestone-4d-architecture.md) and the [Meshy calibration and multiplayer guide](docs/milestone-4d-development.md). Apply migration 007 before running this version.
 
 Milestone 4E adds atomic wall/room/corridor drawing, local/shared rulers and transparent tactical areas, plus projected contextual controls. See the [implementation plan](docs/milestone-4e-plan.md) and [tool and multiplayer guide](docs/milestone-4e-development.md). Tactical data uses existing encounter JSONB; no new database migration is required.
+
+The canvas-focused editor layout is described in the [workspace guide](docs/map-editor-workspace.md): floating tools and camera controls, an initiative rail, an accordion inspector, and remembered multiplayer setup collapse.

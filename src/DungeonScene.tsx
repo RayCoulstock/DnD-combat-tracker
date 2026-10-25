@@ -9,7 +9,7 @@ import type { ArchitecturalVisual } from '../shared/architecture'
 import { Scenery3D } from './Scenery3D'
 import { isScenery, sceneryAtPoint, type SceneryProp } from '../shared/scenery'
 import { canonicalWall, type Cell, type DungeonMap, type ProceduralProp, type Wall } from '../shared/dungeon'
-export interface EditorHit { position?: Cell; cell: Cell; wall: Wall; objectId?: string; kind?: 'prop' | 'wall' | 'door' }
+export interface EditorHit { edgeDistance?: number; position?: Cell; cell: Cell; wall: Wall; objectId?: string; kind?: 'prop' | 'wall' | 'door' }
 export interface EditorInteraction {
   tool: 'select' | 'floor' | 'wall' | 'door' | 'object' | 'erase' | 'scenery' | 'sceneryMove' | 'wall-line' | 'room' | 'corridor' | 'objectMove'
   activation?:number
@@ -97,7 +97,7 @@ function CellEditorSurface({ width, height, editor }: { width: number; height: n
     if (x < 0 || x >= width || z < 0 || z >= height) return null
     const cell = { x: Math.floor(x), z: Math.floor(z) }, fx = x - cell.x, fz = z - cell.z
     const distances = [fz, 1 - fx, 1 - fz, fx], edges = ['north', 'east', 'south', 'west'] as const
-    return { position: sceneryAtPoint(x,z,width,height,editor.snap ?? true), cell, wall: canonicalWall(cell.x, cell.z, edges[distances.indexOf(Math.min(...distances))]) }
+    return { edgeDistance: Math.min(...distances), position: sceneryAtPoint(x,z,width,height,editor.snap ?? true), cell, wall: canonicalWall(cell.x, cell.z, edges[distances.indexOf(Math.min(...distances))]) }
   }
   const add = (hit: EditorHit | null) => { if (hit && stroke.current) { stroke.current.set(`${hit.cell.x}:${hit.cell.z}`, hit.cell); setPainted([...stroke.current.values()]) } }
   return <>

@@ -77,7 +77,7 @@ test('DM asset upload, metadata search, isolated preview, errors and deletion', 
   await page.unroute('**/api/assets/*/file')
   await page.getByRole('button', { name: 'Return to encounter', exact: true }).click()
   // DM campaign choice is intentionally local state and is reset by a full page reload.
-  await page.getByRole('combobox', { name: 'Campaign', exact: true }).selectOption({ label: 'Asset preview campaign' })
+  await page.getByRole('button',{name:'Expand setup',exact:true}).click();await page.getByRole('combobox', { name: 'Campaign', exact: true }).selectOption({ label: 'Asset preview campaign' })
   await expect(page.getByRole('heading', { name: 'Keep this battlefield', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Asset Library', exact: true }).click()
   await page.locator('.asset-card').click(); await expect(preview.locator('canvas')).toBeVisible()

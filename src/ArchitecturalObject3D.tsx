@@ -16,6 +16,8 @@ export default function ArchitecturalObject3D({wall,door,map,editor,scope,contex
   const url=assignment?`/api/assets/${encodeURIComponent(assignment.assetId)}/file${query}#${encodeURIComponent(scope??'local')}`:''
   const model=assignment?<SharedModel3D url={url} kind={door?'door':'wall'} architecture={assignment.calibration} transform={{scale:1,rotation:0,verticalOffset:0}} fallback={fallback} ghost={preview} selected={!preview&&editor?.selectedId===(door?.id??wall.id)}/>:fallback
   return <group position={[pose.x,0,pose.z]} rotation={[0,pose.rotation,0]} onPointerUp={e=>{if(!preview&&editor&&['select','erase','wall','door'].includes(editor.tool)&&e.button===0&&e.delta<=3){e.stopPropagation();editor.onHit({cell:{x:Math.min(wall.x,map.width-1),z:Math.min(wall.z,map.height-1)},wall,kind:door?'door':'wall',objectId:door?.id??wall.id})}}}>
+    {/* Select the logical edge even when an uploaded model has holes or a tiny footprint. */}
+    {assignment&&editor?.tool==='select'&&!preview&&<mesh position={[0,.8,0]}><boxGeometry args={[1,1.6,.2]}/><meshBasicMaterial visible={false}/></mesh>}
     {assignment&&door?<group position={[-.5,0,0]} rotation={[0,door.state==='open'?-Math.PI/2:0,0]}><group position={[.5,0,0]}>{model}</group></group>:model}
     {door&&!preview&&<Html position={[0,1.7,0]} center style={{pointerEvents:'none'}}><span className="token-label" data-door-state={door.state}>{door.state==='locked'?'🔒 Locked':door.state==='open'?'Open':'Closed'}</span></Html>}
   </group>

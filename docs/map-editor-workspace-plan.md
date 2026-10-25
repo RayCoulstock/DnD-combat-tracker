@@ -1,0 +1,3 @@
+# Map editor workspace redesign
+
+Keep domain schemas, Socket.IO commands, persistence and permissions unchanged. Reorganise the existing editor controls into a bounded, internally scrolling inspector alongside the existing mounted battlefield. Overlay tool/history/camera controls on the canvas; collapse the initiative roster into an expandable rail. Preserve all batch drawing, tactical, generator, template, calibration and selection controls. Store setup collapse preference in localStorage and collapse on entry to a map view. Keyboard tool shortcuts ignore editable fields and modal dialogs. Validate with typecheck, lint, unit/integration and browser regression checks.

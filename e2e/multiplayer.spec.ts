@@ -1,3 +1,4 @@
+import {expandEditor} from './workspace-helpers'
 import { test, expect, type Page, type Locator } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 async function api(page: Page, path: string, body?: unknown) {
@@ -59,7 +60,7 @@ test('local ledger, DM and two browsers, camera isolation and offline camera', a
   await page.getByRole('button', { name: 'Create account', exact: true }).click()
   await page.getByLabel('New campaign', { exact: true }).fill('Browser campaign')
   await page.getByRole('button', { name: 'Create campaign', exact: true }).click()
-  await expect(page.getByLabel('New encounter', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('New encounter', { exact: true })).toBeEnabled()
   const fixture = { version: 1, round: 1, combatants: [
     { id: 1, name: 'Browser hero', short: 'BH', side: 'hero', hp: 10, maxHp: 10, ac: 15, initiative: 18, conditions: [], saves: [], actions: [] },
     { id: 2, name: 'Private monster', short: 'PM', side: 'enemy', hp: 20, maxHp: 20, ac: 18, initiative: 10, conditions: [], saves: [], actions: [], visible: false, privateNotes: 'Private browser secret' },
@@ -121,7 +122,7 @@ test('waiting players see first activation and restart without refresh or camera
   await page.getByRole('button', { name: 'Create account', exact: true }).click()
   await page.getByLabel('New campaign', { exact: true }).fill('Waiting campaign')
   await page.getByRole('button', { name: 'Create campaign', exact: true }).click()
-  await expect(page.getByLabel('New encounter', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('New encounter', { exact: true })).toBeEnabled()
   const campaignId = await page.getByRole('combobox', { name: 'Campaign', exact: true }).inputValue()
   const contexts = [await browser.newContext(), await browser.newContext(), await browser.newContext()]
   const players: Page[] = []
@@ -198,7 +199,7 @@ test('DM paints and generates a reusable dungeon while two players see live read
   await page.getByRole('button', { name: 'Create account', exact: true }).click()
   await page.getByLabel('New campaign', { exact: true }).fill('Builder campaign')
   await page.getByRole('button', { name: 'Create campaign', exact: true }).click()
-  await expect(page.getByLabel('New encounter', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('New encounter', { exact: true })).toBeEnabled()
   const campaign = await page.getByRole('combobox', { name: 'Campaign', exact: true }).inputValue()
   const path = `/campaigns/${campaign}`
   const encounter = await api(page, `${path}/encounters`, { name: 'Builder encounter', file: { version: 1, round: 4, combatants: [
@@ -216,8 +217,8 @@ test('DM paints and generates a reusable dungeon while two players see live read
       await expect(player.locator('.connection')).toHaveText('Connected')
       await expect(player.getByRole('button', { name: 'Map editor', exact: true })).toHaveCount(0)
     }
-    await page.getByRole('button', { name: 'Map editor', exact: true }).click()
-    const tools = page.locator('.builder-tools:visible'), canvas = page.locator('canvas:visible')
+    await page.getByRole('button', { name: 'Map editor', exact: true }).click();await expandEditor(page)
+    const tools = page.locator('.dungeon-builder:visible'), canvas = page.locator('canvas:visible')
     await tools.getByLabel('Map name', { exact: true }).fill('Hand-painted room')
     await tools.getByRole('button', { name: 'Create blank map', exact: true }).click()
     await expect(players[0].getByRole('region', { name: 'Dungeon map: Hand-painted room', exact: true })).toBeVisible()
@@ -231,7 +232,7 @@ test('DM paints and generates a reusable dungeon while two players see live read
     const painted = await api(page, `${path}/snapshot`)
     expect(painted.state.combatants[0].hp).toBe(9)
     expect(painted.state.round).toBe(4)
-    await tools.getByRole('button', { name: 'Generate dungeon', exact: true }).click()
+    await tools.locator('.inspector summary').filter({hasText:'Generate dungeon'}).click()
     await tools.getByLabel('Random seed', { exact: true }).fill('browser-generator')
     await tools.getByLabel('Theme', { exact: true }).selectOption('mining-outpost')
     await tools.getByRole('button', { name: 'Preview dungeon', exact: true }).click()
@@ -270,7 +271,7 @@ test('DM paints and generates a reusable dungeon while two players see live read
     // Replacing the instance with the same template forces a full map snapshot;
     // geometry updates must preserve the already-rotated local camera too.
     const mapRevision = (await api(page, `${path}/snapshot`)).state.mapRevision
-    await page.getByRole('button', { name: 'Map editor', exact: true }).click()
+    await page.getByRole('button', { name: 'Map editor', exact: true }).click();await expandEditor(page)
     await tools.getByLabel('Saved maps', { exact: true }).selectOption({ label: 'Shared dungeon template · v1' })
     page.once('dialog', dialog => dialog.accept())
     await tools.getByRole('button', { name: 'Open saved map', exact: true }).click()
@@ -286,11 +287,11 @@ test('DM paints and generates a reusable dungeon while two players see live read
 
 test('local map editing, template recovery and encounter JSON stay compatible', async ({ page }) => {
   await page.goto('/')
-  await page.getByRole('button', { name: 'Map editor', exact: true }).click()
-  const tools = page.locator('.builder-tools:visible')
+  await page.getByRole('button', { name: 'Map editor', exact: true }).click();await expandEditor(page)
+  const tools = page.locator('.dungeon-builder:visible')
   await tools.getByLabel('Map name', { exact: true }).fill('Local reusable room')
   await tools.getByRole('button', { name: 'Create blank map', exact: true }).click()
-  await tools.getByRole('button', { name: 'Generate dungeon', exact: true }).click()
+  await tools.locator('.inspector summary').filter({hasText:'Generate dungeon'}).click()
   await tools.getByRole('button', { name: 'Preview dungeon', exact: true }).click()
   page.once('dialog', dialog => dialog.accept())
   await tools.getByRole('button', { name: 'Accept generated map', exact: true }).click()
@@ -313,7 +314,7 @@ test('local map editing, template recovery and encounter JSON stay compatible', 
   expect(exported.dungeonMap.floors.length).toBeGreaterThan(0)
   expect(Object.keys(exported.battleMap.tokens).length).toBeGreaterThan(0)
   await page.reload()
-  await page.getByRole('button', { name: 'Map editor', exact: true }).click()
+  await page.getByRole('button', { name: 'Map editor', exact: true }).click();await expandEditor(page)
   await tools.getByLabel('Saved maps', { exact: true }).selectOption({ label: 'Local reusable room · v1' })
   await tools.getByRole('button', { name: 'Open saved map', exact: true }).click()
   await expect(page.getByRole('region', { name: 'Dungeon map: Local reusable room', exact: true })).toBeVisible()
