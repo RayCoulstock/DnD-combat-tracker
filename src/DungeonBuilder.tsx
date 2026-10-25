@@ -1,5 +1,7 @@
 import { z } from 'zod'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import type {ObjectToolbarContext} from './FloatingObjectToolbar'
+import {edgePose} from '../shared/architecture'
 import ArchitectureProperties from './ArchitectureProperties'
 import { calibrationSchema, type ArchitecturalVisual } from '../shared/architecture'
 import AssetLibrary from './AssetLibrary'
@@ -26,13 +28,15 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
   const [knownAssets,setKnownAssets]=useState<Record<string,Asset3D>>({})
   const visualFor=(asset:Asset3D|null):ArchitecturalVisual|undefined=>asset?{assetId:asset.id,calibration:calibrationSchema.strip().parse(asset.presentation.architecture??{})}:undefined
   const [sceneryAsset, setSceneryAsset] = useState<SceneryProp | null>(null), [pickingScenery, setPickingScenery] = useState(false), [snap, setSnap] = useState(true)
-  const [tool, setTool] = useState<EditorInteraction['tool']>('select')
+  const [selected, setSelected] = useState<EditorHit | null>(null)
+  const [tool,setToolValue]=useState<EditorInteraction['tool']>('select'),[toolEpoch,setToolEpoch]=useState(0)
+  const setTool=useCallback((next:EditorInteraction['tool'])=>{setToolValue(next);setToolEpoch(n=>n+1);if(!['select','sceneryMove','objectMove'].includes(next))setSelected(null)},[])
   const [floor, setFloor] = useState<DungeonMap['floors'][number]['type']>('stone')
+  const [corridorWidth,setCorridorWidth]=useState(2),[wallsOnly,setWallsOnly]=useState(false)
   const [wallMaterial, setWallMaterial] = useState<'stone' | 'wood'>('stone')
   const [propType, setPropType] = useState<ProceduralProp['type']>('crate')
   const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0)
   const [doorState, setDoorState] = useState<'open' | 'closed' | 'locked'>('closed')
-  const [selected, setSelected] = useState<EditorHit | null>(null)
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [maps, setMaps] = useState<SavedMap[]>([])
@@ -99,6 +103,7 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
   })
   const hit = (value: EditorHit) => {
     if (tool === 'scenery' && sceneryAsset) { void dispatch({ type: 'map.scenery.place', prop: { ...sceneryAsset, id: crypto.randomUUID(), position: value.position ?? value.cell } }); return }
+    if(tool==='objectMove'){const moving=document?.props.find(p=>p.id===selected?.objectId);if(moving&&!isScenery(moving))void dispatch({type:'map.prop.transform',propId:moving.id,position:value.cell,rotation:moving.rotation,scale:moving.scale??1});setTool('select');return}
     if (tool === 'sceneryMove') {
       const moving = document?.props.find(p => p.id === selected?.objectId)
       if (moving && isScenery(moving)) void dispatch({ type: 'map.scenery.update', propId: moving.id, transform: { position: value.position ?? value.cell, rotation: moving.rotation, scale: moving.scale, verticalOffset: moving.verticalOffset, visible: moving.visible } })
@@ -138,14 +143,31 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
       if (command) { e.preventDefault(); setBusy(true); void send(command).catch(error => setMessage(error.message)).finally(() => setBusy(false)) }
     }
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key)
-  }, [editing, connected, busy, preview, pickingScenery, architecturalPicker, prop, document, send])
+  }, [editing, connected, busy, preview, pickingScenery, architecturalPicker, prop, document, send,setTool])
   const chooseScenery = (asset: Asset3D) => {
     const role=asset.presentation.architecture?.role
     if(role==='wall'||role==='door'){setKnownAssets(previous=>({...previous,[asset.id]:asset}));if(role==='wall')setWallAsset(asset);else setDoorAsset(asset);setPickingScenery(false);setTool(role);return}
 
     setSceneryAsset(scenerySchema.parse({ id: 'placement-preview', type: 'asset', assetId: asset.id, label: asset.presentation.displayName || asset.name, category: asset.category, position: {x:0,z:0}, rotation: asset.presentation.defaultRotation, scale: Math.max(sceneryLimits.minScale, Math.min(sceneryLimits.maxScale, asset.presentation.defaultScale)), verticalOffset: Math.max(sceneryLimits.minOffset, Math.min(sceneryLimits.maxOffset, asset.presentation.verticalOffset)), visible: true })); setPickingScenery(false); setTool('scenery')
   }
-  const editor: EditorInteraction = { wallVisual:visualFor(wallAsset),doorVisual:visualFor(doorAsset), snap, scenery: tool === 'sceneryMove' && prop && isScenery(prop) ? prop : sceneryAsset ?? undefined, assetScope: battlefield.assetScope, assetContext: battlefield.assetContext, tool, selectedId: selected?.objectId, previewRotation: rotation, onHit: hit, onPaint: cells => { void dispatch({ type: 'map.floor.paint', cells, material: floor }) } }
+  const focusProperties=()=>{window.setTimeout(()=>{const panel=window.document.querySelector('.builder-properties');panel?.scrollIntoView({block:'center',behavior:'smooth'});(panel?.querySelector<HTMLElement>('input[aria-label="Scenery scale"]')??panel?.querySelector<HTMLElement>('input[aria-label="Selected object scale"]')??panel?.querySelector<HTMLElement>('button,input,select'))?.focus()},0)}
+  let objectToolbar:ObjectToolbarContext|undefined
+  if(prop&&document){
+    const scenery=isScenery(prop),position:[number,number,number]=[prop.position.x-document.width/2+.5,1,prop.position.z-document.height/2+.5]
+    objectToolbar={title:scenery?prop.label:prop.type,position,onDismiss:()=>{setSelected(null);setTool('select')},actions:[
+      {label:'Move',run:()=>setTool(scenery?'sceneryMove':'objectMove')},
+      {label:'Rotate',run:()=>void dispatch(scenery?{type:'map.scenery.update',propId:prop.id,transform:{position:prop.position,rotation:(prop.rotation+45)%360,scale:prop.scale,verticalOffset:prop.verticalOffset,visible:prop.visible}}:{type:'map.prop.rotate',propId:prop.id,rotation:((prop.rotation+90)%360)as 0|90|180|270})},
+      {label:'Scale',run:focusProperties},{label:'Duplicate',run:()=>void dispatch(scenery?{type:'map.scenery.duplicate',propId:prop.id,newId:crypto.randomUUID(),position:{x:Math.min(document.width-1,prop.position.x+1),z:Math.min(document.height-1,prop.position.z+1)}}:{type:'map.prop.place',prop:{...prop,id:crypto.randomUUID(),position:{x:Math.min(document.width-1,prop.position.x+1),z:Math.min(document.height-1,prop.position.z+1)}}})},
+      {label:'Delete',run:()=>void dispatch({type:'map.prop.remove',propId:prop.id})},{label:'Properties',run:focusProperties}
+    ].map(a=>({...a,disabled:busy||!connected})),properties:<p>Advanced placement and transforms are available in the editor properties panel.</p>}
+  }else if(document&&(selectedWall||door)){
+    const w=selectedWall??document.walls.find(w=>w.id===door!.wallId)!,pose=edgePose(w,document.width,document.height)
+    objectToolbar={title:door?`Door · ${door.state}`:'Logical wall',position:[pose.x,1,pose.z],onDismiss:()=>{setSelected(null);setTool('select')},actions:[
+      ...(door?(['open','closed','locked']as const).map(state=>({label:state==='open'?'Open':state==='closed'?(door.state==='locked'?'Unlock / close':'Close'):'Lock',run:()=>void dispatch({type:'map.door.update',doorId:door.id,state})})):[]),
+      {label:'Change appearance',run:()=>setArchitecturalPicker({kind:door?'door':'wall',selected:true})},{label:'Remove',run:()=>void dispatch(door?{type:'map.door.remove',doorId:door.id}:{type:'map.wall.remove',wallId:w.id})},{label:'Properties',run:focusProperties}
+    ].map(a=>({...a,disabled:busy||!connected})),properties:<p>{w.id} · {w.material}. The logical edge stays authoritative independently of its visual model.</p>}
+  }
+  const editor: EditorInteraction = { activation:toolEpoch, document:document??undefined, toolbar:objectToolbar, drawing: ['wall-line','room','corridor'].includes(tool)?{kind:tool as 'wall-line'|'room'|'corridor',width:corridorWidth,wallsOnly,floor,material:wallMaterial,visual:visualFor(wallAsset)}:undefined,onDraw:command=>{void dispatch(command)}, wallVisual:visualFor(wallAsset),doorVisual:visualFor(doorAsset), snap, scenery: tool === 'sceneryMove' && prop && isScenery(prop) ? prop : sceneryAsset ?? undefined, assetScope: battlefield.assetScope, assetContext: battlefield.assetContext, tool, selectedId: selected?.objectId, previewRotation: tool==='objectMove'&&prop&&!isScenery(prop)?prop.rotation:rotation, onHit: hit, onPaint: cells => { void dispatch({ type: 'map.floor.paint', cells, material: floor }) } }
   return <section className="dungeon-builder" data-editing={editing}>
     {architecturalPicker && library && <div className="miniature-dialog" role="dialog" aria-modal="true" aria-label={`Choose ${architecturalPicker.kind} visual`}><AssetLibrary api={library.api} csrf="" pickerTitle={`Choose ${architecturalPicker.kind} visual`} architecturalRole={architecturalPicker.kind} onClose={()=>setArchitecturalPicker(null)} onPick={asset=>{
       setKnownAssets(previous=>({...previous,[asset.id]:asset}))
@@ -157,7 +179,7 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
     {pickingScenery && <div className="miniature-dialog" role="dialog" aria-modal="true" aria-label="Add Object"><AssetLibrary api={library?.api ?? (async () => ({assets:[],total:0,maxBytes:25*1024*1024}))} pickerTitle="Add Object" onPickBuiltin={type => { setPropType(type); setSceneryAsset(null); setPickingScenery(false); setTool('object') }} csrf="" onClose={() => setPickingScenery(false)} onPick={chooseScenery} /></div>}
     <div className="builder-tools" hidden={!editing}>
       <h2>Dungeon builder</h2><button onClick={() => setShowGenerator(value => !value)}>Generate dungeon</button><p>{document ? `${document.name} · ${document.width} × ${document.height} · map revision ${state.mapRevision ?? 0}` : 'Flat battlefield · create or load a dungeon to edit geometry.'}</p>
-      <fieldset disabled={!connected || busy || Boolean(preview)}><legend>Map tools</legend><div className="builder-row">{(['select', 'floor', 'wall', 'door', 'object', 'erase'] as const).map(t => <button key={t} aria-pressed={tool === t || t === 'object' && tool === 'scenery'} onClick={() => { if (t === 'object') setPickingScenery(true); else setTool(t) }}>{({ select: 'Select', floor: 'Paint floor', wall: 'Draw wall', door: 'Place door', object: 'Add Object', erase: 'Erase' })[t]}</button>)}<button disabled={!state.mapUndoDepth} onClick={() => void dispatch({ type: 'map.undo' })}>Undo map edit</button><button disabled={!state.mapRedoDepth} onClick={() => void dispatch({ type: 'map.redo' })}>Redo map edit</button><button onClick={() => { if (confirm('Clear map undo and redo history? This cannot be undone.')) void dispatch({ type: 'map.history.clear' }) }}>Clear map history</button></div>
+      <fieldset disabled={!connected || busy || Boolean(preview)}><legend>Map tools</legend><div className="builder-row">{(['select', 'floor', 'wall', 'wall-line', 'room', 'corridor', 'door', 'object', 'erase'] as const).map(t => <button key={t} aria-pressed={tool === t || t === 'object' && tool === 'scenery'} onClick={() => { if (t === 'object') setPickingScenery(true); else setTool(t) }}>{({ select: 'Select', floor: 'Paint floor', wall: 'Draw wall', 'wall-line':'Wall line',room:'Rectangle room',corridor:'Corridor', door: 'Place door', object: 'Add Object', erase: 'Erase' })[t]}</button>)}<button disabled={!state.mapUndoDepth} onClick={() => void dispatch({ type: 'map.undo' })}>Undo map edit</button><button disabled={!state.mapRedoDepth} onClick={() => void dispatch({ type: 'map.redo' })}>Redo map edit</button><button onClick={() => { if (confirm('Clear map undo and redo history? This cannot be undone.')) void dispatch({ type: 'map.history.clear' }) }}>Clear map history</button></div>
         <aside className="builder-properties" aria-label="Tool properties">
           <label><input type="checkbox" checked={snap} onChange={e => setSnap(e.target.checked)} />Snap scenery to grid</label>
 
@@ -165,6 +187,10 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
           {(tool === 'scenery' || tool === 'sceneryMove') && <p>Click the floor to {tool === 'sceneryMove' ? 'move' : 'place'} scenery. Escape cancels. Middle-drag rotates; right-drag pans.</p>}
           {document?.props.some(isScenery) && <label>Scenery instances<select aria-label="Scenery instances" value={prop && isScenery(prop) ? prop.id : ''} onChange={e => { const item = document.props.find(p => p.id === e.target.value); if (item) { setTool('select'); setSelected({cell:{x:Math.floor(item.position.x),z:Math.floor(item.position.z)},wall:{id:'H:0:0',x:0,z:0,axis:'H',material:'stone'},kind:'prop',objectId:item.id}) } }}><option value="">Select scenery</option>{document.props.filter(isScenery).map(p => <option key={p.id} value={p.id}>{p.label} · {p.id.slice(0,8)}{p.visible ? '' : ' (hidden)'}</option>)}</select></label>}
           {prop && isScenery(prop) && <SceneryProperties key={`${prop.id}:${state.mapRevision}`} prop={prop} width={document!.width} height={document!.height} send={command => { void dispatch(command) }} onMove={() => setTool('sceneryMove')} />}
+          {['wall-line','room','corridor'].includes(tool)&&<p>Left-drag snapped grid vertices to preview; release commits one edit. Escape cancels. Blue adds geometry; red marks corridor openings. Middle-drag rotates.</p>}
+          {tool==='room'&&<label><input type="checkbox" checked={wallsOnly} onChange={e=>setWallsOnly(e.target.checked)}/>Walls only</label>}
+          {tool==='corridor'&&<label>Corridor width<input aria-label="Corridor width" type="number" min={1} max={10} value={corridorWidth} onChange={e=>setCorridorWidth(Math.max(1,Math.min(10,Number(e.target.value))))}/></label>}
+          {prop&&!isScenery(prop)&&<form key={`${prop.id}:${state.mapRevision}`} onSubmit={e=>{e.preventDefault();const scale=Number(new FormData(e.currentTarget).get('scale'));void dispatch({type:'map.prop.transform',propId:prop.id,position:prop.position,rotation:prop.rotation,scale})}}><label>Selected object scale<input aria-label="Selected object scale" name="scale" type="number" min={.1} max={10} step={.1} defaultValue={prop.scale??1} required/></label><button>Apply object scale</button></form>}
           <label>Floor material<select aria-label="Floor material" value={floor} onChange={e => setFloor(e.target.value as typeof floor)}>{floorTypes.map(t => <option key={t}>{t}</option>)}</select></label>
           <p>Wall visual: {wallAsset?.name ?? `Built-in ${wallMaterial}`}</p><button disabled={!library} onClick={()=>setArchitecturalPicker({kind:'wall',selected:false})}>Choose wall visual</button><button onClick={()=>setWallAsset(null)}>Built-in wall visual</button>
           <p>Door visual: {doorAsset?.name ?? 'Built-in door'}</p><button disabled={!library} onClick={()=>setArchitecturalPicker({kind:'door',selected:false})}>Choose door visual</button><button onClick={()=>setDoorAsset(null)}>Built-in door visual</button>

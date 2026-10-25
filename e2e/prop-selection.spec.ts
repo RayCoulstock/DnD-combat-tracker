@@ -23,6 +23,7 @@ test('placed chairs and tables can be selected and rotated', async ({ page }) =>
     const point = new Vector3(prop.position.x - 9.1, 0, prop.position.z - 9.1).project(camera)
     await page.mouse.click(box.x + (point.x + 1) * box.width / 2, box.y + (1 - point.y) * box.height / 2)
     await expect(tools.getByText(`Selected prop: ${prop.id}`, { exact: true })).toBeVisible()
+    const floating=page.getByRole('toolbar',{name:prop.type+' controls',exact:true});await expect(floating).toBeVisible();for(const name of ['Move','Rotate','Scale','Duplicate','Delete','Properties'])await expect(floating.getByRole('button',{name,exact:true})).toBeEnabled()
     await tools.getByRole('button', { name: 'Rotate selected object', exact: true }).click()
   }
   // Verify rotation changes domain state, rather than merely displaying controls.

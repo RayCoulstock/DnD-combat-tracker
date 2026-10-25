@@ -57,7 +57,7 @@ export function reconcileBattleMap(map: BattleMapState, ids: Array<string | numb
     used.add(`${position.x}:${position.z}`)
   })
 
-  return { ...map, version: 1, width, height, gridSizeFeet: 5, tokens }
+  return { ...map, version: 1, width, height, gridSizeFeet: Number.isInteger(map.gridSizeFeet)&&map.gridSizeFeet>=1&&map.gridSizeFeet<=100?map.gridSizeFeet:5, tokens }
 }
 
 export function normalizeBattleMap(value: unknown, ids: Array<string | number>): BattleMapState {
@@ -67,7 +67,7 @@ export function normalizeBattleMap(value: unknown, ids: Array<string | number>):
     version: 1,
     width: Number.isInteger(candidate.width) && candidate.width! > 0 && candidate.width! <= 100 ? candidate.width! : DEFAULT_MAP_SIZE,
     height: Number.isInteger(candidate.height) && candidate.height! > 0 && candidate.height! <= 100 ? candidate.height! : DEFAULT_MAP_SIZE,
-    gridSizeFeet: 5,
+    gridSizeFeet: Number.isInteger(candidate.gridSizeFeet)&&candidate.gridSizeFeet!>=1&&candidate.gridSizeFeet!<=100?candidate.gridSizeFeet!:5,
     showGrid: candidate.showGrid !== false,
     showLabels: candidate.showLabels !== false,
     tokens: candidate.tokens && typeof candidate.tokens === 'object' ? candidate.tokens : {},

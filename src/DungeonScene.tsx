@@ -1,3 +1,6 @@
+import type {ObjectToolbarContext} from './FloatingObjectToolbar'
+import DrawingSurface from './DrawingSurface'
+import type {Drawing} from '../shared/drawing'
 import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { InstancedMesh, Object3D } from 'three'
 import type { ThreeEvent } from '@react-three/fiber'
@@ -8,7 +11,12 @@ import { isScenery, sceneryAtPoint, type SceneryProp } from '../shared/scenery'
 import { canonicalWall, type Cell, type DungeonMap, type ProceduralProp, type Wall } from '../shared/dungeon'
 export interface EditorHit { position?: Cell; cell: Cell; wall: Wall; objectId?: string; kind?: 'prop' | 'wall' | 'door' }
 export interface EditorInteraction {
-  tool: 'select' | 'floor' | 'wall' | 'door' | 'object' | 'erase' | 'scenery' | 'sceneryMove'
+  tool: 'select' | 'floor' | 'wall' | 'door' | 'object' | 'erase' | 'scenery' | 'sceneryMove' | 'wall-line' | 'room' | 'corridor' | 'objectMove'
+  activation?:number
+  document?:DungeonMap
+  drawing?: Omit<Drawing,'type'|'start'|'end'>
+  onDraw?: (command:Drawing)=>void
+  toolbar?:ObjectToolbarContext
   selectedId?: string
   onHit: (hit: EditorHit) => void
   onPaint: (cells: Cell[]) => void
@@ -73,14 +81,14 @@ export const DungeonScene = memo(function DungeonScene({ map, editor, assetScope
       const props = map.props.filter((p): p is ProceduralProp => p.type === type)
       return propParts[type].map((part, i) => <Instances key={`${type}:${i}`} color={part.color} shape={part.shape} emissive={part.glow} transforms={props.map(p => {
         const a = p.rotation * Math.PI / 180
-        return { position: [p.position.x - map.width / 2 + .5 + part.offset[0] * Math.cos(a) + part.offset[2] * Math.sin(a), part.offset[1], p.position.z - map.height / 2 + .5 + part.offset[2] * Math.cos(a) - part.offset[0] * Math.sin(a)], rotation: a, scale: part.scale }
+        return { position: [p.position.x - map.width / 2 + .5 + (p.scale??1)*(part.offset[0] * Math.cos(a) + part.offset[2] * Math.sin(a)), part.offset[1]*(p.scale??1), p.position.z - map.height / 2 + .5 + (p.scale??1)*(part.offset[2] * Math.cos(a) - part.offset[0] * Math.sin(a))], rotation: a, scale: part.scale.map(v=>v*(p.scale??1)) as [number,number,number] }
       })} onHit={editor && ['select', 'erase'].includes(editor.tool) ? index => editor.onHit({ cell: props[index].position, wall: canonicalWall(props[index].position.x, props[index].position.z, 'north'), kind: 'prop', objectId: props[index].id }) : undefined} />)
     })}
     {editor?.selectedId && map.walls.filter(w => w.id === editor.selectedId || map.doors.some(d => d.id === editor.selectedId && d.wallId === w.id)).map(w => { const t = wallTransform(w, map); return <mesh key={w.id} position={t.position} scale={t.scale}><boxGeometry /><meshBasicMaterial color="#70c8ff" wireframe /></mesh> })}
     {editor?.selectedId && map.props.filter(p => p.id === editor.selectedId).map(p => <mesh key={p.id} position={[p.position.x - map.width / 2 + .5, .03, p.position.z - map.height / 2 + .5]} rotation={[-Math.PI / 2, 0, 0]}><ringGeometry args={[.46, .51, 24]} /><meshBasicMaterial color="#70c8ff" /></mesh>)}
   </>
 })
-export function EditorSurface({ width, height, editor }: { width: number; height: number; editor: EditorInteraction }) {
+function CellEditorSurface({ width, height, editor }: { width: number; height: number; editor: EditorInteraction }) {
   const [painted, setPainted] = useState<Cell[]>([])
   const [hover, setHover] = useState<EditorHit | null>(null)
   const stroke = useRef<Map<string, Cell> | null>(null)
@@ -95,13 +103,15 @@ export function EditorSurface({ width, height, editor }: { width: number; height
   return <>
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, .002, 0]} onPointerMove={e => { const h = getHit(e); setHover(h); if (e.buttons & 1) add(h) }} onPointerLeave={() => setHover(null)}
       onPointerDown={e => { if (e.button !== 0) return; e.stopPropagation(); if (editor.tool === 'floor') { stroke.current = new Map(); add(getHit(e)); (e.target as unknown as { setPointerCapture: (id: number) => void }).setPointerCapture(e.pointerId) } }}
-      onPointerUp={e => { if (e.button !== 0 || e.delta > 3) return; e.stopPropagation(); const h = getHit(e); if (stroke.current) { add(h); const cells = [...stroke.current.values()]; stroke.current = null; setPainted([]); if (cells.length) editor.onPaint(cells) } else if (h) editor.onHit(h) }}>
+      onPointerUp={e => { if (e.button !== 0 || (e.delta > 3 && !stroke.current)) return; e.stopPropagation(); const h = getHit(e); if (stroke.current) { add(h); const cells = [...stroke.current.values()]; stroke.current = null; setPainted([]); if (cells.length) editor.onPaint(cells) } else if (h) editor.onHit(h) }}>
       <planeGeometry args={[width, height]} /><meshBasicMaterial transparent opacity={0} depthWrite={false} />
     </mesh>
     {hover && editor.scenery && (editor.tool === 'scenery' || editor.tool === 'sceneryMove') && <Scenery3D prop={{ ...editor.scenery, position: hover.position! }} width={width} height={height} scope={editor.assetScope} context={editor.assetContext} preview />}
     {painted.map(cell => <mesh key={`${cell.x}:${cell.z}`} rotation={[-Math.PI / 2, 0, 0]} position={[cell.x - width / 2 + .5, .013, cell.z - height / 2 + .5]}><planeGeometry args={[.98,.98]} /><meshBasicMaterial color="#70c8ff" transparent opacity={.3} depthWrite={false} /></mesh>)}
     {hover && ((editor.tool==='wall'&&editor.wallVisual)||(editor.tool==='door'&&editor.doorVisual)) && <ArchitecturalObject3D wall={hover.wall} door={editor.tool==='door'?{id:'door-preview',wallId:hover.wall.id,state:'closed'}:undefined} map={{width,height}} visual={editor.tool==='wall'?editor.wallVisual:editor.doorVisual} scope={editor.assetScope} context={editor.assetContext} preview/>}
-    {hover && editor.tool === 'object' && <mesh position={[hover.cell.x - width / 2 + .5, .35, hover.cell.z - height / 2 + .5]} rotation={[0, (editor.previewRotation ?? 0) * Math.PI / 180, 0]}><boxGeometry args={[.7,.7,.7]} /><meshBasicMaterial color="#70c8ff" transparent opacity={.35} depthWrite={false} /></mesh>}
+    {hover && (editor.tool === 'object'||editor.tool==='objectMove') && <mesh position={[hover.cell.x - width / 2 + .5, .35, hover.cell.z - height / 2 + .5]} rotation={[0, (editor.previewRotation ?? 0) * Math.PI / 180, 0]}><boxGeometry args={[.7,.7,.7]} /><meshBasicMaterial color="#70c8ff" transparent opacity={.35} depthWrite={false} /></mesh>}
     {hover && (editor.tool === 'wall' || editor.tool === 'door' ? <mesh position={[hover.wall.x - width / 2 + (hover.wall.axis === 'H' ? .5 : 0), .1, hover.wall.z - height / 2 + (hover.wall.axis === 'V' ? .5 : 0)]}><boxGeometry args={hover.wall.axis === 'H' ? [1, .12, .18] : [.18, .12, 1]} /><meshBasicMaterial color="#70c8ff" transparent opacity={.6} depthWrite={false} /></mesh> : <mesh rotation={[-Math.PI / 2, 0, 0]} position={[hover.cell.x - width / 2 + .5, .012, hover.cell.z - height / 2 + .5]}><planeGeometry args={[.98, .98]} /><meshBasicMaterial color="#70c8ff" transparent opacity={.35} depthWrite={false} /></mesh>)}
   </>
 }
+
+export function EditorSurface(props:{width:number;height:number;editor:EditorInteraction}){return props.editor.drawing&&props.editor.onDraw?<DrawingSurface key={props.editor.tool} width={props.width} height={props.height} document={props.editor.document} settings={props.editor.drawing} onCommit={props.editor.onDraw}/>:<CellEditorSurface key={props.editor.tool} {...props}/> }

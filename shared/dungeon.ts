@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import {drawingSchema,drawingBatch} from './drawing.ts'
 import { architecturalVisualSchema, architectureLimits } from './architecture.ts'
 import { scenerySchema, sceneryTransformSchema, sceneryPositionSchema, sceneryLimits, isScenery } from './scenery.ts'
 export const floorTypes = ['stone', 'wood', 'dirt', 'grass', 'lava'] as const
@@ -10,7 +11,7 @@ export const cellSchema = z.object({ x: coordinate, z: coordinate }).strict()
 const size = z.number().int().min(4).max(50)
 export const wallSchema = z.object({ id: objectId, x: coordinate, z: coordinate, axis: z.enum(['H', 'V']), material: z.enum(['stone', 'wood']), visual: architecturalVisualSchema.optional() }).strict()
 export const doorSchema = z.object({ id: objectId, wallId: objectId, state: z.enum(['open', 'closed', 'locked']), visual: architecturalVisualSchema.optional() }).strict()
-export const proceduralPropSchema = z.object({ id: objectId, type: z.enum(propTypes), position: cellSchema, rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]) }).strict()
+export const proceduralPropSchema = z.object({ id: objectId, type: z.enum(propTypes), scale:z.number().finite().min(.1).max(10).optional(), position: cellSchema, rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]) }).strict()
 export type ProceduralProp = z.infer<typeof proceduralPropSchema>
 export const propSchema = z.discriminatedUnion('type', [proceduralPropSchema, scenerySchema])
 const documentShape = z.object({
@@ -60,6 +61,7 @@ export function blankDungeon(id: string, name: string, width = 20, height = 20):
 // Legacy documents retain their version; scenery upgrades to 2 and architectural visuals to 3. Future versions fail safely.
 export const readDungeon = (value: unknown): DungeonMap => dungeonSchema.parse(value)
 export const mapCommandSchemas = [
+  drawingSchema,
   z.object({ type: z.literal('map.blank'), id: objectId, name: z.string().min(1).max(150), width: size, height: size }).strict(),
   z.object({ type: z.literal('map.load'), document: dungeonSchema }).strict(),
   z.object({ type: z.literal('map.template.load'), templateId: z.uuid() }).strict(),
@@ -72,6 +74,7 @@ export const mapCommandSchemas = [
   z.object({ type: z.literal('map.door.update'), doorId: objectId, state: z.enum(['open', 'closed', 'locked']) }).strict(),
   z.object({ type: z.literal('map.door.remove'), doorId: objectId }).strict(),
   z.object({ type: z.literal('map.prop.place'), prop: propSchema }).strict(),
+  z.object({type:z.literal('map.prop.transform'),propId:objectId,position:cellSchema,rotation:proceduralPropSchema.shape.rotation,scale:z.number().finite().min(.1).max(10)}).strict(),
   z.object({ type: z.literal('map.prop.rotate'), propId: objectId, rotation: proceduralPropSchema.shape.rotation }).strict(),
   z.object({ type: z.literal('map.prop.remove'), propId: objectId }).strict(),
   z.object({ type: z.literal('map.scenery.place'), prop: scenerySchema }).strict(),
@@ -106,6 +109,22 @@ export function editMap(frame: MapFrame, history: MapHistory, command: MapComman
     if (!map) throw new Error('Create or load a dungeon map first.')
     const requireId = (items: { id: string }[], id: string) => { if (!items.some(v => v.id === id)) throw new Error('Map object no longer exists.') }
     switch (command.type) {
+      case 'map.draw': {
+        const batch=drawingBatch(command,map.width,map.height),existingFloors=new Map(map.floors.map(f=>[`${f.x}:${f.z}`,f])),cells=new Set(batch.area.map(c=>`${c.x}:${c.z}`))
+        const occupied=(x:number,z:number)=>existingFloors.has(`${x}:${z}`)||cells.has(`${x}:${z}`)
+        const connects=(w:Wall)=>w.axis==='H'?occupied(w.x,w.z-1)&&occupied(w.x,w.z):occupied(w.x-1,w.z)&&occupied(w.x,w.z)
+        const protectedWall=(w:Wall)=>map!.doors.some(d=>d.wallId===w.id)
+        if(command.kind==='corridor')map.walls=map.walls.filter(w=>{
+          const touches=w.axis==='H'?cells.has(`${w.x}:${w.z-1}`)||cells.has(`${w.x}:${w.z}`):cells.has(`${w.x-1}:${w.z}`)||cells.has(`${w.x}:${w.z}`)
+          return !touches||!connects(w)||protectedWall(w)
+        })
+        const walls=new Map(map.walls.map(w=>[w.id,w]))
+        for(const w of batch.walls)if(!walls.has(w.id)&&!(command.kind==='corridor'&&connects(w)))walls.set(w.id,w)
+        map.walls=[...walls.values()]
+        for(const f of batch.floors)if(command.kind==='room'||!existingFloors.has(`${f.x}:${f.z}`))existingFloors.set(`${f.x}:${f.z}`,f)
+        map.floors=[...existingFloors.values()];if(command.visual)map.schemaVersion=3
+        break
+      }
       case 'map.floor.paint': {
         const cells = new Map(map.floors.map(f => [`${f.x}:${f.z}`, f]))
         for (const cell of command.cells) {
@@ -130,6 +149,8 @@ export function editMap(frame: MapFrame, history: MapHistory, command: MapComman
         if (isScenery(command.prop)) map.schemaVersion = Math.max(2,map.schemaVersion) as 2 | 3;
         if (map.props.some(p => p.id === command.prop.id)) throw new Error('Duplicate prop ID.')
         map.props.push(command.prop); break
+      case 'map.prop.transform':
+        requireId(map.props.filter(p=>!isScenery(p)),command.propId);map.props=map.props.map(p=>p.id===command.propId?{...p,position:command.position,rotation:command.rotation,scale:command.scale}:p);break
       case 'map.prop.rotate': requireId(map.props, command.propId); map.props = map.props.map(p => p.id === command.propId ? { ...p, rotation: command.rotation } : p); break
       case 'map.scenery.update': {
         const prop = map.props.filter(isScenery).find(p => p.id === command.propId)
