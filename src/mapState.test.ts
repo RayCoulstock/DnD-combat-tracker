@@ -42,3 +42,9 @@ test('map reconciliation does not modify existing combat state', () => {
   reconcileBattleMap(createBattleMapState(), combatants.map(({ id }) => id))
   assert.deepEqual(combatants, snapshot)
 })
+
+test('configured feet per square survive normalization and token reconciliation',()=>{
+ const restored=normalizeBattleMap({gridSizeFeet:10,tokens:{}},['a'])
+ assert.equal(restored.gridSizeFeet,10);assert.equal(reconcileBattleMap(restored,['a','b']).gridSizeFeet,10)
+ assert.equal(normalizeBattleMap({gridSizeFeet:0},[]).gridSizeFeet,5)
+})

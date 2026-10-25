@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import {tacticalCommands,tacticalRecordSchema,activeTactical,assertTacticalBounds,type TacticalRecord} from './tactical.ts'
 import { isScenery } from './scenery.ts'
 import { miniatureSchema } from './miniatures.ts'
 import { generationOptionsSchema, generateDungeon } from './generator.ts'
@@ -21,13 +22,15 @@ export const combatantSchema = z.object({
 }).passthrough().refine(c => c.hp <= c.maxHp, 'HP exceeds maximum')
 export type Combatant = z.infer<typeof combatantSchema>
 export const encounterFileSchema = z.object({
+  tactical:z.array(tacticalRecordSchema).max(64).optional(),
   version: z.literal(1), round: z.number().int().min(1).max(1000000),
   activeId: idSchema.nullable().optional(), selectedId: idSchema.nullable().optional(),
   usedAbilities: z.record(z.string().max(400), z.boolean()).default({}),
   dungeonMap: dungeonSchema.optional(),
   combatants: z.array(combatantSchema).max(100), battleMap: z.unknown().optional(),
-}).refine(s => new Set(s.combatants.map(c => String(c.id))).size === s.combatants.length, 'Duplicate combatant IDs')
+}).refine(s => new Set(s.combatants.map(c => String(c.id))).size === s.combatants.length, 'Duplicate combatant IDs').refine(s=>!s.tactical||new Set(s.tactical.map(r=>r.id)).size===s.tactical.length,'Duplicate tactical IDs')
 export interface EncounterState {
+  tactical?:TacticalRecord[]
   dungeonMap?: DungeonMap; mapRevision?: number; mapUndoDepth?: number; mapRedoDepth?: number
   version: 1; round: number; activeId: string | number | null; selectedId: string | number | null
   usedAbilities: Record<string, boolean>; combatants: Combatant[]; battleMap: ReturnType<typeof createBattleMapState>
@@ -37,14 +40,14 @@ export function importEncounter(value: unknown, preservePermissions = false): En
   const data = encounterFileSchema.parse(value)
   const combatants = data.combatants.map(c => preservePermissions ? c : { ...c, ownerId: null })
   const ids = new Set(combatants.map(c => c.id))
-  return { version: 1, round: data.round, activeId: ids.has(data.activeId!) ? data.activeId! : combatants[0]?.id ?? null,
+  return { ...(data.tactical?{tactical:data.tactical.filter(r=>r.kind==='template').map(r=>({...r,ownerId:preservePermissions?r.ownerId:'imported'}))}:{}), version: 1, round: data.round, activeId: ids.has(data.activeId!) ? data.activeId! : combatants[0]?.id ?? null,
     selectedId: ids.has(data.selectedId!) ? data.selectedId! : combatants[0]?.id ?? null,
     usedAbilities: data.usedAbilities, combatants, ...(data.dungeonMap ? { dungeonMap: data.dungeonMap } : {}), battleMap: normalizeBattleMap(data.dungeonMap ? { ...(data.battleMap as object ?? {}), width: data.dungeonMap.width, height: data.dungeonMap.height } : data.battleMap, combatants.map(c => c.id)) }
 }
 export const emptyEncounter = (): EncounterState => importEncounter({ version: 1, round: 1, combatants: [] })
 const target = { combatantId: idSchema }
 export const commandSchema = z.discriminatedUnion('type', [
-  ...mapCommandSchemas,
+  ...mapCommandSchemas, ...tacticalCommands,
   z.object({ type: z.literal('map.generate'), options: generationOptionsSchema }).strict(),
   z.object({ type: z.literal('token.move'), ...target, destination: z.object({ x: z.number().int(), z: z.number().int() }).strict() }).strict(),
   z.object({ type: z.literal('combatant.miniature.update'), ...target, miniature: miniatureSchema }).strict(),
@@ -58,7 +61,7 @@ export const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('combatant.remove'), ...target }).strict(),
   z.object({ type: z.literal('ability.toggle'), ...target, key: z.string().max(400) }).strict(),
   z.object({ type: z.literal('initiative.next') }).strict(),
-  z.object({ type: z.literal('map.settings'), showGrid: z.boolean(), showLabels: z.boolean(), width: z.number().int().min(1).max(100).optional(), height: z.number().int().min(1).max(100).optional() }).strict(),
+  z.object({ type: z.literal('map.settings'), showGrid: z.boolean(), showLabels: z.boolean(), width: z.number().int().min(1).max(100).optional(), height: z.number().int().min(1).max(100).optional(), gridSizeFeet:z.number().int().min(1).max(100).optional() }).strict(),
   z.object({ type: z.literal('encounter.clear') }).strict(),
   z.object({ type: z.literal('encounter.restore'), file: encounterFileSchema }).strict(),
 ])
@@ -68,7 +71,21 @@ export type CommandEnvelope = z.infer<typeof envelopeSchema>
 export class DomainError extends Error {
   constructor(public code: 'FORBIDDEN' | 'INVALID' | 'CONFLICT' | 'NOT_FOUND' | 'UNAUTHENTICATED' | 'SESSION_ENDED', message: string) { super(message) }
 }
-export function applyCommand(state: EncounterState, actor: Actor, command: GameCommand): EncounterState {
+export function applyCommand(state: EncounterState, actor: Actor, command: GameCommand, now=Date.now()): EncounterState {
+  if(command.type==='tactical.create'||command.type==='tactical.update'||command.type==='tactical.remove'||command.type==='tactical.clear'){
+    const records=activeTactical(state.tactical,now)
+    if(command.type==='tactical.clear'){if(actor.role!=='dm')throw new DomainError('FORBIDDEN','Only the DM may clear shared overlays.');return{...state,tactical:[]}}
+    const existing=records.find(r=>r.id===command.id)
+    if(command.type!=='tactical.create'&&(!existing||(actor.role!=='dm'&&existing.ownerId!==actor.id)))throw new DomainError('FORBIDDEN','Only the owner or DM may change this overlay.')
+    if(command.type==='tactical.remove')return{...state,tactical:records.filter(r=>r.id!==command.id)}
+    try{assertTacticalBounds(command.object,state.battleMap.width,state.battleMap.height)}catch{throw new DomainError('INVALID','Overlay anchor is outside the battlefield.')}
+    if(command.type==='tactical.create'){
+      if(existing||records.length>=64||(actor.role!=='dm'&&records.filter(r=>r.ownerId===actor.id).length>=8))throw new DomainError('INVALID','Duplicate overlay or shared overlay limit reached.')
+      return{...state,tactical:[...records,{...command.object,id:command.id,ownerId:actor.id,...(command.object.kind==='measurement'?{expiresAt:now+120000}:{})}]}
+    }
+    if(existing!.kind!==command.object.kind)throw new DomainError('INVALID','Overlay kind cannot change.')
+    return{...state,tactical:records.map(r=>r.id===command.id?{...command.object,id:r.id,ownerId:r.ownerId,expiresAt:r.expiresAt}:r)}
+  }
   const c = 'combatantId' in command ? state.combatants.find(c => String(c.id) === String(command.combatantId)) : undefined
   if (actor.role !== 'dm' && (command.type !== 'token.move' || !c?.visible || c.ownerId !== actor.id)) throw new DomainError('FORBIDDEN', 'This action is not permitted.')
   if (command.type === 'map.generate') {
@@ -114,7 +131,7 @@ export function applyCommand(state: EncounterState, actor: Actor, command: GameC
     }
     case 'map.settings':
       if (state.dungeonMap && ((command.width && command.width !== state.dungeonMap.width) || (command.height && command.height !== state.dungeonMap.height))) throw new DomainError('INVALID', 'Use the dungeon builder to replace map dimensions.')
-      return { ...state, battleMap: reconcileBattleMap({ ...state.battleMap, showGrid: command.showGrid, showLabels: command.showLabels, width: command.width ?? state.battleMap.width, height: command.height ?? state.battleMap.height }, state.combatants.map(c => c.id)) }
+      return { ...state, battleMap: reconcileBattleMap({ ...state.battleMap, showGrid: command.showGrid, showLabels: command.showLabels, gridSizeFeet:command.gridSizeFeet??state.battleMap.gridSizeFeet, width: command.width ?? state.battleMap.width, height: command.height ?? state.battleMap.height }, state.combatants.map(c => c.id)) }
     case 'encounter.clear': return emptyEncounter()
     case 'encounter.restore': return importEncounter(command.file)
   }
@@ -175,3 +192,5 @@ export interface ClientEvents {
   'campaign.join': (campaignId: string, ack: (result: CommandResult) => void) => void
   'game.command': (data: CommandEnvelope, ack: (result: CommandResult) => void) => void
 }
+
+export const durableEncounter=(state:EncounterState):EncounterState=>state.tactical?{...state,tactical:state.tactical.filter(r=>r.kind==='template')}:state

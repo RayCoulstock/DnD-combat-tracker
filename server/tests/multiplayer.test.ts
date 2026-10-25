@@ -1,3 +1,5 @@
+import {expireMeasurements} from '../tactical.ts'
+import {templateSchema} from '../../shared/tactical.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
@@ -266,6 +268,29 @@ test('PostgreSQL multiplayer lifecycle with DM and two players', { timeout: 9000
       const malformed = await send(dc, { type: 'encounter.restore', file: { ...exported, dungeonMap: { ...exported.dungeonMap, props: [{ id: 'bad', type: 'evil.glb', position: { x: 0, z: 0 }, rotation: 0 }] } } } as unknown as GameCommand)
       assert.equal(malformed.ok, false); assert.equal(dc.snapshot!.revision, before)
     })
+    await t.test('batch drawing and owner-authorised tactical overlays synchronise without map-history pollution',async()=>{
+      const draw={type:'map.draw' as const,kind:'room' as const,start:{x:1,z:1},end:{x:5,z:5},floor:'wood' as const,material:'stone' as const,width:2,wallsOnly:false}
+      const prior=dc.snapshot!.state.dungeonMap
+      const denied=await send(c1,draw);assert.equal(denied.ok,false)
+      await accepted(dc,draw);assert.equal(c2.snapshot!.state.dungeonMap!.walls.filter(w=>w.id==='H:1:1').length,1)
+      const id=randomUUID(),object=templateSchema.parse({kind:'template',shape:'sphere',position:{x:3,z:3},radius:20,length:15,width:5,side:15,angle:90,rotation:0,elevation:0,color:'#33aaff',opacity:.2})
+      await accepted(c1,{type:'tactical.create',id,object});assert.equal(c2.snapshot!.state.tactical![0].ownerId,p1.actor!.id)
+      assert.equal((await send(c2,{type:'tactical.remove',id})).ok,false)
+      assert.equal((await send(c2,{type:'tactical.clear'})).ok,false)
+      await accepted(dc,{type:'map.undo'});assert.deepEqual(dc.snapshot!.state.dungeonMap,prior);assert.equal(dc.snapshot!.state.tactical!.length,1)
+      await accepted(dc,{type:'tactical.update',id,object:{...object,shape:'cone',rotation:90}})
+      const rulerId=randomUUID();await accepted(c2,{type:'tactical.create',id:rulerId,object:{kind:'measurement',start:{x:2,z:2},end:{x:6,z:6},rule:'diagonal-alternating'}})
+      assert.ok(c1.snapshot!.state.tactical!.find(r=>r.id===rulerId)!.expiresAt)
+      const saved=await dm.request(path+'/checkpoints',{},201),checkpoint=(await pool.query('SELECT state FROM checkpoints WHERE id=$1',[saved.id])).rows[0].state
+      assert.equal(checkpoint.tactical.length,1);assert.equal(checkpoint.tactical[0].kind,'template')
+      assert.equal((await dm.request(path+'/export')).tactical.length,1)
+      const stored=(await pool.query('SELECT state FROM encounters WHERE id=$1',[encounter.id])).rows[0].state
+      assert.equal(stored.tactical[0].ownerId,p1.actor!.id)
+      const expiry=await expireMeasurements(pool,Date.now()+121000);assert.ok(expiry.has(campaign.id))
+      for(const client of[dc,c1,c2])await new Promise<void>(resolve=>client.socket.emit('campaign.join',campaign.id,()=>resolve()))
+      await waitFor(()=>[dc,c1,c2].every(c=>c.snapshot!.state.tactical!.length===1),'Expired ruler not removed')
+      assert.equal(dc.snapshot!.state.tactical![0].id,id)
+    })
     await t.test('campaign templates save, copy, rename, duplicate and delete independently of encounter instances', async () => {
       const saved = await dm.request(`${path}/maps`, { name: 'Reusable mine', encounterId: encounter.id, encounterRevision: dc.snapshot!.revision }, 201)
       const loaded = await dm.request(`${path}/maps/${saved.id}`)
@@ -313,6 +338,8 @@ test('PostgreSQL multiplayer lifecycle with DM and two players', { timeout: 9000
       const campaignRevision = dc.session!.revision
       const savedMap = dc.snapshot!.state.dungeonMap
       const savedMapRevision = dc.snapshot!.state.mapRevision
+      const savedTactical = dc.snapshot!.state.tactical
+      assert.equal(savedTactical!.length,1)
       for (const s of sockets) s.disconnect()
       await application.close()
       application = createApplication({ pool, secret, origin })
@@ -321,6 +348,7 @@ test('PostgreSQL multiplayer lifecycle with DM and two players', { timeout: 9000
       assert.equal(restored.revision, revision)
       assert.deepEqual(restored.state.dungeonMap, savedMap)
       assert.equal(restored.state.mapRevision, savedMapRevision)
+      assert.deepEqual(restored.state.tactical,savedTactical)
       assert.equal(Number((await pool.query('SELECT state_revision FROM campaigns WHERE id=$1', [campaign.id])).rows[0].state_revision), campaignRevision)
       assert.deepEqual(restored.state.battleMap.tokens['1'], { x: 13, z: 14 })
       dc.snapshot = null; c1.snapshot = null; c2.snapshot = null

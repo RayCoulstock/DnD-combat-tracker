@@ -5,6 +5,7 @@ import { applyCommand, applyMapEdit, isMapEdit, DomainError, projectEncounter, t
 import { transaction, type Pool } from './db.ts'
 import { generateDungeon } from '../shared/generator.ts'
 import { emptyHistory, readDungeon, type MapHistory } from '../shared/dungeon.ts'
+import {activeTactical} from '../shared/tactical.ts'
 import { isScenery } from '../shared/scenery.ts'
 import { sceneryAssets, historyAssets, syncEncounterScenery } from './scenery.ts'
 import { miniatureReferences } from './miniatures.ts'
@@ -23,7 +24,7 @@ export async function loadState(db: PoolClient, encounterId: string): Promise<En
   const rows = (await db.query('SELECT * FROM combatants WHERE encounter_id=$1 ORDER BY ordinal', [encounterId])).rows
   const instance = (await db.query('SELECT document,revision,history FROM encounter_maps WHERE encounter_id=$1', [encounterId])).rows[0]
   const references = new Set((await db.query("SELECT combatant_id FROM combatant_asset_references r JOIN assets_3d a ON a.id=r.asset_id WHERE r.encounter_id=$1 AND a.upload_status='ready'", [encounterId])).rows.map(r => r.combatant_id))
-  return { ...encounter.state, dungeonMap: instance?.document ? readDungeon(instance.document) : undefined, mapRevision: instance?.revision ?? 0, mapUndoDepth: instance?.history.undo.length ?? 0, mapRedoDepth: instance?.history.redo.length ?? 0, combatants: rows.map(r => ({ ...r.data, miniatureStatus: r.data.miniature?.assetId ? (references.has(r.id) ? 'ready' : 'unavailable') : undefined, ownerId: r.owner_id, visible: r.visible })),
+  return { ...encounter.state, ...(encounter.state.tactical?{tactical:activeTactical(encounter.state.tactical,Date.now())}:{}), dungeonMap: instance?.document ? readDungeon(instance.document) : undefined, mapRevision: instance?.revision ?? 0, mapUndoDepth: instance?.history.undo.length ?? 0, mapRedoDepth: instance?.history.redo.length ?? 0, combatants: rows.map(r => ({ ...r.data, miniatureStatus: r.data.miniature?.assetId ? (references.has(r.id) ? 'ready' : 'unavailable') : undefined, ownerId: r.owner_id, visible: r.visible })),
     battleMap: { ...encounter.state.battleMap, tokens: Object.fromEntries(rows.map(r => [r.id, r.position])) } }
 }
 export async function persistState(db: PoolClient, encounterId: string, input: EncounterState, history?: MapHistory, allowUnresolved = false, requiredAssetId?: string, requiredScenery: string[] = []) {
@@ -32,7 +33,11 @@ export async function persistState(db: PoolClient, encounterId: string, input: E
   const priorScenery = new Set([...sceneryAssets(saved?.document ? readDungeon(saved.document) : undefined), ...historyAssets(saved?.history ?? emptyHistory())])
   const sceneryIds = [...sceneryAssets(input.dungeonMap), ...historyAssets(mapHistory)]
   const available = await miniatureReferences(db, encounterId, input, allowUnresolved, requiredAssetId, sceneryIds)
-  const state = await storeArtwork(db, input)
+  let state = await storeArtwork(db, input)
+  if(state.tactical){
+    const owner=(await db.query('SELECT c.owner_id FROM campaigns c JOIN encounters e ON e.campaign_id=c.id WHERE e.id=$1',[encounterId])).rows[0].owner_id
+    state={...state,tactical:activeTactical(state.tactical,Date.now()).map(r=>r.ownerId==='imported'?{...r,ownerId:owner}:r)}
+  }
   const existing = (await db.query('SELECT document FROM encounter_maps WHERE encounter_id=$1', [encounterId])).rows[0]
   if (history || !isDeepStrictEqual(existing?.document ?? null, state.dungeonMap ?? null)) {
     if (state.dungeonMap) readDungeon(state.dungeonMap)
@@ -104,9 +109,9 @@ export async function execute(pool: Pool, actor: Actor, campaignId: string, data
       next = result.state; history = result.history
     } else { next = applyCommand(current, actor, command); if (command.type === 'encounter.restore' || command.type === 'encounter.clear') history = emptyHistory() }
     const incoming = data.command
-    const architecture = incoming.type==='map.wall.visual' ? {kind:'wall',visual:incoming.visual} : incoming.type==='map.door.visual' ? {kind:'door',visual:incoming.visual} : incoming.type==='map.wall.place' ? {kind:'wall',visual:incoming.wall.visual} : incoming.type==='map.door.place' ? {kind:'door',visual:incoming.door.visual} : null
+    const architecture = incoming.type==='map.draw' ? {kind:'wall',visual:incoming.visual} : incoming.type==='map.wall.visual' ? {kind:'wall',visual:incoming.visual} : incoming.type==='map.door.visual' ? {kind:'door',visual:incoming.visual} : incoming.type==='map.wall.place' ? {kind:'wall',visual:incoming.wall.visual} : incoming.type==='map.door.place' ? {kind:'door',visual:incoming.door.visual} : null
     if(architecture?.visual && !(await db.query("SELECT 1 FROM assets_3d WHERE id=$1 AND owner_id=$2 AND upload_status='ready' AND presentation->'architecture'->>'role'=$3",[architecture.visual.assetId,campaign.owner_id,architecture.kind])).rowCount)throw new DomainError('FORBIDDEN',`Choose a ready ${architecture.kind} asset from your own library.`)
-    const requiredScenery = (incoming.type === 'map.wall.visual' || incoming.type === 'map.door.visual') ? (incoming.visual ? [incoming.visual.assetId] : []) : incoming.type === 'map.wall.place' ? (incoming.wall.visual ? [incoming.wall.visual.assetId] : []) : incoming.type === 'map.door.place' ? (incoming.door.visual ? [incoming.door.visual.assetId] : []) : incoming.type === 'map.scenery.place' ? [incoming.prop.assetId] : incoming.type === 'map.prop.place' && isScenery(incoming.prop) ? [incoming.prop.assetId] : incoming.type === 'map.scenery.duplicate' ? next.dungeonMap?.props.filter(isScenery).filter(p => p.id === incoming.newId).map(p => p.assetId) ?? [] : []
+    const requiredScenery = incoming.type==='map.draw' ? (incoming.visual?[incoming.visual.assetId]:[]) : (incoming.type === 'map.wall.visual' || incoming.type === 'map.door.visual') ? (incoming.visual ? [incoming.visual.assetId] : []) : incoming.type === 'map.wall.place' ? (incoming.wall.visual ? [incoming.wall.visual.assetId] : []) : incoming.type === 'map.door.place' ? (incoming.door.visual ? [incoming.door.visual.assetId] : []) : incoming.type === 'map.scenery.place' ? [incoming.prop.assetId] : incoming.type === 'map.prop.place' && isScenery(incoming.prop) ? [incoming.prop.assetId] : incoming.type === 'map.scenery.duplicate' ? next.dungeonMap?.props.filter(isScenery).filter(p => p.id === incoming.newId).map(p => p.assetId) ?? [] : []
     await persistState(db, encounter.id, next, history, command.type === 'encounter.restore' || data.command.type === 'map.template.load', data.command.type === 'combatant.miniature.update' ? data.command.miniature.assetId ?? undefined : undefined, requiredScenery)
     const revision = encounter.revision + 1
     await db.query('UPDATE encounters SET revision=$2 WHERE id=$1', [encounter.id, revision])

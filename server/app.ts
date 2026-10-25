@@ -1,3 +1,5 @@
+import {expireMeasurements} from './tactical.ts'
+import {durableEncounter} from '../shared/domain.ts'
 import express, { type Request, type Response, type NextFunction } from 'express'
 import { createServer } from 'node:http'
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
@@ -204,7 +206,7 @@ export function createApplication({ pool, secret, origin, production = false, as
       await db.query('SELECT id FROM campaigns WHERE id=$1 FOR UPDATE', [campaignId]); const campaign = await authorize(db, requireDM(req), campaignId)
       if (!campaign.active_encounter_id) throw new DomainError('NOT_FOUND', 'Open an encounter first.')
       const encounter = (await db.query('SELECT revision FROM encounters WHERE id=$1', [campaign.active_encounter_id])).rows[0]
-      await db.query('INSERT INTO checkpoints(id,encounter_id,state,revision) VALUES($1,$2,$3,$4)', [id, campaign.active_encounter_id, await loadState(db, campaign.active_encounter_id), encounter.revision])
+      await db.query('INSERT INTO checkpoints(id,encounter_id,state,revision) VALUES($1,$2,$3,$4)', [id, campaign.active_encounter_id, durableEncounter(await loadState(db, campaign.active_encounter_id)), encounter.revision])
     }); res.status(201).json({ id })
   })
   app.get('/api/campaigns/:campaignId/checkpoints', async (req, res) => {
@@ -231,7 +233,7 @@ export function createApplication({ pool, secret, origin, production = false, as
   app.get('/api/campaigns/:campaignId/export', async (req, res) => {
     const state = await transaction(pool, async db => {
       const c = await authorize(db, requireDM(req), uuid.parse(req.params.campaignId))
-      return embedArtwork(db, await loadState(db, c.active_encounter_id))
+      return embedArtwork(db, durableEncounter(await loadState(db, c.active_encounter_id)))
     }); res.json({ ...state, exportedAt: new Date().toISOString() })
   })
   app.get('/api/artwork/:id', async (req, res) => {
@@ -341,7 +343,9 @@ export function createApplication({ pool, secret, origin, production = false, as
     })
     socket.on('disconnect', () => { sentMaps.delete(socket.id); const c = rooms.get(socket.id); rooms.delete(socket.id); if (c) void presence(c).catch(() => {}) })
   })
+  let expiryJob:Promise<void>|undefined
   const timer = setInterval(() => {
+    if(!expiryJob)expiryJob=expireMeasurements(pool).then(async campaigns=>{for(const id of campaigns)await broadcast(id)}).catch(()=>{}).finally(()=>{expiryJob=undefined})
     for (const socket of io.sockets.sockets.values()) {
       const campaignId = rooms.get(socket.id)
       if (campaignId) void (async () => {
@@ -351,7 +355,7 @@ export function createApplication({ pool, secret, origin, production = false, as
     }
   }, 15000)
   timer.unref()
-  return { app, http, io, close: async () => { clearInterval(timer); await new Promise<void>(resolve => io.close(() => resolve())) } }
+  return { app, http, io, close: async () => { clearInterval(timer); await expiryJob; await new Promise<void>(resolve => io.close(() => resolve())) } }
 }
 function commandError(error: unknown) {
   return { ok: false as const, error: error instanceof DomainError ? { code: error.code, message: error.message } : { code: 'INVALID', message: 'Unable to apply command.' } }
