@@ -34,6 +34,7 @@ interface Combatant {
 }
 
 export interface BattleMap3DProps {
+  canvasTools?:React.ReactNode
   tactical?:TacticalRecord[]
   actor?:Actor
   onCommand?:(command:GameCommand)=>Promise<void>
@@ -138,6 +139,7 @@ function BattlefieldScene({ combatants, map, selectedId, activeId, onSelectToken
 }
 
 export default function BattleMap3D(props: BattleMap3DProps) {
+  const tacticalDrawerRef=useRef<HTMLDetailsElement>(null)
   const tools=useTacticalTools({records:props.tactical??[],actor:props.actor??{id:'local',role:'dm'},send:props.onCommand,connected:props.connected??true,width:props.map.width,height:props.map.height,feet:props.map.gridSizeFeet,editorTool:`${props.assetContext?.encounterId??'local'}:${props.editor?.tool??'encounter'}:${props.editor?.activation??0}`})
   const toolbarRef=useRef<HTMLDivElement>(null),[dismissed,setDismissed]=useState<string|number|null>(null),[mapError,setMapError]=useState('')
   useEffect(()=>{const cancel=(e:KeyboardEvent)=>{if(e.key==='Escape')setDismissed(props.selectedId)};window.addEventListener('keydown',cancel);return()=>window.removeEventListener('keydown',cancel)},[props.selectedId])
@@ -146,7 +148,7 @@ export default function BattleMap3D(props: BattleMap3DProps) {
     const item=tools.current,anchor=item.kind==='measurement'?item.end:item.position
     toolbar={title:item.kind==='measurement'?'Ruler':`${item.shape} template`,position:[anchor.x-props.map.width/2,.5,anchor.z-props.map.height/2],onDismiss:tools.cancel,actions:tools.canEdit?[
       {label:'Move',run:tools.move},{label:'Rotate',run:tools.rotate,disabled:item.kind==='measurement'},
-      {label:'Resize / properties',run:()=>window.document.querySelector('.tactical-tools')?.scrollIntoView({block:'center'})},
+      {label:'Resize / properties',run:()=>{if(tacticalDrawerRef.current){tacticalDrawerRef.current.open=true;tacticalDrawerRef.current.querySelector<HTMLElement>('input,select')?.focus()}}},
       {label:tools.selectedId?'Apply changes':'Share',run:()=>void tools.share(),disabled:props.connected===false||!props.onCommand},
       ...(tools.selectedId?[{label:'Unshare',run:()=>void tools.unshare(),disabled:props.connected===false}]:[]),{label:'Delete',run:()=>void tools.remove(),disabled:Boolean(tools.selectedId&&props.connected===false)}
     ]:[],properties:<p>{tools.selectedId?'Shared encounter overlay. Only its owner and the DM may edit.':'Local preview; not visible to other participants.'}</p>}
@@ -157,30 +159,30 @@ export default function BattleMap3D(props: BattleMap3DProps) {
   }
   const selectToken=(id:string|number)=>{setDismissed(null);tools.cancel();props.onSelectToken(id)}
   const controlsRef = useRef<OrbitControlsImpl>(null)
+  const [rosterExpanded,setRosterExpanded]=useState(props.actor?.role==='player')
   const resetCamera = () => controlsRef.current?.reset()
 
-  return <section className="tabletop-shell" aria-label={props.dungeonMap ? `Dungeon map: ${props.dungeonMap.name}` : 'Flat battlefield'}>
+  return <section className="tabletop-shell" data-roster-expanded={rosterExpanded} aria-label={props.dungeonMap ? `Dungeon map: ${props.dungeonMap.name}` : 'Flat battlefield'}>
     {toolbar&&<FloatingObjectToolbar context={toolbar} target={toolbarRef}/>}
     <aside className="tabletop-panel tabletop-roster">
-      <span className="eyebrow">CURRENT ENCOUNTER</span><h2>Round {props.round}</h2>
-      <div className="map-initiative-list">{props.combatants.map((combatant) => <button key={combatant.id} aria-pressed={combatant.id === props.selectedId} aria-current={combatant.id === props.activeId ? 'step' : undefined} className={`${combatant.id === props.selectedId ? 'selected' : ''} ${combatant.id === props.activeId ? 'active' : ''}`} onClick={() => selectToken(combatant.id)}><span className={`map-token-dot ${combatant.side}`} /><span><strong>{combatant.name}</strong>{combatant.id === props.selectedId && <small>◇ Selected</small>}{combatant.id === props.activeId && <small>▶ Active turn</small>}{combatant.conditions?.length ? <small>{combatant.conditions.join(', ')}</small> : null}<small>Initiative {combatant.initiative}</small></span>{(!props.playerId || combatant.ownerId === props.playerId || combatant.hpShown === true) && <em>{combatant.hp}/{combatant.maxHp} HP</em>}</button>)}</div>
+      <button className="roster-expand" aria-label={rosterExpanded?'Collapse roster':'Expand roster'} aria-expanded={rosterExpanded} onClick={()=>setRosterExpanded(v=>!v)}>{rosterExpanded?'«':'»'}</button><span className="eyebrow">INITIATIVE</span><h2>Round {props.round}</h2>
+      <div className="map-initiative-list">{[...props.combatants].sort((a,b)=>b.initiative-a.initiative).map((combatant) => <button key={combatant.id} title={`${combatant.name} · Initiative ${combatant.initiative}`} aria-label={combatant.name} aria-pressed={combatant.id === props.selectedId} aria-current={combatant.id === props.activeId ? 'step' : undefined} className={`${combatant.id === props.selectedId ? 'selected' : ''} ${combatant.id === props.activeId ? 'active' : ''}`} onClick={() => selectToken(combatant.id)}><span className={`map-token-dot ${combatant.side}`}>{combatant.short==='?'?combatant.name.split(/\s+/).slice(0,2).map(w=>w[0]).join(''):combatant.short}</span><span><strong>{combatant.name}</strong>{combatant.id === props.selectedId && <small>◇ Selected</small>}{combatant.id === props.activeId && <small>▶ Active turn</small>}{combatant.conditions?.length ? <small>{combatant.conditions.join(', ')}</small> : null}<small>Initiative {combatant.initiative}</small></span>{(!props.playerId || combatant.ownerId === props.playerId || combatant.hpShown === true) && <em>{combatant.hp}/{combatant.maxHp} HP</em>}</button>)}</div>
       {!props.combatants.length && <p className="map-empty">Add combatants in the tracker to place tokens.</p>}
     </aside>
     <div className="battlefield-wrap">
-      <div className="battlefield-help"><LocateFixed size={15} /> {tools.mode!=='navigate'?'Tactical tool active · Left: target · Middle: rotate · Escape: cancel':props.editor ? 'Left: edit · Middle: rotate · Right: pan · Wheel: zoom' : props.canMove === false ? 'Select a token to inspect · camera remains available' : 'Select a token, then click a square to move'}</div>
+      {props.canvasTools}
+      <div className="battlefield-help"><LocateFixed size={15} /> {tools.mode!=='navigate'?'Tactical tool active · Left: target · Middle: rotate · Escape: cancel':props.editor ? `${props.editor.tool} · Left: edit · Middle: rotate · Right: pan · Esc: cancel` : props.canMove === false ? 'Select a token to inspect · camera remains available' : 'Select a token, then click a square to move'}</div>
       <Canvas frameloop="demand" shadows camera={{ position: [12, 14, 12], fov: 42, near: 0.1, far: 300 }}>
         <Suspense fallback={null}><BattlefieldScene {...props} onSelectToken={selectToken} tacticalDraft={tools.draft} tacticalSelected={tools.selectedId} tacticalInteraction={tools.interaction} onSelectTactical={tools.select} toolbar={toolbar} toolbarRef={toolbarRef} controlsRef={controlsRef} /></Suspense>
       </Canvas>
+      <div className="camera-toolbar" onPointerDown={e=>e.stopPropagation()} onPointerUp={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()} aria-label="Camera controls">      <button onClick={resetCamera}><RotateCcw size={16} /> Reset camera</button>
+      {props.showSharedControls !== false && <><button disabled={props.connected === false} onClick={props.onToggleGrid}>{props.map.showGrid ? <EyeOff size={16} /> : <Eye size={16} />} {props.map.showGrid ? 'Hide grid' : 'Show grid'}</button>
+      <button disabled={props.connected === false} onClick={props.onToggleLabels}>{props.map.showLabels ? <EyeOff size={16} /> : <Eye size={16} />} {props.map.showLabels ? 'Hide labels' : 'Show labels'}</button></>}
+<button onClick={()=>{const c=controlsRef.current;if(c){c.object.position.set(c.target.x,1.5*Math.max(props.map.width,props.map.height),c.target.z+.001);c.update()}}}>Top-down</button><button aria-label="Zoom out" onClick={()=>{const c=controlsRef.current;if(c){c.object.position.sub(c.target).multiplyScalar(1.2).add(c.target);c.update()}}}>−</button><button aria-label="Zoom in" onClick={()=>{const c=controlsRef.current;if(c){c.object.position.sub(c.target).multiplyScalar(.8).add(c.target);c.update()}}}>+</button>{props.showSharedControls!==false&&<button onClick={props.onReturnToTracker}><ChevronLeft size={14}/>Encounter tracker</button>}</div>
+      <div className="map-scale-readout" onPointerDown={e=>e.stopPropagation()} onPointerUp={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()}><details><summary>1 sq = {props.map.gridSizeFeet} ft · {props.map.width} × {props.map.height} squares · Scale ▾</summary>      {props.actor?.role!=='player'&&props.onCommand&&<form className="grid-scale-control" onSubmit={e=>{e.preventDefault();const gridSizeFeet=Number(new FormData(e.currentTarget).get('feet'));setMapError('');void props.onCommand?.({type:'map.settings',showGrid:props.map.showGrid,showLabels:props.map.showLabels,gridSizeFeet}).catch(error=>setMapError(error.message))}}><label>Feet per square<input aria-label="Feet per square" name="feet" type="number" min={1} max={100} key={props.map.gridSizeFeet} defaultValue={props.map.gridSizeFeet} required disabled={props.connected===false}/></label><button disabled={props.connected===false}>Apply scale</button>{mapError&&<p role="alert">{mapError}</p>}</form>}
+</details></div>
+      <details ref={tacticalDrawerRef} className="tactical-drawer" onPointerDown={e=>e.stopPropagation()} onPointerUp={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()}><summary>Ruler &amp; tactical templates</summary>{tools.controls}</details>
     </div>
-    <aside className="tabletop-panel tabletop-controls">
-      <span className="eyebrow">MAP CONTROLS</span><h2>Battlefield</h2>
-      <button onClick={resetCamera}><RotateCcw size={16} /> Reset camera</button>
-      {props.showSharedControls !== false && <><button disabled={props.canMove === false} onClick={props.onToggleGrid}>{props.map.showGrid ? <EyeOff size={16} /> : <Eye size={16} />} {props.map.showGrid ? 'Hide grid' : 'Show grid'}</button>
-      <button disabled={props.canMove === false} onClick={props.onToggleLabels}>{props.map.showLabels ? <EyeOff size={16} /> : <Eye size={16} />} {props.map.showLabels ? 'Hide labels' : 'Show labels'}</button></>}
-      {props.actor?.role!=='player'&&props.onCommand&&<form className="grid-scale-control" onSubmit={e=>{e.preventDefault();const gridSizeFeet=Number(new FormData(e.currentTarget).get('feet'));setMapError('');void props.onCommand?.({type:'map.settings',showGrid:props.map.showGrid,showLabels:props.map.showLabels,gridSizeFeet}).catch(error=>setMapError(error.message))}}><label>Feet per square<input aria-label="Feet per square" name="feet" type="number" min={1} max={100} key={props.map.gridSizeFeet} defaultValue={props.map.gridSizeFeet} required disabled={props.connected===false}/></label><button disabled={props.connected===false}>Apply scale</button>{mapError&&<p role="alert">{mapError}</p>}</form>}
-      {tools.controls}
-      <div className="map-guide"><strong>Camera</strong><span>Drag to rotate</span><span>Right-drag to pan</span><span>Scroll to zoom</span><strong>Scale</strong><span>1 square = {props.map.gridSizeFeet} feet</span><span>{props.map.width} × {props.map.height} squares</span></div>
-      {props.showSharedControls !== false && <button className="return-button" onClick={props.onReturnToTracker}><ChevronLeft size={16} /> Encounter tracker</button>}
-    </aside>
+
   </section>
 }
