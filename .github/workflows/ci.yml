@@ -116,7 +116,7 @@ jobs:
         run: |
           mkdir -p release-artifact
           docker save "$IMAGE" -o release-artifact/image.tar
-          syft "docker:$IMAGE" -o spdx-json=release-artifact/sbom.spdx.json
+          syft "docker-archive:release-artifact/image.tar" -o spdx-json=release-artifact/sbom.spdx.json
           cp ci-results/image-validation.json release-artifact/
           cd release-artifact
           sha256sum image.tar sbom.spdx.json image-validation.json > SHA256SUMS
