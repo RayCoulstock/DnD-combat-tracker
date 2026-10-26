@@ -126,3 +126,5 @@ The canvas-focused editor layout is described in the [workspace guide](docs/map-
 ## Production readiness
 
 Before planning a VPS deployment, read the [repository audit](docs/deployment/repository-audit.md) and [Phase 1 readiness guide](docs/deployment/production-readiness.md). The production environment template is [.env.production.example](.env.production.example). The existing Compose file remains development-only; this phase does not provision or deploy infrastructure.
+
+PR 2 adds a **separate** [production Compose stack](compose.production.yaml), Caddy and guarded maintenance scripts. Start with the [DigitalOcean preparation guide](docs/deployment/digitalocean-setup.md), [backup/restore runbook](docs/deployment/backup-restore.md) and [validation/risk register](docs/deployment/infrastructure-validation.md). No resources are provisioned or deployed automatically. `npm run test:infra` validates the infrastructure on Ubuntu/WSL with Docker; normal development Compose is unchanged.

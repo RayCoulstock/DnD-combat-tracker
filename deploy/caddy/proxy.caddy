@@ -1,0 +1,31 @@
+header -Server
+encode zstd gzip
+request_body {
+	max_size {$MAX_REQUEST_BODY_BYTES}
+}
+log {
+	output stdout
+	format filter {
+		wrap json
+		fields {
+			request>headers>Cookie delete
+			request>headers>Authorization delete
+			request>headers>X-Csrf-Token delete
+			resp_headers>Set-Cookie delete
+		}
+	}
+}
+reverse_proxy app:3001 {
+	# Exactly one proxy hop. Never trust client-supplied forwarding chains.
+	header_up X-Forwarded-For {remote_host}
+	header_up X-Forwarded-Proto {scheme}
+	header_up X-Forwarded-Host {host}
+	header_up -Forwarded
+	header_up -X-Real-IP
+	# Preserve Origin unchanged for the app's HTTP/Socket.IO checks.
+	# Caddy handles Connection/Upgrade and WebSocket streaming automatically.
+	transport http {
+		dial_timeout 5s
+		response_header_timeout 90s
+	}
+}

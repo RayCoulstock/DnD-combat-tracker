@@ -10,3 +10,7 @@ coverage/
 playwright-report/
 test-results/
 .playwright-browsers/
+
+!.env.backup.example
+
+__pycache__/

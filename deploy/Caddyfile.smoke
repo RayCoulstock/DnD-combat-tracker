@@ -1,0 +1,14 @@
+# LOCAL TEST ONLY. Never mount this file on the public production site.
+{
+	local_certs
+	skip_install_trust
+	import /etc/caddy/ledger/server-options.caddy
+}
+https://localhost {
+	tls internal
+	import /etc/caddy/ledger/proxy.caddy
+}
+http://:8080 {
+	respond /health "ok" 200
+	respond 404
+}

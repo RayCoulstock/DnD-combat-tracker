@@ -1,0 +1,10 @@
+admin off
+grace_period 10s
+servers {
+	protocols h1 h2
+	timeouts {
+		read_header 10s
+		read_body 2m
+		idle 5m
+	}
+}

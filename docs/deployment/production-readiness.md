@@ -66,3 +66,7 @@ PR creation requires working GitHub CLI/API authentication. Git transport and AP
 ### Final results
 
 53 unit tests, 50 integration tests and all 12 Playwright scenarios pass. Type checking, ESLint, clean installs, the portable production build and `npm run db:migrate:production` pass. A separate offline `npm ci --omit=dev` install contains 200 packages and excludes Vite, its React plugin and TypeScript. Using only that install and copied compiled output, plain Node 24 passed GLB-worker validation, static frontend/readiness, Secure-cookie DM login, authenticated WebSocket connection, SIGTERM with a live socket (zero exit), and restart with the same persisted session and unchanged GLB bytes. A frontend-bundle scan found no configured database URL, session secret or seed password. These are **native runtime** results; Docker image build/smoke remains blocked as described above. No SQL migration or game/UI/protocol change is included.
+
+## PR 2 follow-up
+
+The owner subsequently reports a successful full-image build/container smoke on Windows. PR 2 provides the standalone production stack, local TLS validation and recovery tooling: see [DigitalOcean setup](digitalocean-setup.md), [backup/restore](backup-restore.md) and the current [test/risk record](infrastructure-validation.md). The DNS failure above is historical/environment-specific, not evidence that the image fails universally. Exact release-image validation and production deployment approval remain separate gates.

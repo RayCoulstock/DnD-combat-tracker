@@ -1,0 +1,5 @@
+# PR 2 implementation plan
+
+Keep application code and development Compose unchanged. Add a standalone production stack (Caddy, one non-root app, PostgreSQL 17) with project-scoped persistence, separate internal proxy/database networks and Caddy-only published ports. Migrations are a profile-gated release job, not an app startup command. Shared Caddy policy preserves Origin and replaces forwarding headers.
+
+Operational tooling must validate private environment files without evaluating shell code or logging secrets, serialize maintenance, capture DB/GLBs while writes are stopped, encrypt off-server with Restic, and restore only to a fresh separately named verification project. No automatic pruning or deployment. Provide a loopback-only TLS smoke procedure with an internal test CA, not public ACME/DNS changes. Test unsafe configuration, archive traversal, approval/project guards, rendered Compose and Caddy policy; attempt the real production image build. Record Windows image validation as user-reported evidence, and distinguish any environment-specific build failure or diagnostic image from a releasable production image.
