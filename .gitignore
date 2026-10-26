@@ -14,3 +14,7 @@ test-results/
 !.env.backup.example
 
 __pycache__/
+
+# Ephemeral CI image/evidence transfer; no local assets or runtime state.
+release-artifact/
+ci-results/

@@ -1,0 +1,84 @@
+name: Publish approved main image
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: publish-main
+  cancel-in-progress: false
+jobs:
+  validate:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+  publish:
+    name: Publish exact tested image
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: '24.19.0'
+      - name: Require owner-configured main protection
+        env:
+          MAIN_PROTECTED: ${{ github.ref_protected }}
+        run: test "$MAIN_PROTECTED" = true
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: ${{ needs.validate.outputs.image-artifact }}
+          path: release-artifact
+      - name: Verify and load tested artifact
+        run: |
+          cd release-artifact
+          sha256sum --check SHA256SUMS
+          docker load -i image.tar
+          cd ..
+          node scripts/ci/release.mjs verify-local
+      - uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push without rebuilding and verify immutable identity
+        id: publish
+        run: node scripts/ci/release.mjs publish
+      - name: Attest production image provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-name: ${{ steps.publish.outputs.image }}
+          subject-digest: ${{ steps.publish.outputs.digest }}
+          push-to-registry: true
+      - name: Attest image SBOM
+        uses: actions/attest-sbom@115c3be05ff3974bcbd596578934b3f9ce39bf68 # v2.2.0
+        with:
+          subject-name: ${{ steps.publish.outputs.image }}
+          subject-digest: ${{ steps.publish.outputs.digest }}
+          sbom-path: release-artifact/sbom.spdx.json
+          push-to-registry: true
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: release-${{ github.sha }}
+          path: |
+            release-artifact/release.json
+            release-artifact/image-validation.json
+            release-artifact/sbom.spdx.json
+          retention-days: 30
+          if-no-files-found: error
+      - name: Release report
+        if: always()
+        env:
+          STATUS: ${{ job.status }}
+        run: |
+          printf 'GHCR publication/attestation: %s\nCommit: %s\nRun: %s\n' "$STATUS" "$GITHUB_SHA" "$GITHUB_RUN_ID" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f release-artifact/release.json ]; then cat release-artifact/release.json >> "$GITHUB_STEP_SUMMARY"; fi

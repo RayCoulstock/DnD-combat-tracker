@@ -1,0 +1,143 @@
+name: CI
+on:
+  pull_request:
+    branches: [main]
+  workflow_call:
+    outputs:
+      image-artifact:
+        description: Tested production Docker archive and evidence
+        value: ${{ jobs.image.outputs.artifact }}
+permissions:
+  contents: read
+env:
+  DOCKER_BUILD_RECORD_RETENTION_DAYS: '3'
+  # Reviewed infrastructure fixtures, pinned independently of production defaults.
+  CADDY_IMAGE: caddy:2-alpine@sha256:eb4d35b7452d1ab6171fbdbe8d9275b2301dad6dad92115d91e19fb9b24d510f
+  POSTGRES_IMAGE: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  checks:
+    name: Required tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: '24.19.0'
+          cache: npm
+      - uses: docker/setup-docker-action@b60f85385d03ac8acfca6d9996982511d8620a19 # v4.3.0
+        with:
+          version: v28.4.0
+      - name: Install checksum-verified infrastructure tools
+        run: scripts/ci/install-tools.sh
+      - name: Validate workflows and shell
+        run: |
+          actionlint -color
+          shellcheck scripts/ci/*.sh
+          python3 -m py_compile scripts/ci/*.py
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - name: Prepare required infrastructure image
+        run: |
+          docker pull "$CADDY_IMAGE"
+          docker tag "$CADDY_IMAGE" caddy:2-alpine
+      - run: npm test
+      - run: npm run build
+      - run: npm run test:infra
+      - name: Install lockfile-matched Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Isolated PostgreSQL integration and browser tests
+        run: scripts/ci/native-tests.sh
+      - name: Safe test summary
+        if: always()
+        env:
+          STATUS: ${{ job.status }}
+        run: |
+          mkdir -p ci-results
+          printf 'Required native/test checks: %s\nCommit: %s\n' "$STATUS" "$GITHUB_SHA" | tee ci-results/checks.txt >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: always()
+        with:
+          name: test-summary-${{ github.sha }}
+          path: ci-results/
+          retention-days: 3
+          if-no-files-found: error
+  image:
+    name: Production image and recovery
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    outputs:
+      artifact: image-${{ github.sha }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: '24.19.0'
+          cache: npm
+      - uses: docker/setup-docker-action@b60f85385d03ac8acfca6d9996982511d8620a19 # v4.3.0
+        with:
+          version: v28.4.0
+      - run: scripts/ci/install-tools.sh
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+        with:
+          version: v0.31.0
+      - run: npm ci
+      - name: Build actual production Dockerfile
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: encounter-ledger-ci:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          provenance: false
+          sbom: false
+      - name: Real production image TLS and encrypted recovery gate
+        env:
+          IMAGE: encounter-ledger-ci:${{ github.sha }}
+        run: scripts/ci/verify-image.sh "$IMAGE"
+      - name: Save exact tested image and generate SBOM
+        env:
+          IMAGE: encounter-ledger-ci:${{ github.sha }}
+          SYFT_CHECK_FOR_APP_UPDATE: 'false'
+        run: |
+          mkdir -p release-artifact
+          docker save "$IMAGE" -o release-artifact/image.tar
+          syft "docker:$IMAGE" -o spdx-json=release-artifact/sbom.spdx.json
+          cp ci-results/image-validation.json release-artifact/
+          cd release-artifact
+          sha256sum image.tar sbom.spdx.json image-validation.json > SHA256SUMS
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: image-${{ github.sha }}
+          path: release-artifact/
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 0
+      - name: Production image gate summary
+        if: always()
+        env:
+          STATUS: ${{ job.status }}
+        run: |
+          mkdir -p ci-results
+          printf 'Actual Dockerfile/TLS/backup-restore gate: %s\nCommit: %s\nNo diagnostic substitute permitted.\n' "$STATUS" "$GITHUB_SHA" | tee ci-results/image-status.txt >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: always()
+        with:
+          name: image-summary-${{ github.sha }}
+          path: ci-results/
+          retention-days: 3
+          if-no-files-found: error

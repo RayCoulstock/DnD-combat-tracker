@@ -1,0 +1,67 @@
+name: Deploy production (manual, disabled until configured)
+on:
+  workflow_dispatch:
+    inputs:
+      release_run_id:
+        description: Successful main publication workflow run ID
+        required: true
+        type: string
+      digest:
+        description: Exact sha256 digest from that release report
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: production
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+      attestations: read
+      deployments: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: '24.19.0'
+      - name: Install pinned verification CLI
+        run: scripts/ci/install-tools.sh
+      - name: Fail-closed environment and attested release gate
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPLOY_ENVIRONMENT: production
+          DEPLOY_ENABLED: ${{ vars.DEPLOY_ENABLED }}
+          RELEASE_RUN_ID: ${{ inputs.release_run_id }}
+          RELEASE_DIGEST: ${{ inputs.digest }}
+        run: node scripts/ci/prepare-deployment.mjs
+      - name: Explicitly approved release on verified existing host
+        env:
+          DEPLOY_ENVIRONMENT: production
+          SSH_HOST: ${{ vars.SSH_HOST }}
+          SSH_USER: ${{ vars.SSH_USER }}
+          SSH_PORT: ${{ vars.SSH_PORT }}
+          TARGET_ID: ${{ vars.TARGET_ID }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          RELEASE_DIGEST: ${{ inputs.digest }}
+          RELEASE_COMMIT: ${{ steps.gate.outputs.commit }}
+          RELEASE_RUN_ID: ${{ inputs.release_run_id }}
+        run: scripts/ci/deploy-ssh.sh
+      - name: Deployment report
+        if: always()
+        env:
+          STATUS: ${{ job.status }}
+          IMAGE: ${{ steps.gate.outputs.image }}
+        run: |
+          printf 'production release: %s\nVerified image: %s\nNo automatic database rollback. Inspect operator recovery report on failure.\n' "$STATUS" "$IMAGE" >> "$GITHUB_STEP_SUMMARY"
