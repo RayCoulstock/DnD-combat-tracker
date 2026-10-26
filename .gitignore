@@ -4,6 +4,7 @@ dist-server/
 .env
 .env.*
 !.env.example
+!.env.production.example
 coverage/
 *.log
 playwright-report/

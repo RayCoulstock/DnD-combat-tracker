@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import argon2 from 'argon2'
 import { createPool, transaction } from './db.ts'
 import { emptyEncounter } from '../shared/domain.ts'
+if (process.env.NODE_ENV === 'production') throw new Error('Development seeding is disabled in production.')
 const email = process.env.SEED_DM_EMAIL?.toLowerCase()
 const password = process.env.SEED_DM_PASSWORD
 if (!email || !password || password.length < 12) throw new Error('Set SEED_DM_EMAIL and SEED_DM_PASSWORD (12+ characters) for development seeding. No default password is supplied.')

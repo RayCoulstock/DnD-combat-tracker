@@ -12,7 +12,18 @@ export async function migrate(pool: Pool) {
     }
   })
 }
+export async function assertMigrationsCurrent(pool: Pool) {
+  const expected = (await readdir(new URL('./migrations/', import.meta.url))).filter(f => f.endsWith('.sql'))
+  const applied = new Set((await pool.query('SELECT name FROM schema_migrations')).rows.map(row => row.name))
+  if (!expected.length || expected.some(name => !applied.has(name))) throw new Error('Database migrations are pending. Run the production migration command before starting the app.')
+}
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const pool = createPool(process.env.DATABASE_URL!)
-  try { await migrate(pool); console.log('Migrations applied') } finally { await pool.end() }
+  if (!process.env.DATABASE_URL) {
+    console.error('Set DATABASE_URL before applying database migrations.'); process.exitCode = 1
+  } else {
+    const pool = createPool(process.env.DATABASE_URL)
+    try { await migrate(pool); console.log('Migrations applied') }
+    catch { console.error('Database migration failed. Check connection settings, database permissions and migration SQL.'); process.exitCode = 1 }
+    finally { await pool.end() }
+  }
 }
