@@ -3,11 +3,28 @@ import { FilesystemAssetStorage } from './asset-storage.ts'
 import { recoverAssets } from './assets.ts'
 import { createApplication } from './app.ts'
 import { createPool } from './db.ts'
-const pool = createPool(process.env.DATABASE_URL!)
-await pool.query('SELECT 1 FROM schema_migrations LIMIT 1')
-if (process.env.NODE_ENV === 'production' && !process.env.ASSET_STORAGE_DIR) throw new Error('Set ASSET_STORAGE_DIR to a persistent private directory.')
-const assetStorage = new FilesystemAssetStorage(process.env.ASSET_STORAGE_DIR ?? '../.ledger-assets')
-await recoverAssets(pool, assetStorage)
-const application = createApplication({ assetStorage, pool, secret: process.env.SESSION_SECRET ?? '', origin: process.env.APP_ORIGIN ?? '', production: process.env.NODE_ENV === 'production' })
-application.http.listen(Number(process.env.PORT ?? 3001), '0.0.0.0', () => console.log('Encounter Ledger backend listening'))
-for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { void application.close().then(() => pool.end()).then(() => process.exit(0)) })
+import { assertMigrationsCurrent } from './migrate.ts'
+import { runtimeConfig } from './runtime-config.ts'
+
+// Validate before opening connections. Do not print environment values or raw startup errors.
+try {
+  const config = runtimeConfig()
+  const pool = createPool(config.databaseURL)
+  try {
+    await assertMigrationsCurrent(pool)
+    const assetStorage = new FilesystemAssetStorage(config.assetDirectory)
+    await recoverAssets(pool, assetStorage)
+    const application = createApplication({ assetStorage, pool, secret: config.secret, origin: config.origin, production: config.production, trustProxy: config.trustProxy })
+    application.http.listen(config.port, '0.0.0.0', () => console.log('Encounter Ledger backend listening'))
+    let stopping = false
+    for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
+      if (stopping) return
+      stopping = true
+      console.log('Encounter Ledger shutting down')
+      const deadline = setTimeout(() => { console.error('Shutdown deadline exceeded'); process.exit(1) }, 30000)
+      deadline.unref()
+      void application.close().then(() => pool.end()).then(() => { clearTimeout(deadline); process.exit(0) }).catch(() => { console.error('Shutdown failed'); process.exit(1) })
+    })
+    application.http.on('error', () => { console.error('HTTP listener failed'); process.exit(1) })
+  } catch { await pool.end(); throw new Error() }
+} catch { console.error('Startup failed. Check runtime configuration, database migrations and private asset storage.'); process.exitCode = 1 }

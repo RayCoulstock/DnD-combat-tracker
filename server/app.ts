@@ -22,7 +22,7 @@ import { authorize, execute, loadState, persistState, snapshot, sessionState } f
 import { artworkStorage, embedArtwork } from './artwork.ts'
 import { DomainError, emptyEncounter, envelopeSchema, importEncounter, type Actor, type ClientEvents, type ServerEvents } from '../shared/domain.ts'
 
-interface Options { pool: Pool; secret: string; origin: string; production?: boolean; assetStorage?: AssetStorage; assetValidationLimits?: AssetLimits }
+interface Options { pool: Pool; secret: string; origin: string; production?: boolean; trustProxy?: 0 | 1 | 'loopback'; assetStorage?: AssetStorage; assetValidationLimits?: AssetLimits }
 const uuid = z.uuid()
 const nameSchema = z.object({ name: z.string().trim().min(1).max(150) }).strict()
 const credentials = z.object({ email: z.email().max(254).transform(s => s.toLowerCase()), password: z.string().min(12).max(128) }).strict()
@@ -30,7 +30,7 @@ const freshToken = () => randomBytes(32).toString('base64url')
 const saveSession = (req: Request) => new Promise<void>((resolve, reject) => req.session.save(e => e ? reject(e) : resolve()))
 const rotateSession = (req: Request) => new Promise<void>((resolve, reject) => req.session.regenerate(e => e ? reject(e) : resolve()))
 const equal = (a: unknown, b: string) => typeof a === 'string' && Buffer.byteLength(a) === Buffer.byteLength(b) && timingSafeEqual(Buffer.from(a), Buffer.from(b))
-export function createApplication({ pool, secret, origin, production = false, assetStorage = new FilesystemAssetStorage(process.env.ASSET_STORAGE_DIR ?? '../.ledger-assets'), assetValidationLimits = assetLimits() }: Options) {
+export function createApplication({ pool, secret, origin, production = false, trustProxy = production ? 1 : 0, assetStorage = new FilesystemAssetStorage(process.env.ASSET_STORAGE_DIR ?? '../.ledger-assets'), assetValidationLimits = assetLimits() }: Options) {
   if (secret.length < 32 || secret.startsWith('replace-with')) throw new Error('SESSION_SECRET must contain at least 32 characters')
   if (new URL(origin).origin !== origin || (production && !origin.startsWith('https://'))) throw new Error('APP_ORIGIN must be an exact origin (HTTPS in production)')
   const app = express()
@@ -38,7 +38,7 @@ export function createApplication({ pool, secret, origin, production = false, as
   const io = new Server<ClientEvents, ServerEvents>(http, { maxHttpBufferSize: 12 * 1024 * 1024, transports: ['websocket'],
     allowRequest: (req, cb) => cb(null, req.headers.origin === origin),
   })
-  if (production) app.set('trust proxy', 1)
+  app.set('trust proxy', trustProxy)
   app.use(helmet({ contentSecurityPolicy: { directives: { 'img-src': ["'self'", 'data:', 'blob:'], 'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'], 'font-src': ["'self'", 'https://fonts.gstatic.com'], 'script-src': ["'self'"], 'connect-src': ["'self'", 'blob:', origin.replace(/^http/, 'ws')], 'upgrade-insecure-requests': production ? [] : null } } }))
   const jsonBody = express.json({ limit: '12mb' })
   // Authenticate asset uploads before consuming any body, including a forged JSON MIME.
@@ -62,7 +62,11 @@ export function createApplication({ pool, secret, origin, production = false, as
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && (!req.session.csrf || req.headers.origin !== origin || !equal(req.headers['x-csrf-token'], req.session.csrf ?? ''))) return res.status(403).json({ error: { code: 'CSRF', message: 'Refresh the page and try again.' } })
     next()
   })
-  app.get('/api/health', async (_req, res) => { await pool.query('SELECT 1'); res.json({ ok: true }) })
+  app.get('/api/health/live', (_req, res) => res.json({ ok: true }))
+  app.get('/api/health', async (_req, res) => {
+    try { const probe={text:'SELECT 1', query_timeout:3000}; await pool.query(probe); res.json({ ok: true }) }
+    catch { res.status(503).json({ ok: false }) }
+  })
   app.get('/api/session', async (req, res) => {
     req.session.csrf ??= freshToken()
     await saveSession(req)

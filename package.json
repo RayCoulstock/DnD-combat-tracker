@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "vite build && tsc -p server/tsconfig.json && cp -r server/migrations dist-server/server/",
+    "build": "vite build && tsc -p server/tsconfig.json && node scripts/copy-migrations.mjs",
     "lint": "eslint .",
-    "test": "node --test src/mapState.test.ts src/App.test.js && tsx --test shared/*.test.ts server/*.test.ts",
+    "test": "node --test scripts/*.test.mjs src/mapState.test.ts src/App.test.js && tsx --test shared/*.test.ts server/*.test.ts",
     "typecheck": "tsc --noEmit && tsc -p server/tsconfig.json --noEmit",
     "dev:server": "tsx watch --env-file-if-exists=.env server/index.ts",
     "dev:all": "concurrently -k \"npm:dev\" \"npm:dev:server\"",
@@ -21,7 +21,6 @@
   "dependencies": {
     "@react-three/drei": "10.0.6",
     "@react-three/fiber": "9.1.2",
-    "@vitejs/plugin-react": "latest",
     "argon2": "^0.44.0",
     "busboy": "^1.6.0",
     "dotenv": "^17.4.2",
@@ -39,8 +38,6 @@
     "socket.io": "^4.8.4",
     "socket.io-client": "^4.8.4",
     "three": "0.176.0",
-    "typescript": "latest",
-    "vite": "latest",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -56,13 +53,16 @@
     "@types/react": "19.1.2",
     "@types/react-dom": "19.1.2",
     "@types/three": "0.176.0",
+    "@vitejs/plugin-react": "latest",
     "concurrently": "^9.2.5",
     "eslint": "latest",
     "eslint-plugin-react-hooks": "latest",
     "eslint-plugin-react-refresh": "latest",
     "globals": "latest",
     "tsx": "^4.23.15",
-    "typescript-eslint": "^8.72.0"
+    "typescript": "latest",
+    "typescript-eslint": "^8.72.0",
+    "vite": "latest"
   },
   "engines": {
     "node": ">=24"

@@ -122,3 +122,7 @@ Milestone 4D adds one **Add Object** browser plus calibrated GLB visuals on logi
 Milestone 4E adds atomic wall/room/corridor drawing, local/shared rulers and transparent tactical areas, plus projected contextual controls. See the [implementation plan](docs/milestone-4e-plan.md) and [tool and multiplayer guide](docs/milestone-4e-development.md). Tactical data uses existing encounter JSONB; no new database migration is required.
 
 The canvas-focused editor layout is described in the [workspace guide](docs/map-editor-workspace.md): floating tools and camera controls, an initiative rail, an accordion inspector, and remembered multiplayer setup collapse.
+
+## Production readiness
+
+Before planning a VPS deployment, read the [repository audit](docs/deployment/repository-audit.md) and [Phase 1 readiness guide](docs/deployment/production-readiness.md). The production environment template is [.env.production.example](.env.production.example). The existing Compose file remains development-only; this phase does not provision or deploy infrastructure.
