@@ -1,0 +1,24 @@
+[Unit]
+Description=Matched encrypted Encounter Ledger backup
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ledgerdeploy
+Group=ledgerdeploy
+SupplementaryGroups=docker
+WorkingDirectory=/opt/encounter-ledger/current
+Environment=LEDGER_ENV_FILE=/etc/encounter-ledger/production.env
+Environment=LEDGER_BACKUP_ENV_FILE=/etc/encounter-ledger/backup.env
+ExecStart=/opt/encounter-ledger/current/scripts/ops/backup.sh
+Environment=GOMEMLIMIT=512MiB
+MemoryMax=768M
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+ReadWritePaths=/var/backups/encounter-ledger /var/cache/encounter-ledger /var/lib/encounter-ledger/operations
+TimeoutStartSec=2h

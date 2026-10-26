@@ -1,0 +1,14 @@
+{
+	email {$ACME_EMAIL}
+	import /etc/caddy/ledger/server-options.caddy
+}
+
+{$LEDGER_DOMAIN} {
+	import /etc/caddy/ledger/proxy.caddy
+}
+
+# Container-only liveness; 8080 is never published.
+http://:8080 {
+	respond /health "ok" 200
+	respond 404
+}

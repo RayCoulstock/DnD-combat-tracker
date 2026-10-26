@@ -1,0 +1,155 @@
+# Standalone production file. Never combine with compose.yaml.
+name: ledger-production
+# Prevent Docker client proxy defaults from routing private service traffic externally.
+x-direct-network: &direct-network
+  HTTP_PROXY: ""
+  HTTPS_PROXY: ""
+  ALL_PROXY: ""
+  http_proxy: ""
+  https_proxy: ""
+  all_proxy: ""
+  NO_PROXY: "*"
+  no_proxy: "*"
+x-node-environment: &node-environment
+  <<: *direct-network
+  NODE_ENV: production
+  PORT: "3001"
+  DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in the private production env file}
+  SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET}
+  APP_ORIGIN: ${APP_ORIGIN:?Set exact HTTPS APP_ORIGIN}
+  TRUST_PROXY: "1"
+  ASSET_STORAGE_DIR: /var/lib/encounter-ledger/assets
+  ASSET_MAX_BYTES: ${ASSET_MAX_BYTES:-26214400}
+  ASSET_MAX_VERTICES: ${ASSET_MAX_VERTICES:-500000}
+  ASSET_MAX_TRIANGLES: ${ASSET_MAX_TRIANGLES:-500000}
+  ASSET_MAX_NODES: ${ASSET_MAX_NODES:-1000}
+  ASSET_MAX_MATERIALS: ${ASSET_MAX_MATERIALS:-128}
+  ASSET_MAX_ANIMATIONS: ${ASSET_MAX_ANIMATIONS:-16}
+  ASSET_MAX_TEXTURES: ${ASSET_MAX_TEXTURES:-64}
+  ASSET_MAX_TEXTURE_DIMENSION: ${ASSET_MAX_TEXTURE_DIMENSION:-4096}
+  ASSET_MAX_TEXTURE_PIXELS: ${ASSET_MAX_TEXTURE_PIXELS:-67108864}
+  ASSET_VALIDATION_TIMEOUT_MS: ${ASSET_VALIDATION_TIMEOUT_MS:-15000}
+x-node-service: &node-service
+  image: ${LEDGER_IMAGE:?Set an explicitly verified application image}
+  environment: *direct-network
+  init: true
+  pull_policy: never
+  user: "1000:1000"
+  read_only: true
+  tmpfs: ["/tmp:rw,noexec,nosuid,size=67108864"]
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  stop_grace_period: 35s
+  logging: &logs
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:17-alpine}
+    restart: unless-stopped
+    environment:
+      <<: *direct-network
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    command: ["postgres", "-c", "max_connections=30"]
+    volumes: ["postgres-data:/var/lib/postgresql/data"]
+    networks: [database]
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=67108864", "/var/run/postgresql:rw,nosuid,size=16777216"]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${POSTGRES_MEMORY_LIMIT:-768m}
+    stop_grace_period: 60s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+    logging: *logs
+  app:
+    <<: *node-service
+    scale: 1
+    restart: unless-stopped
+    environment: *node-environment
+    volumes: ["assets:/var/lib/encounter-ledger/assets"]
+    networks: [proxy, database]
+    mem_limit: ${APP_MEMORY_LIMIT:-1536m}
+    pids_limit: 128
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health',{signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 6s
+      retries: 4
+      start_period: 30s
+  caddy:
+    image: ${CADDY_IMAGE:-caddy:2-alpine}
+    restart: unless-stopped
+    environment:
+      <<: *direct-network
+      LEDGER_DOMAIN: ${LEDGER_DOMAIN:?Set the public DNS name}
+      ACME_EMAIL: ${ACME_EMAIL:?Set the TLS operator email}
+      MAX_REQUEST_BODY_BYTES: ${MAX_REQUEST_BODY_BYTES:-33554432}
+    ports:
+      - "${LEDGER_BIND_IP:-0.0.0.0}:${LEDGER_HTTP_PORT:-80}:80"
+      - "${LEDGER_BIND_IP:-0.0.0.0}:${LEDGER_HTTPS_PORT:-443}:443"
+    volumes:
+      - ${LEDGER_CADDY_FILE:-./deploy/Caddyfile}:/etc/caddy/Caddyfile:ro
+      - ./deploy/caddy:/etc/caddy/ledger:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [edge, proxy]
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16777216"]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${CADDY_MEMORY_LIMIT:-256m}
+    stop_grace_period: 35s
+    depends_on:
+      app: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-Y", "off", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 4
+    logging: *logs
+  migrate:
+    <<: *node-service
+    profiles: [operations]
+    command: ["node", "dist-server/server/migrate.js"]
+    volumes: ["assets:/var/lib/encounter-ledger/assets:ro"]
+    environment:
+      <<: *direct-network
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+    networks: [database]
+    healthcheck: { disable: true }
+  asset-archive:
+    <<: *node-service
+    profiles: [operations]
+    entrypoint: [tar]
+    command: ["-czf", "-", "-C", "/var/lib/encounter-ledger/assets", "."]
+    volumes: ["assets:/var/lib/encounter-ledger/assets:ro"]
+    network_mode: none
+    healthcheck: { disable: true }
+  asset-restore:
+    <<: *node-service
+    profiles: [operations]
+    entrypoint: [tar]
+    command: ["-xzpf", "-", "--no-same-owner", "-C", "/var/lib/encounter-ledger/assets"]
+    volumes: ["assets:/var/lib/encounter-ledger/assets"]
+    network_mode: none
+    healthcheck: { disable: true }
+networks:
+  edge: {}
+  proxy: { internal: true }
+  database: { internal: true }
+volumes:
+  postgres-data: {}
+  assets: {}
+  caddy-data: {}
+  caddy-config: {}

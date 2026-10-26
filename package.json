@@ -16,7 +16,8 @@
     "db:migrate": "tsx --env-file-if-exists=.env server/migrate.ts",
     "db:seed": "tsx --env-file-if-exists=.env server/seed.ts",
     "test:e2e": "playwright test",
-    "db:migrate:production": "node --env-file-if-exists=.env dist-server/server/migrate.js"
+    "db:migrate:production": "node --env-file-if-exists=.env dist-server/server/migrate.js",
+    "test:infra": "node scripts/run-infrastructure-tests.mjs"
   },
   "dependencies": {
     "@react-three/drei": "10.0.6",

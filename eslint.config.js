@@ -8,6 +8,7 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   { files: ['**/*.{js,jsx,ts,tsx}'], languageOptions: { globals: { ...globals.browser, ...globals.node }, parserOptions: { ecmaFeatures: { jsx: true } } } },
+  { files: ['scripts/**/*.mjs'], languageOptions: { globals: globals.node } },
   { files: ['src/**/*.{jsx,tsx}'], plugins: { 'react-hooks': reactHooks, 'react-refresh': reactRefresh }, rules: { ...reactHooks.configs.recommended.rules, ...reactRefresh.configs.vite.rules } },
   { files: ['**/*.jsx'], rules: { '@typescript-eslint/no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z]' }] } },
   { files: ['**/*.ts', '**/*.tsx'], rules: { '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }] } },
