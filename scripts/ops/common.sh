@@ -24,6 +24,18 @@ import os,stat,sys
 p=sys.argv[1];s=os.stat(p)
 if os.path.islink(p) or s.st_uid!=os.getuid() or stat.S_IMODE(s.st_mode)&0o077: sys.exit('Operations lock directory must be private and operator-owned.')
 PY
+  # A release coordinator may retain the same lock across backup/migrate/start.
+  # Validate the inherited descriptor AND acquire/confirm its lock; never trust a flag alone.
+  if [[ -n ${LEDGER_OPERATION_LOCK_FD:-} ]]; then
+    python3 - "$LEDGER_OPERATION_LOCK_FD" "$directory/$project.lock" <<'PYLOCK'
+import os,sys
+fd=int(sys.argv[1]);assert 3 <= fd <= 1024
+held=os.fstat(fd);expected=os.stat(sys.argv[2])
+assert (held.st_dev,held.st_ino)==(expected.st_dev,expected.st_ino), 'Incorrect inherited maintenance lock.'
+PYLOCK
+    flock -n "$LEDGER_OPERATION_LOCK_FD" || { echo 'Maintenance lock unavailable.' >&2; exit 1; }
+    return
+  fi
   exec 9>"$directory/$project.lock"
   flock -n 9 || { echo 'Another backup/migration/restore operation is running.' >&2; exit 1; }
 }
