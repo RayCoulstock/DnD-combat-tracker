@@ -15,6 +15,7 @@ export default function Multiplayer() {
   const [inviteToken, setInviteToken] = useState(() => new URLSearchParams(location.hash.slice(1)).get('invite') ?? '')
   const [actor, setActor] = useState<Actor | null>(null)
   const [csrf, setCsrf] = useState('')
+  const [allowDMRegistration, setAllowDMRegistration] = useState<boolean | null>(null)
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [campaignId, setCampaignId] = useState('')
   const [details, setDetails] = useState<Details | null>(null)
@@ -39,7 +40,7 @@ export default function Multiplayer() {
     if (!response.ok) {
       if (response.status === 401 || data.error?.code === 'CSRF') {
         const current = await (await fetch('/api/session')).json()
-        setCsrf(current.csrf)
+        setCsrf(current.csrf); setAllowDMRegistration(current.allowDMRegistration === true)
         if (!current.actor) { sessionRef.current = null; setSessionState(null); setActor(null); setSnapshot(null); snapshotRef.current = null; setDetails(null); setCampaignId(''); socketRef.current?.disconnect() }
       }
       throw new Error(data.error?.message ?? 'Request failed.')
@@ -51,7 +52,7 @@ export default function Multiplayer() {
     if (mode !== 'online') return
     let cancelled = false
     fetch('/api/session').then(r => { if (!r.ok) throw new Error('Server unavailable.'); return r.json() }).then(data => {
-      if (!cancelled) { setCsrf(data.csrf); setActor(data.actor); if (data.campaignId) setCampaignId(data.campaignId) }
+      if (!cancelled) { setAllowDMRegistration(data.allowDMRegistration === true); setCsrf(data.csrf); setActor(data.actor); if (data.campaignId) setCampaignId(data.campaignId) }
     }).catch(e => { if (!cancelled) setError(e.message) })
     return () => { cancelled = true }
   }, [mode])
@@ -105,7 +106,7 @@ export default function Multiplayer() {
     socket.on('access.revoked', () => {
       clear('Your access ended. Sign in or request a new invitation.')
       setActor(null); setCampaignId(''); setDetails(null)
-      void fetch('/api/session').then(r => r.json()).then(data => setCsrf(data.csrf)).catch(() => {})
+      void fetch('/api/session').then(r => r.json()).then(data => { setCsrf(data.csrf); setAllowDMRegistration(data.allowDMRegistration === true) }).catch(() => {})
     })
     const offline = () => { socket.disconnect(); setStatus('Reconnecting') }
     const online = () => socket.connect()
@@ -152,7 +153,8 @@ export default function Multiplayer() {
           <label>Display name<input name="displayName" required maxLength={80} autoComplete="nickname" /></label><button disabled={!csrf || busy}>Join campaign</button><p>Invitation links expire after 30 minutes and work once. This browser keeps your player session for up to seven days.</p>
         </form> : <form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); const action = (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') ?? 'login'; void run(async () => { const data = await api(`/auth/${action}`, { email: form.get('email'), password: form.get('password') }); setActor(data.actor) }) }}>
           <label>Email<input name="email" type="email" required autoComplete="username" /></label><label>Password (12+ characters)<input name="password" type="password" minLength={12} maxLength={128} required autoComplete="current-password" /></label>
-          <button name="action" value="login" disabled={!csrf || busy}>Sign in</button><button name="action" value="register" disabled={!csrf || busy}>Create account</button>
+          <button name="action" value="login" disabled={!csrf || busy}>Sign in</button>{allowDMRegistration === true && <button name="action" value="register" disabled={!csrf || busy}>Create account</button>}
+          {allowDMRegistration === false && <p>DM registration is closed for the private beta. Existing DMs can sign in; players can join using an invitation.</p>}
         </form>}
       </section> : <>
         {!player ? <DMSetupPanel key={campaignId} campaigns={campaigns} campaignId={campaignId} details={details} members={members} snapshot={snapshot} online={online} busy={busy} inviteURL={inviteURL} checkpoints={checkpoints} chooseCampaign={chooseCampaign} api={api} run={run} send={send} setInviteURL={setInviteURL}

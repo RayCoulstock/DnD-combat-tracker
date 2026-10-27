@@ -14,6 +14,8 @@ for _ in range(2):
 pw=secrets.token_hex(32)
 open(sys.argv[1],'w').write(f'''LEDGER_IMAGE={sys.argv[2]}
 LEDGER_DOMAIN=localhost
+# Explicit opt-in only for synthetic account bootstrap in this isolated test project.
+ALLOW_DM_REGISTRATION=true
 ACME_EMAIL=local@example.test
 LEDGER_CADDY_FILE={sys.argv[3]}/deploy/Caddyfile.smoke
 LEDGER_BIND_IP=127.0.0.1

@@ -12,3 +12,10 @@ test('invalid production configuration fails without echoing secrets',()=>{
   for(const overrides of [{NODE_ENV:'prod'},{DATABASE_URL:''},{SESSION_SECRET:'replace-with-'+'x'.repeat(40)},{APP_ORIGIN:'http://example.com'},{APP_ORIGIN:'https://example.com/'},{PORT:'NaN'},{PORT:'0'},{TRUST_PROXY:'true'},{ASSET_STORAGE_DIR:'relative'}])assert.throws(()=>runtimeConfig({...valid,...overrides}))
   assert.throws(()=>runtimeConfig({...valid,APP_ORIGIN:'private-sensitive-value'}),e=>e instanceof Error&&!e.message.includes('private-sensitive-value'))
 })
+test('DM registration defaults closed in production and open in development with explicit strict overrides',()=>{
+  assert.equal(runtimeConfig(valid).allowDMRegistration,false)
+  assert.equal(runtimeConfig({...valid,NODE_ENV:'development'}).allowDMRegistration,true)
+  assert.equal(runtimeConfig({...valid,ALLOW_DM_REGISTRATION:'true'}).allowDMRegistration,true)
+  assert.equal(runtimeConfig({...valid,NODE_ENV:'development',ALLOW_DM_REGISTRATION:'false'}).allowDMRegistration,false)
+  for(const flag of ['','yes','1','TRUE','false '])assert.throws(()=>runtimeConfig({...valid,ALLOW_DM_REGISTRATION:flag}),/ALLOW_DM_REGISTRATION/)
+})

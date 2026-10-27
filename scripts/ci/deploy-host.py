@@ -69,7 +69,7 @@ def main():
     env = os.environ.copy()
     env['PATH'] = '/usr/local/bin:/usr/bin:/bin'
     for key in list(env):
-        if key.startswith(('LEDGER_', 'RESTIC_', 'COMPOSE_', 'DOCKER_')) or key in ('DATABASE_URL', 'SESSION_SECRET', 'APP_ORIGIN', 'POSTGRES_PASSWORD', 'POSTGRES_USER', 'POSTGRES_DB'):
+        if key.startswith(('LEDGER_', 'RESTIC_', 'COMPOSE_', 'DOCKER_')) or key in ('DATABASE_URL', 'SESSION_SECRET', 'APP_ORIGIN', 'ALLOW_DM_REGISTRATION', 'POSTGRES_PASSWORD', 'POSTGRES_USER', 'POSTGRES_DB'):
             del env[key]
     env.update(DOCKER_HOST='unix:///var/run/docker.sock', DOCKER_CONTEXT='default')
     runtime = private_file('/etc/encounter-ledger/' + environment + '.env')

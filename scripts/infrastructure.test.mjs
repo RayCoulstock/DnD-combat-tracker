@@ -12,17 +12,22 @@ if(process.env.LEDGER_INFRA_REQUIRED==='1'&&!available)throw Error('Infrastructu
 function fixture(){
  const dir=mkdtempSync(join(tmpdir(),'ledger-infra-')),file=join(dir,'production.env'),password='d'.repeat(40)
  writeFileSync(file,`LEDGER_IMAGE=ghcr.io/example/ledger@sha256:${'a'.repeat(64)}\nLEDGER_DOMAIN=ledger.unit.example.net\nACME_EMAIL=admin@example.net\nAPP_ORIGIN=https://ledger.unit.example.net\nDATABASE_URL=postgresql://ledger:${password}@postgres:5432/ledger\nPOSTGRES_USER=ledger\nPOSTGRES_PASSWORD=${password}\nPOSTGRES_DB=ledger\nSESSION_SECRET=${'s'.repeat(64)}\n`,{mode:0o600})
- const result=spawnSync('docker',['compose','--env-file',file,'-f',join(root,'compose.production.yaml'),'-p','ledger-infra-test','--profile','operations','config','--format','json'],{encoding:'utf8'})
+ const result=spawnSync('docker',['compose','--env-file',file,'-f',join(root,'compose.production.yaml'),'-p','ledger-infra-test','--profile','operations','config','--format','json'],{encoding:'utf8',env:{...process.env,ALLOW_DM_REGISTRATION:''}})
  assert.equal(result.status,0,result.stderr)
  return{dir,file,data:JSON.parse(result.stdout)}
 }
 function check(data){return spawnSync('python3',[config,'compose','--project','ledger-infra-test'],{input:JSON.stringify(data),encoding:'utf8'})}
 test('production config isolates networks/volumes, ports and explicit migration job',{skip:!available},()=>{
- const f=fixture();try{assert.equal(check(f.data).status,0);assert.deepEqual(f.data.services.app.cap_drop,['ALL']);assert.equal(f.data.services['asset-archive'].volumes[0].read_only,true)}finally{rmSync(f.dir,{recursive:true,force:true})}
+ const f=fixture();try{
+  assert.equal(check(f.data).status,0);assert.equal(f.data.services.app.environment.ALLOW_DM_REGISTRATION,'false')
+  const enabled=spawnSync('docker',['compose','--env-file',f.file,'-f',join(root,'compose.production.yaml'),'config','--format','json'],{encoding:'utf8',env:{...process.env,ALLOW_DM_REGISTRATION:'true'}})
+  assert.equal(enabled.status,0);assert.equal(JSON.parse(enabled.stdout).services.app.environment.ALLOW_DM_REGISTRATION,'true')
+  assert.deepEqual(f.data.services.app.cap_drop,['ALL']);assert.equal(f.data.services['asset-archive'].volumes[0].read_only,true)
+ }finally{rmSync(f.dir,{recursive:true,force:true})}
 })
 test('unsafe infrastructure settings fail closed without leaking credentials',{skip:!available},()=>{
  const f=fixture();try{
-  const changes=[d=>{d.services.caddy.environment.HTTP_PROXY='http://untrusted.example'},d=>{d.services.app.ports=[{target:3001,published:'3001'}]},d=>{d.networks.database.internal=false},d=>{d.services.app.environment.APP_ORIGIN='https://wrong.example.net'},d=>{d.services.app.environment.TRUST_PROXY='true'},d=>{d.services.app.image='ledger:latest'},d=>{d.services.migrate.profiles=[]},d=>{d.services.app.depends_on.migrate={condition:'service_completed_successfully'}},d=>{d.volumes.assets.name='ledger-production_assets'},d=>{d.networks.database.name='ledger-production_database'},d=>{d.services.postgres.image='postgres:18-alpine'},d=>{d.services.caddy.environment.MAX_REQUEST_BODY_BYTES='1024'},d=>{d.services['asset-archive'].volumes[0].read_only=false}]
+  const changes=[d=>{d.services.app.environment.ALLOW_DM_REGISTRATION='yes'},d=>{d.services.caddy.environment.HTTP_PROXY='http://untrusted.example'},d=>{d.services.app.ports=[{target:3001,published:'3001'}]},d=>{d.networks.database.internal=false},d=>{d.services.app.environment.APP_ORIGIN='https://wrong.example.net'},d=>{d.services.app.environment.TRUST_PROXY='true'},d=>{d.services.app.image='ledger:latest'},d=>{d.services.migrate.profiles=[]},d=>{d.services.app.depends_on.migrate={condition:'service_completed_successfully'}},d=>{d.volumes.assets.name='ledger-production_assets'},d=>{d.networks.database.name='ledger-production_database'},d=>{d.services.postgres.image='postgres:18-alpine'},d=>{d.services.caddy.environment.MAX_REQUEST_BODY_BYTES='1024'},d=>{d.services['asset-archive'].volumes[0].read_only=false}]
   for(const change of changes){const d=structuredClone(f.data);change(d);const r=check(d);assert.notEqual(r.status,0);assert(!r.stderr.includes('d'.repeat(40)))}
  }finally{rmSync(f.dir,{recursive:true,force:true})}
 })
