@@ -11,7 +11,7 @@ test('production HTTPS proxy issues secure authenticated cookies; untrusted forw
   await admin.query(`CREATE SCHEMA ${schema}`)
   const pool=new pg.Pool({connectionString:process.env.DATABASE_URL,options:`-c search_path=${schema}`})
   const origin='https://ledger.example.com',secret=randomUUID()+randomUUID()
-  const trusted=createApplication({pool,origin,secret,production:true,trustProxy:1}),untrusted=createApplication({pool,origin,secret,production:true,trustProxy:0})
+  const trusted=createApplication({pool,origin,secret,production:true,allowDMRegistration:true,trustProxy:1}),untrusted=createApplication({pool,origin,secret,production:true,trustProxy:0})
   try{
     await migrate(pool)
     for(const instance of[trusted,untrusted])await new Promise<void>(resolve=>instance.http.listen(0,'127.0.0.1',resolve))

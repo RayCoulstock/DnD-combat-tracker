@@ -44,6 +44,7 @@ def literal_env(path):
 
 def validate_compose(data, project, local=False):
     services, networks = data['services'], data['networks']
+    require(services['app']['environment'].get('ALLOW_DM_REGISTRATION') in ('true', 'false'), 'ALLOW_DM_REGISTRATION must be true or false.')
     require(data.get('name') == project, 'Unexpected Compose project.')
     require(set(services) == {'postgres','app','caddy','migrate','asset-archive','asset-restore'}, 'Unexpected services.')
     require(networks['proxy'].get('internal') and networks['database'].get('internal'), 'Proxy and database networks must be internal.')

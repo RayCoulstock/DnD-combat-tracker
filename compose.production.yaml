@@ -13,6 +13,7 @@ x-direct-network: &direct-network
 x-node-environment: &node-environment
   <<: *direct-network
   NODE_ENV: production
+  ALLOW_DM_REGISTRATION: ${ALLOW_DM_REGISTRATION:-false}
   PORT: "3001"
   DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in the private production env file}
   SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET}

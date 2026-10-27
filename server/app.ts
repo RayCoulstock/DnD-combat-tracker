@@ -22,7 +22,7 @@ import { authorize, execute, loadState, persistState, snapshot, sessionState } f
 import { artworkStorage, embedArtwork } from './artwork.ts'
 import { DomainError, emptyEncounter, envelopeSchema, importEncounter, type Actor, type ClientEvents, type ServerEvents } from '../shared/domain.ts'
 
-interface Options { pool: Pool; secret: string; origin: string; production?: boolean; trustProxy?: 0 | 1 | 'loopback'; assetStorage?: AssetStorage; assetValidationLimits?: AssetLimits }
+interface Options { pool: Pool; secret: string; origin: string; production?: boolean; allowDMRegistration?: boolean; trustProxy?: 0 | 1 | 'loopback'; assetStorage?: AssetStorage; assetValidationLimits?: AssetLimits }
 const uuid = z.uuid()
 const nameSchema = z.object({ name: z.string().trim().min(1).max(150) }).strict()
 const credentials = z.object({ email: z.email().max(254).transform(s => s.toLowerCase()), password: z.string().min(12).max(128) }).strict()
@@ -30,7 +30,7 @@ const freshToken = () => randomBytes(32).toString('base64url')
 const saveSession = (req: Request) => new Promise<void>((resolve, reject) => req.session.save(e => e ? reject(e) : resolve()))
 const rotateSession = (req: Request) => new Promise<void>((resolve, reject) => req.session.regenerate(e => e ? reject(e) : resolve()))
 const equal = (a: unknown, b: string) => typeof a === 'string' && Buffer.byteLength(a) === Buffer.byteLength(b) && timingSafeEqual(Buffer.from(a), Buffer.from(b))
-export function createApplication({ pool, secret, origin, production = false, trustProxy = production ? 1 : 0, assetStorage = new FilesystemAssetStorage(process.env.ASSET_STORAGE_DIR ?? '../.ledger-assets'), assetValidationLimits = assetLimits() }: Options) {
+export function createApplication({ pool, secret, origin, production = false, allowDMRegistration = !production, trustProxy = production ? 1 : 0, assetStorage = new FilesystemAssetStorage(process.env.ASSET_STORAGE_DIR ?? '../.ledger-assets'), assetValidationLimits = assetLimits() }: Options) {
   if (secret.length < 32 || secret.startsWith('replace-with')) throw new Error('SESSION_SECRET must contain at least 32 characters')
   if (new URL(origin).origin !== origin || (production && !origin.startsWith('https://'))) throw new Error('APP_ORIGIN must be an exact origin (HTTPS in production)')
   const app = express()
@@ -70,9 +70,12 @@ export function createApplication({ pool, secret, origin, production = false, tr
   app.get('/api/session', async (req, res) => {
     req.session.csrf ??= freshToken()
     await saveSession(req)
-    res.json({ csrf: req.session.csrf, actor: req.session.actor ?? null, campaignId: req.session.campaignId ?? null })
+    res.json({ allowDMRegistration, csrf: req.session.csrf, actor: req.session.actor ?? null, campaignId: req.session.campaignId ?? null })
   })
-  app.post('/api/auth/register', authLimit, async (req, res) => {
+  app.post('/api/auth/register', (_req, res, next) => {
+    if (!allowDMRegistration) return res.status(403).json({ error: { code: 'REGISTRATION_DISABLED', message: 'DM registration is closed for the private beta. Existing DMs can sign in; players can join using an invitation.' } })
+    next()
+  }, authLimit, async (req, res) => {
     const data = credentials.parse(req.body)
     const id = randomUUID()
     const hash = await argon2.hash(data.password, { type: argon2.argon2id })

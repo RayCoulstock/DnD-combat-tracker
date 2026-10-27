@@ -2,6 +2,9 @@ import { isAbsolute } from 'node:path'
 export function runtimeConfig(env: NodeJS.ProcessEnv = process.env) {
   if (env.NODE_ENV && !['development','test','production'].includes(env.NODE_ENV)) throw new Error('NODE_ENV must be development, test or production.')
   const production = env.NODE_ENV === 'production'
+  const registration = env.ALLOW_DM_REGISTRATION ?? (production ? 'false' : 'true')
+  if (!['true','false'].includes(registration)) throw new Error('ALLOW_DM_REGISTRATION must be true or false.')
+  const allowDMRegistration = registration === 'true'
   if (!env.DATABASE_URL || !/^postgres(?:ql)?:\/\//.test(env.DATABASE_URL)) throw new Error('Set DATABASE_URL to a PostgreSQL connection URL.')
   const secret = env.SESSION_SECRET ?? ''
   if (secret.length < 32 || /^(replace|change|your[-_])/i.test(secret)) throw new Error('Set SESSION_SECRET to a unique random value of at least 32 characters.')
@@ -14,5 +17,5 @@ export function runtimeConfig(env: NodeJS.ProcessEnv = process.env) {
   if (!['0','1','loopback'].includes(trust)) throw new Error('TRUST_PROXY must be 0, 1 or loopback.')
   const assetDirectory = env.ASSET_STORAGE_DIR ?? '../.ledger-assets'
   if (production && (!env.ASSET_STORAGE_DIR || !isAbsolute(assetDirectory))) throw new Error('Set ASSET_STORAGE_DIR to an absolute persistent private directory.')
-  return { production, databaseURL: env.DATABASE_URL, secret, origin, port, assetDirectory, trustProxy: trust === 'loopback' ? 'loopback' as const : trust === '1' ? 1 as const : 0 as const }
+  return { production, allowDMRegistration, databaseURL: env.DATABASE_URL, secret, origin, port, assetDirectory, trustProxy: trust === 'loopback' ? 'loopback' as const : trust === '1' ? 1 as const : 0 as const }
 }

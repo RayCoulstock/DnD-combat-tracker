@@ -14,7 +14,7 @@ try {
     await assertMigrationsCurrent(pool)
     const assetStorage = new FilesystemAssetStorage(config.assetDirectory)
     await recoverAssets(pool, assetStorage)
-    const application = createApplication({ assetStorage, pool, secret: config.secret, origin: config.origin, production: config.production, trustProxy: config.trustProxy })
+    const application = createApplication({ assetStorage, pool, secret: config.secret, origin: config.origin, production: config.production, allowDMRegistration: config.allowDMRegistration, trustProxy: config.trustProxy })
     application.http.listen(config.port, '0.0.0.0', () => console.log('Encounter Ledger backend listening'))
     let stopping = false
     for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
