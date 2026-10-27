@@ -6,6 +6,7 @@ import DMSetupPanel, {type Campaign,type CampaignDetails as Details} from './DMS
 import BattleMap3D from './BattleMap3D'
 import { acceptsSessionState, mergeMapSnapshot } from '../shared/domain'
 import type { SessionState, Actor, ClientEvents, CommandResult, GameCommand, Member, ServerEvents, Snapshot } from '../shared/domain'
+import {createSessionBootstrap} from './sessionBootstrap'
 import './multiplayer.css'
 
 export default function Multiplayer() {
@@ -13,6 +14,7 @@ export default function Multiplayer() {
   const [mode, setMode] = useState<'local' | 'online'>(() => location.hash.startsWith('#invite=') || localStorage.getItem('ledger.playMode') === 'online' ? 'online' : 'local')
   useEffect(() => { localStorage.setItem('ledger.playMode', mode) }, [mode])
   const [inviteToken, setInviteToken] = useState(() => new URLSearchParams(location.hash.slice(1)).get('invite') ?? '')
+  const [bootstrapSession] = useState(()=>createSessionBootstrap())
   const [actor, setActor] = useState<Actor | null>(null)
   const [csrf, setCsrf] = useState('')
   const [allowDMRegistration, setAllowDMRegistration] = useState<boolean | null>(null)
@@ -51,11 +53,11 @@ export default function Multiplayer() {
   useEffect(() => {
     if (mode !== 'online') return
     let cancelled = false
-    fetch('/api/session').then(r => { if (!r.ok) throw new Error('Server unavailable.'); return r.json() }).then(data => {
+    bootstrapSession().then(data => {
       if (!cancelled) { setAllowDMRegistration(data.allowDMRegistration === true); setCsrf(data.csrf); setActor(data.actor); if (data.campaignId) setCampaignId(data.campaignId) }
     }).catch(e => { if (!cancelled) setError(e.message) })
     return () => { cancelled = true }
-  }, [mode])
+  }, [mode, bootstrapSession])
   useEffect(() => {
     if (mode !== 'online' || !actor) return
     let cancelled = false

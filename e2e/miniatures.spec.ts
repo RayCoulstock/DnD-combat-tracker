@@ -5,6 +5,29 @@ import { makeTexturedGlb } from '../test-fixtures/glb'
 async function api(page: Page, path: string, body?: unknown) {
   return page.evaluate(async ({path,body})=>{const{csrf}=await(await fetch('/api/session')).json();const r=await fetch('/api'+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:body===undefined?undefined:JSON.stringify(body)});if(!r.ok)throw new Error(await r.text());return r.json()},{path,body})
 }
+// Hold the first anonymous response until any Strict Mode duplicate has arrived.
+// Node fetch has no browser cookie jar: only fulfilling a route applies Set-Cookie.
+async function reorderInitialSession(page:Page){
+  let count=0,release=()=>{},ready=()=>{}
+  const released=new Promise<void>(resolve=>{release=resolve}),firstReady=new Promise<void>(resolve=>{ready=resolve})
+  let firstRequest:import('@playwright/test').Request|undefined
+  await page.route('**/api/session',async route=>{
+    const number=++count
+    if(number===1)firstRequest=route.request()
+    const response=await fetch(route.request().url(),{headers:route.request().headers()})
+    const body=await response.text(),cookie=response.headers.get('set-cookie')
+    expect(response.status).toBe(200)
+    if(number===1){ready();await released}
+    await route.fulfill({status:response.status,headers:{'content-type':'application/json',...(cookie?{'set-cookie':cookie}:{})},body})
+  })
+  return {release,finish:async()=>{
+    await firstReady
+    // With the old duplicate, let its CSRF response initialise the form first.
+    if(count>1)await expect(page.getByRole('button',{name:'Join campaign',exact:true})).toBeEnabled()
+    const finished=page.waitForEvent('requestfinished',request=>request===firstRequest)
+    release();await finished
+  }}
+}
 async function floorClick(page: Page, x: number, z: number) {
   const canvas=page.locator('canvas:visible');await canvas.scrollIntoViewIfNeeded();const box=(await canvas.boundingBox())!
   const camera=new PerspectiveCamera(42,box.width/box.height,.1,300);camera.position.set(12,14,12);camera.lookAt(0,0,0);camera.updateMatrixWorld()
@@ -19,13 +42,21 @@ test('DM assigns shared miniatures live; two players retain movement, fallback a
   const asset=await page.evaluate(async bytes=>{const{csrf}=await(await fetch('/api/session')).json();const data=new FormData();data.set('metadata',JSON.stringify({name:'Shared skeleton',category:'monster'}));data.set('file',new Blob([new Uint8Array(bytes)]),'skeleton.glb');const r=await fetch('/api/assets',{method:'POST',headers:{'X-CSRF-Token':csrf},body:data});if(!r.ok)throw new Error(await r.text());return r.json()},Array.from(await makeTexturedGlb()))
   const file={version:1,round:1,combatants:[1,2].map(id=>({id,name:'Hero '+id,side:'hero',hp:10,maxHp:10,ac:15,initiative:20-id,conditions:[],saves:[],actions:[]})),battleMap:{width:20,height:20,tokens:{'1':{x:8,z:9},'2':{x:11,z:9}}}}
   await api(page,path+'/encounters',{name:'Miniature encounter',file});await page.getByRole('button',{name:'Start multiplayer session',exact:true}).click()
-  const contexts=[await browser.newContext(),await browser.newContext()],players:Page[]=[];let modelRequests=0
+  const contexts=[await browser.newContext(),await browser.newContext()],players:Page[]=[],releaseBootstraps:(()=>void)[]=[];let modelRequests=0
   try{
     for(const[index,context]of contexts.entries()){
       const invitation=await api(page,path+'/invitations',{}),player=await context.newPage();players.push(player);player.on('pageerror',e=>errors.push(e.message))
+      let sessionBootstraps=0;player.on('request',r=>{if(new URL(r.url()).pathname==='/api/session')sessionBootstraps++})
+      const reordered=index===0?await reorderInitialSession(player):null
+      if(reordered)releaseBootstraps.push(reordered.release)
       if(index===0)player.on('request',r=>{if(new URL(r.url()).pathname===`/api/assets/${asset.id}/file`)modelRequests++})
       else await player.route('**/api/assets/*/file?**',route=>route.fulfill({status:503,body:'Temporary storage failure'}))
-      await player.goto(invitation.url);await player.getByLabel('Display name').fill('Player '+(index+1));await player.getByRole('button',{name:'Join campaign',exact:true}).click();await expect(player.locator('.connection')).toHaveText('Connected')
+      await player.goto(invitation.url);await player.getByLabel('Display name').fill('Player '+(index+1));await reordered?.finish()
+      const redemption=player.waitForResponse(response=>new URL(response.url()).pathname==='/api/invitations/redeem'&&response.request().method()==='POST')
+      await player.getByRole('button',{name:'Join campaign',exact:true}).click()
+      const redeemed=await redemption
+      expect(redeemed.status(),`invitation redemption: ${(await redeemed.json()).error?.code??'ok'}`).toBe(201)
+      await expect(player.locator('.connection')).toHaveText('Connected');expect(sessionBootstraps,'one anonymous session bootstrap per player').toBe(1)
       await expect(player.getByRole('button',{name:'Assign 3D Miniature',exact:true})).toHaveCount(0)
     }
     await page.getByRole('combobox',{name:/^Controlled by /}).nth(0).selectOption({label:'Player 1'});await page.getByRole('combobox',{name:/^Controlled by /}).nth(1).selectOption({label:'Player 2'})
@@ -63,5 +94,5 @@ test('DM assigns shared miniatures live; two players retain movement, fallback a
     await page.getByRole('button',{name:'3D Map',exact:true}).click();await expect(page.locator('main:visible [data-miniature-state=ready]')).toHaveCount(1);await page.screenshot({path:'/tmp/playable-miniatures.png',fullPage:true})
     const unknown=randomUUID();await api(page,path+'/encounters',{name:'Unknown miniature',file:{...file,combatants:[{...file.combatants[0],miniature:{assetId:unknown}}]}})
     await expect(players[0].getByText('Model unavailable',{exact:true})).toBeVisible();await expect(players[0].locator('canvas')).toBeVisible();expect(errors).toEqual([])
-  }finally{for(const context of contexts)await context.close()}
+  }finally{for(const release of releaseBootstraps)release();for(const context of contexts)await context.close()}
 })
