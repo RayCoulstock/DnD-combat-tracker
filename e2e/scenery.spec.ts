@@ -23,6 +23,12 @@ test('DM places and edits shared GLB scenery with preview, history, templates an
     const prior=(await api(page,path+'/snapshot')).revision
     await point(page,5,5,false);expect((await api(page,path+'/snapshot')).revision).toBe(prior)
     await point(page,5,5);await point(page,8,5);await expect(players[0].locator('[data-scenery-state=ready]')).toHaveCount(2);await expect(players[0].locator('[data-miniature-state=ready]')).toHaveCount(1);expect(downloads).toBe(1)
+    // Escape must cancel placement even when a focused inspector control consumes
+    // the bubbling key event (as embedded inspector controls can do).
+    const snapControl=tools.getByLabel('Snap scenery to grid',{exact:true})
+    await expect(snapControl).toBeEnabled()
+    await snapControl.evaluate(node=>node.addEventListener('keydown',event=>event.stopPropagation(),{once:true}))
+    await snapControl.focus();await expect(snapControl).toBeFocused()
     await page.keyboard.press('Escape');await expect(tools.getByRole('button',{name:'Select',exact:true})).toHaveAttribute('aria-pressed','true')
     await point(page,5,5);const props=tools.getByRole('region',{name:'Selected scenery properties',exact:true})
     await props.getByLabel('Scenery X',{exact:true}).fill('7.25');await props.getByLabel('Scenery Z',{exact:true}).fill('8.5');await props.getByLabel('Scenery rotation (degrees)',{exact:true}).fill('45');await props.getByLabel('Scenery scale',{exact:true}).fill('2');await props.getByLabel('Scenery vertical offset',{exact:true}).fill('.25');await props.getByRole('button',{name:'Apply scenery transform',exact:true}).click()

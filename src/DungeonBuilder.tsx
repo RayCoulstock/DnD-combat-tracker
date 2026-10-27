@@ -146,10 +146,20 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
   }
   const selectedWall=document?.walls.find(w=>w.id===selected?.objectId)
   const prop = document?.props.find(p => p.id === selected?.objectId), door = document?.doors.find(d => d.id === selected?.objectId)
+  // Cancellation must survive map-update renders and controls that consume the
+  // bubbling key event. Keep ordinary shortcuts in their existing bubble handler.
+  useEffect(() => {
+    if (!editing) return
+    const cancel = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setTool('select'); setSelected(null); setPickingScenery(false); setArchitecturalPicker(null)
+    }
+    window.addEventListener('keydown', cancel, true)
+    return () => window.removeEventListener('keydown', cancel, true)
+  }, [editing, setTool])
   useEffect(() => {
     if (!editing) return
     const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setTool('select'); setSelected(null); setPickingScenery(false); setArchitecturalPicker(null); return }
       if (!e.ctrlKey&&!e.metaKey&&!e.altKey&&!e.shiftKey&&!e.repeat&&connected&&!busy&&!preview&&!pickingScenery&&!architecturalPicker&&!(e.target instanceof HTMLElement&&(e.target.isContentEditable||e.target.closest('input,textarea,select,[role=dialog]')))) {const next=({v:'select',f:'floor',w:'wall',d:'door',o:'object',e:'erase'} as const)[e.key.toLowerCase() as 'v'|'f'|'w'|'d'|'o'|'e'];if(next){e.preventDefault();if(next==='object')setPickingScenery(true);else setTool(next);return}}
       if (!connected || busy || preview || pickingScenery || architecturalPicker || e.repeat || !prop || !isScenery(prop) || (e.target instanceof HTMLElement && (e.target.isContentEditable || e.target.closest('input,textarea,select')))) return
       const command: GameCommand | null = e.key === 'Delete' ? { type:'map.scenery.remove', propId:prop.id } : e.shiftKey && e.key.toLowerCase() === 'd' ? { type:'map.scenery.duplicate', propId:prop.id, newId:crypto.randomUUID(), position:{x:Math.min(document!.width-1,prop.position.x+1),z:Math.min(document!.height-1,prop.position.z+1)} } : null
