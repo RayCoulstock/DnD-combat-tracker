@@ -28,6 +28,8 @@ class Commands:
         self.runtime, self.calls, self.fail = runtime, [], None
         self.evidence, self.run = copy.deepcopy(EVIDENCE), copy.deepcopy(RUN)
         self.actual, self.started, self.stopped = OLD, False, False
+        self.containerd = False
+        self.identity_fault = None
 
     def __call__(self, args, *, env, fd, input=None, timeout=120):
         self.calls.append(args)
@@ -44,7 +46,9 @@ class Commands:
             return ''
         if args[:3] == ['docker', 'manifest', 'inspect']:
             require(self.fail != 'unavailable', 'Registry unavailable')
-            return json.dumps(dict(config=dict(digest=self.evidence['imageId'])))
+            configuration = self.evidence['imageId'] if args[-1] == NEW else 'sha256:' + '0'*64
+            if self.identity_fault == 'manifest': configuration = 'sha256:' + '9'*64
+            return json.dumps(dict(config=dict(digest=configuration)))
         if args[0] == 'scripts/ops/preflight.sh':
             require(self.fail != 'preflight', 'Unsafe preflight')
             require('ALLOW_DM_REGISTRATION' not in env, 'Inherited registration override')
@@ -79,12 +83,19 @@ class Commands:
                 return 'b' * 40 if self.actual == NEW else 'a' * 40
             if service == 'app':
                 identity = EVIDENCE['imageId'] if self.actual == NEW else 'sha256:' + '0' * 64
+                if self.containerd: identity = self.actual.split('@')[1]
                 return 'healthy|' + identity + '|' + self.actual
             return 'healthy|sha256:' + '4' * 64 + '|' + service
         if args[:3] == ['docker', 'image', 'inspect']:
             if args[3] in ('postgres:17-alpine', 'caddy:2-alpine'):
                 return 'sha256:' + '4' * 64
-            return EVIDENCE['imageId'] + '|' + EVIDENCE['commit'] + '|<no value>|linux/amd64'
+            reference = args[3]
+            configuration = EVIDENCE['imageId'] if reference == NEW else 'sha256:' + '0'*64
+            identity = reference.split('@')[1] if self.containerd else configuration
+            if self.identity_fault == 'local': identity = 'sha256:' + '9'*64
+            return json.dumps(dict(Id=identity, RepoDigests=[] if self.identity_fault == 'association' else [reference],
+                Config=dict(Labels={'org.encounter-ledger.validation-only': 'true' if self.identity_fault == 'diagnostic' else '', 'org.opencontainers.image.revision': 'c'*40 if self.identity_fault == 'revision' else EVIDENCE['commit'] if reference == NEW else 'a'*40}),
+                Os='linux', Architecture='arm64' if self.identity_fault == 'platform' else 'amd64'))
         if args[:2] == ['docker', 'pull']:
             require(self.fail != 'pull', 'Pull failed')
             return ''
@@ -239,6 +250,40 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(m.deploy(self.host, '123', expected)['status'], 'unchanged')
         self.assertEqual(list(self.reports.iterdir()), [])
         self.assertFalse(any(c[:2] == ['docker','pull'] or c[0] == 'scripts/ops/backup.sh' for c in self.commands.calls))
+
+    def test_containerd_deploy_and_noop_use_configuration_identity(self):
+        self.commands.containerd = True
+        self.expected['imageId'] = OLD.split('@')[1]
+        self.assertEqual(m.deploy(self.host, '123', self.expected)['status'], 'success')
+        proposal = m.plan(self.host, '123')
+        self.assertFalse(proposal['deploymentRequired'])
+        self.assertEqual(proposal['current']['imageId'], EVIDENCE['digest'])
+        self.assertEqual(proposal['current']['configurationDigest'], EVIDENCE['imageId'])
+        expected = dict(proposal['current'], digest=EVIDENCE['digest'])
+        self.assertEqual(m.deploy(self.host, '123', expected)['status'], 'unchanged')
+
+    def test_identity_substages_reject_unrelated_digests_and_revision(self):
+        for containerd in (False, True):
+            self.commands.containerd = containerd
+            for fault, message in [('manifest', 'configuration digest'), ('local', 'Docker image ID'),
+                                   ('association', 'registry association'), ('revision', 'revision label'),
+                                   ('diagnostic', 'validation-only'), ('platform', 'platform')]:
+                self.commands.identity_fault = fault
+                with self.subTest(containerd=containerd, fault=fault), self.assertRaisesRegex(m.IdentityRefused, message):
+                    self.host.pull(EVIDENCE)
+        self.assertFalse(self.commands.stopped)
+        self.assertFalse(any(c[0] == 'scripts/ops/backup.sh' for c in self.commands.calls))
+
+    def test_identity_failure_report_has_fixed_substage(self):
+        original = self.host.pull
+        def fail_pull(release):
+            self.commands.identity_fault = 'revision'
+            original(release)
+        self.host.pull = fail_pull
+        with self.assertRaisesRegex(m.Refused, 'revision label'):
+            m.deploy(self.host, '123', self.expected)
+        self.assertIn('revision label', self.receipt()['verificationDetail'])
+        self.assertEqual(self.runtime.read_bytes(), self.original)
 
     def test_image_replacement_keeps_quotes_crlf_comments_and_rejects_duplicates(self):
         self.assertEqual(m.replace_image(self.original, OLD, NEW), self.original.replace(OLD.encode(), NEW.encode()))
