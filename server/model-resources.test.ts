@@ -15,14 +15,15 @@ test('normalisation grounds/centres tiny, large, flat and multi-mesh models with
   assert.ok(new Box3().setFromObject(cloneMiniature(flat)).getSize(new Vector3()).z <= 1.001)
   assert.throws(() => cloneMiniature(new Group()), /bounds/)
 })
-test('cache shares fetch/parse and bounds idle retention without rejecting active models', async () => {
+test('cache shares fetch/parse and bounds idle retention without rejecting active models', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
   let loads = 0, disposed = 0
   const cache = new AssetResourceCache(async key => { loads++; return { value: key, bytes: 8, dispose() { disposed++ } } }, 1, 10, 5)
   const first = cache.acquire('same'), second = cache.acquire('same')
   assert.equal(await first.promise, await second.promise); assert.equal(loads, 1)
-  first.release(); await new Promise(r => setTimeout(r, 10)); assert.equal(disposed, 0)
+  first.release(); t.mock.timers.tick(10); assert.equal(disposed, 0)
   const concurrent = cache.acquire('other'); assert.equal(await concurrent.promise, 'other'); concurrent.release()
-  second.release(); await new Promise(r => setTimeout(r, 10)); assert.equal(disposed, 2)
+  second.release(); t.mock.timers.tick(10); assert.equal(disposed, 2)
   const next = cache.acquire('other'); assert.equal(await next.promise, 'other'); next.release()
   const huge = new AssetResourceCache(async () => ({ value: 1, bytes: 20, dispose() { disposed++ } }), 2, 10, 1)
   const large = huge.acquire('large'); assert.equal(await large.promise, 1); const before = disposed; large.release(); assert.equal(disposed, before + 1)
@@ -70,7 +71,10 @@ test('architectural normalization fits corrected width, grounding and endpoint a
 })
 
 
-test('failed loads can retry; late completion after last release is disposed once', async () => {
+test('failed loads can retry; late completion after last release is disposed once', async t => {
+  // Advance the cache's clock explicitly; elapsed wall time does not guarantee
+  // that an eviction callback has run on a busy CI worker.
+  t.mock.timers.enable({ apis: ['setTimeout'] })
   let attempts = 0, disposed = 0
   const cache = new AssetResourceCache(async () => {
     if (++attempts === 1) throw new Error('HTTP 503')
@@ -78,14 +82,22 @@ test('failed loads can retry; late completion after last release is disposed onc
   }, 16, 10, 1)
   const failed = cache.acquire('retry'); await assert.rejects(failed.promise, /503/); failed.release()
   const retry = cache.acquire('retry'); assert.ok(await retry.promise instanceof Group); retry.release()
-  await new Promise(r => setTimeout(r, 5)); assert.equal(disposed, 1)
+  assert.equal(disposed, 0)
+  t.mock.timers.tick(1); assert.equal(disposed, 1)
   let finish!: (value: {value: Group; bytes: number; dispose: () => void}) => void
-  const late = new AssetResourceCache(() => new Promise(resolve => {finish = resolve}), 16, 10, 1)
+  let signal!: AbortSignal
+  const late = new AssetResourceCache((_key, pendingSignal) => {
+    signal = pendingSignal
+    return new Promise(resolve => {finish = resolve})
+  }, 16, 10, 1)
   const lease = late.acquire('late'); lease.release()
   const rejection = assert.rejects(lease.promise, /cancelled/)
-  await new Promise(r => setTimeout(r, 5))
+  assert.equal(signal.aborted, false)
+  t.mock.timers.tick(1)
+  assert.equal(signal.aborted, true)
   finish({value: new Group(), bytes: 1, dispose() {disposed++}})
   await rejection; assert.equal(disposed, 2)
+  lease.release(); t.mock.timers.tick(10); assert.equal(disposed, 2)
 })
 
 test('GLB loader uses authenticated fetch and provides actionable request/parse errors', async t => {
