@@ -1,3 +1,4 @@
+import { syncTemplateImages } from './floor-image-references.ts'
 import type { PoolClient } from 'pg'
 import { DomainError } from '../shared/domain.ts'
 import { isScenery } from '../shared/scenery.ts'
@@ -21,6 +22,7 @@ export async function syncEncounterScenery(db:PoolClient,encounterId:string,docu
 }
 export async function syncTemplateScenery(db:PoolClient,templateId:string,owner:string,input:unknown){
   const document=readDungeon(input),ids=sceneryAssets(document).sort()
+  await syncTemplateImages(db, templateId, owner, document)
   const rows=ids.length?(await db.query("SELECT id FROM assets_3d WHERE id=ANY($1::uuid[]) AND owner_id=$2 AND upload_status='ready' ORDER BY id FOR UPDATE",[ids,owner])).rows:[]
   await db.query('DELETE FROM template_scenery_asset_references WHERE template_id=$1',[templateId])
   for(const row of rows)await db.query('INSERT INTO template_scenery_asset_references(template_id,asset_id) VALUES($1,$2)',[templateId,row.id])

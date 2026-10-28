@@ -1,12 +1,12 @@
+import { multipart } from './asset-upload.ts'
 import type { Express, Request, Response } from 'express'
-import Busboy from 'busboy'
 import { rateLimit } from 'express-rate-limit'
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { assetMetadataSchema, assetCategories, type Asset3D } from '../shared/assets.ts'
 import type { Actor } from '../shared/domain.ts'
 import { transaction, type Pool } from './db.ts'
-import { assetLimits, type AssetLimits } from './asset-config.ts'
+import { assetLimits } from './asset-config.ts'
 import { AssetError, type AssetStorage, type StagedAsset } from './asset-storage.ts'
 import { validateAsset } from './asset-validation.ts'
 const uuid = z.uuid()
@@ -14,34 +14,6 @@ function publicAsset(row: Record<string, unknown>): Asset3D {
   return { id: row.id, name: row.name, description: row.description, category: row.category, tags: row.tags, source: row.source, presentation: row.presentation,
     fileName: row.file_name, fileSize: row.file_size, contentType: row.content_type, format: row.format, revision: row.revision,
     uploadStatus: row.upload_status, validationStatus: row.validation_status, metrics: row.metrics, createdAt: new Date(row.created_at as string).toISOString(), updatedAt: new Date(row.updated_at as string).toISOString() } as Asset3D
-}
-async function multipart(req: Request, storage: AssetStorage, limits: AssetLimits) {
-  if (Number(req.headers['content-length'] ?? 0) > limits.maxBytes + 32768) throw new AssetError(413, 'GLB exceeds the upload size limit.')
-  let parser: ReturnType<typeof Busboy>
-  try { parser = Busboy({ headers: req.headers, defParamCharset: 'utf8', preservePath: true, limits: { files: 1, fields: 1, parts: 3, fieldSize: 16384, fileSize: limits.maxBytes + 1, headerPairs: 30 } }) }
-  catch { throw new AssetError(400, 'Upload a GLB file using multipart form data.') }
-  let staged: StagedAsset | undefined, fileName = '', metadata: unknown, failure: Error | undefined
-  const jobs: Promise<void>[] = []
-  const invalid = (message: string) => { failure ??= new AssetError(400, message) }
-  parser.on('field', (name, value, info) => { if (name !== 'metadata' || info.valueTruncated) invalid('Invalid or oversized asset metadata.'); else { try { metadata = JSON.parse(value) } catch { invalid('Invalid asset metadata.') } } })
-  parser.on('file', (name, stream, info) => {
-    fileName = info.filename ?? ''
-    if (name !== 'file' || !fileName || fileName.length > 255 || (/[\\/]/.test(fileName) || [...fileName].some(c => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)) || !fileName.toLowerCase().endsWith('.glb')) { invalid('Choose a .glb filename without directory paths.'); stream.resume(); return }
-    jobs.push(storage.stage(stream, limits.maxBytes).then(value => { staged = value; if (stream.truncated) failure = new AssetError(413, 'GLB exceeds the upload size limit.') }).catch(e => { failure = e }))
-  })
-  for (const event of ['filesLimit', 'fieldsLimit', 'partsLimit'] as const) parser.on(event, () => invalid('Upload exactly one file and one metadata field.'))
-  let total = 0
-  const budget = (chunk: Buffer) => { total += chunk.length; if (total > limits.maxBytes + 32768) { failure = new AssetError(413, 'Upload exceeds the request size limit.'); req.unpipe(parser); parser.destroy(failure); req.resume() } }
-  const aborted = () => parser.destroy(new AssetError(400, 'Upload interrupted.'))
-  req.on('data', budget); req.once('aborted', aborted); req.once('error', aborted)
-  try {
-    await new Promise<void>((resolve, reject) => { parser.once('close', resolve); parser.once('error', e => reject(e instanceof AssetError ? e : new AssetError(400, 'Malformed or interrupted multipart upload.'))); req.pipe(parser) })
-    await Promise.all(jobs)
-    if (failure) throw failure
-    if (!staged || metadata === undefined) throw new AssetError(400, 'A GLB file and metadata are required.')
-    return { staged, fileName, metadata: assetMetadataSchema.parse(metadata) }
-  } catch (error) { await Promise.all(jobs); if (staged) await storage.remove(staged.key); throw error }
-  finally { req.off('data', budget); req.off('aborted', aborted); req.off('error', aborted); req.unpipe(parser); if (!req.destroyed) req.resume() }
 }
 export async function recoverAssets(pool: Pool, storage: AssetStorage) {
   for (const row of (await pool.query("SELECT id,storage_key,upload_status FROM assets_3d WHERE upload_status IN ('processing','deleting')")).rows) {
@@ -104,7 +76,7 @@ export function registerAssetRoutes(app: Express, pool: Pool, storage: AssetStor
     const release = () => { if (!released) { released = true; active--; owners.delete(actor.id) } }
     let staged: StagedAsset | undefined
     try {
-      const upload = await multipart(req, storage, limits); staged = upload.staged
+      const upload = await multipart(req, storage, limits.maxBytes, ['glb'], value=>assetMetadataSchema.parse(value)); staged = upload.staged
       const stream = await storage.read(staged.key), chunks: Buffer[] = []
       for await (const chunk of stream) chunks.push(Buffer.from(chunk))
       const metrics = await validateAsset(new Uint8Array(Buffer.concat(chunks)), limits)

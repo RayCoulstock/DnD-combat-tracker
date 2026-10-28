@@ -74,3 +74,8 @@ It creates source fixtures, proves Secure-cookie DM/player login, WebSocket perm
 ## Disaster recovery and cutover (separate approval)
 
 Recover secrets and the repository password from the independent store, provision a replacement host only after approval, and reproduce the verified image/config. Restore into the isolated environment above and check the full application before requesting public cutover. Keep the old writer stopped to avoid divergent encounters. A reviewed promotion must preserve the verified project's volume identity (changing project names selects different volumes), change origin/domain/Caddy configuration deliberately, arrange DNS/TLS only after approval, and establish the new backup host/project tags. Do not automate in-place database rollback or replace a live asset volume from a partial backup.
+
+Floor-image maps (Milestone 5.2) use the same asset volume as GLBs. Back up the
+`floor_images`, image-reference tables and version-4 map documents together with
+their `.webp` files. The existing asset audit checks both GLBs and floor images.
+See `docs/battle-map-image-import.md` for migration ordering and rollback limits.

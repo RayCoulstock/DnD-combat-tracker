@@ -140,7 +140,9 @@ export const isMapEdit = (command: GameCommand): command is MapCommand => mapCom
 export function applyMapEdit(state: EncounterState, actor: Actor, command: MapCommand, history: MapHistory) {
   if (actor.role !== 'dm') throw new DomainError('FORBIDDEN', 'Only the DM may edit maps.')
   try {
+    if (command.type === 'map.floorImage.set' && Object.values(state.battleMap.tokens).some(p => p.x >= command.width || p.z >= command.height)) throw new Error('Resize would move combatants outside the map. Move them inside the new bounds first.')
     const result = editMap({ document: state.dungeonMap ?? null, width: state.battleMap.width, height: state.battleMap.height }, history, command)
+    if ((command.type === 'map.undo' || command.type === 'map.redo') && (state.dungeonMap?.floorImage || result.frame.document?.floorImage) && Object.values(state.battleMap.tokens).some(p => p.x >= result.frame.width || p.z >= result.frame.height)) throw new Error('Undo/redo would move combatants outside the map. Move them inside the restored bounds first.')
     const next: EncounterState = { ...state, dungeonMap: result.frame.document ?? undefined,
       battleMap: reconcileBattleMap({ ...state.battleMap, width: result.frame.width, height: result.frame.height }, state.combatants.map(c => c.id)),
       mapUndoDepth: result.history.undo.length, mapRedoDepth: result.history.redo.length }

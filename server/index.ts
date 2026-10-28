@@ -1,3 +1,4 @@
+import { recoverFloorImages } from './floor-images.ts'
 import 'dotenv/config'
 import { FilesystemAssetStorage } from './asset-storage.ts'
 import { recoverAssets } from './assets.ts'
@@ -14,6 +15,7 @@ try {
     await assertMigrationsCurrent(pool)
     const assetStorage = new FilesystemAssetStorage(config.assetDirectory)
     await recoverAssets(pool, assetStorage)
+    await recoverFloorImages(pool, assetStorage)
     const application = createApplication({ assetStorage, pool, secret: config.secret, origin: config.origin, production: config.production, allowDMRegistration: config.allowDMRegistration, trustProxy: config.trustProxy })
     application.http.listen(config.port, '0.0.0.0', () => console.log('Encounter Ledger backend listening'))
     let stopping = false

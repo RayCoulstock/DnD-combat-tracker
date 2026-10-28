@@ -1,5 +1,5 @@
 import type {Page} from '@playwright/test'
-export async function expandEditor(page:Page){const inspector=page.locator('.inspector:visible');for(const text of ['New blank map','Map file & templates','Floor']){const summary=inspector.locator('summary').filter({hasText:text});if(await summary.count()&&!(await summary.locator('..').evaluate(el=>(el as HTMLDetailsElement).open)))await summary.click()}}
+export async function expandEditor(page:Page){const inspector=page.locator('.inspector:visible');for(const text of ['New blank map','Map file & templates','Floor']){const summary=inspector.locator('summary').filter({hasText:text==='Floor'?/^Floor\s+(stone|wood|dirt|grass|lava)$/:text});if(await summary.count()&&!(await summary.locator('..').evaluate(el=>(el as HTMLDetailsElement).open)))await summary.click()}}
 export async function openTactical(page:Page){const summary=page.locator('.tactical-drawer:visible>summary');if(await summary.count()&&!(await summary.locator('..').evaluate(el=>(el as HTMLDetailsElement).open)))await summary.click()}
 // UI panels resize the canvas and cameras remain independent. Project through the
 // actual mounted camera, rather than reconstructing its initial pose in tests.
