@@ -1,3 +1,4 @@
+import { floorImageSchema } from './floor-image.ts'
 import { z } from 'zod'
 import {drawingSchema,drawingBatch} from './drawing.ts'
 import { architecturalVisualSchema, architectureLimits } from './architecture.ts'
@@ -15,7 +16,7 @@ export const proceduralPropSchema = z.object({ id: objectId, type: z.enum(propTy
 export type ProceduralProp = z.infer<typeof proceduralPropSchema>
 export const propSchema = z.discriminatedUnion('type', [proceduralPropSchema, scenerySchema])
 const documentShape = z.object({
-  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]), id: objectId, name: z.string().trim().min(1).max(150), width: size, height: size,
+  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]), floorImage: floorImageSchema.optional(), id: objectId, name: z.string().trim().min(1).max(150), width: size, height: size,
   theme: z.enum(themes), floors: z.array(cellSchema.extend({ type: z.enum(floorTypes) })).max(2500),
   walls: z.array(wallSchema).max(5100), doors: z.array(doorSchema).max(1000), props: z.array(propSchema).max(200),
 }).strict()
@@ -30,6 +31,7 @@ export function canonicalWall(x: number, z: number, edge: 'north' | 'east' | 'so
 }
 export const dungeonSchema = documentShape.superRefine((map, ctx) => {
   const invalid = (message: string) => ctx.addIssue({ code: 'custom', message })
+  if (map.floorImage && map.schemaVersion < 4) invalid('Floor images require map version 4.')
   const seen = new Set<string>()
   for (const f of map.floors) {
     const key = `${f.x}:${f.z}`
@@ -58,10 +60,11 @@ export const dungeonSchema = documentShape.superRefine((map, ctx) => {
 export function blankDungeon(id: string, name: string, width = 20, height = 20): DungeonMap {
   return dungeonSchema.parse({ schemaVersion: 1, id, name, width, height, theme: 'stone-dungeon', floors: [], walls: [], doors: [], props: [] })
 }
-// Legacy documents retain their version; scenery upgrades to 2 and architectural visuals to 3. Future versions fail safely.
+// Legacy versions remain valid; scenery uses 2, architectural visuals 3, and floor images 4. Never downgrade a document.
 export const readDungeon = (value: unknown): DungeonMap => dungeonSchema.parse(value)
 export const mapCommandSchemas = [
   drawingSchema,
+  z.object({type: z.literal('map.floorImage.set'), image: floorImageSchema.nullable(), width: size, height: size}).strict(),
   z.object({ type: z.literal('map.blank'), id: objectId, name: z.string().min(1).max(150), width: size, height: size }).strict(),
   z.object({ type: z.literal('map.load'), document: dungeonSchema }).strict(),
   z.object({ type: z.literal('map.template.load'), templateId: z.uuid() }).strict(),
@@ -109,6 +112,10 @@ export function editMap(frame: MapFrame, history: MapHistory, command: MapComman
     if (!map) throw new Error('Create or load a dungeon map first.')
     const requireId = (items: { id: string }[], id: string) => { if (!items.some(v => v.id === id)) throw new Error('Map object no longer exists.') }
     switch (command.type) {
+      case 'map.floorImage.set':
+        map.width = command.width; map.height = command.height
+        if (command.image) { map.floorImage = command.image; map.schemaVersion = 4 } else delete map.floorImage
+        break
       case 'map.draw': {
         const batch=drawingBatch(command,map.width,map.height),existingFloors=new Map(map.floors.map(f=>[`${f.x}:${f.z}`,f])),cells=new Set(batch.area.map(c=>`${c.x}:${c.z}`))
         const occupied=(x:number,z:number)=>existingFloors.has(`${x}:${z}`)||cells.has(`${x}:${z}`)
@@ -122,7 +129,7 @@ export function editMap(frame: MapFrame, history: MapHistory, command: MapComman
         for(const w of batch.walls)if(!walls.has(w.id)&&!(command.kind==='corridor'&&connects(w)))walls.set(w.id,w)
         map.walls=[...walls.values()]
         for(const f of batch.floors)if(command.kind==='room'||!existingFloors.has(`${f.x}:${f.z}`))existingFloors.set(`${f.x}:${f.z}`,f)
-        map.floors=[...existingFloors.values()];if(command.visual)map.schemaVersion=3
+        map.floors=[...existingFloors.values()];if(command.visual)map.schemaVersion=Math.max(3,map.schemaVersion) as 3 | 4
         break
       }
       case 'map.floor.paint': {
@@ -135,18 +142,18 @@ export function editMap(frame: MapFrame, history: MapHistory, command: MapComman
         map.floors = [...cells.values()].sort((a, b) => a.z - b.z || a.x - b.x); break
       }
       case 'map.wall.visual':
-        requireId(map.walls, command.wallId); map.walls = map.walls.map(w => w.id === command.wallId ? (() => { const next={...w,visual:command.visual ?? undefined}; if(!command.visual)delete next.visual; return next })() : w); if(command.visual) map.schemaVersion=3; break
+        requireId(map.walls, command.wallId); map.walls = map.walls.map(w => w.id === command.wallId ? (() => { const next={...w,visual:command.visual ?? undefined}; if(!command.visual)delete next.visual; return next })() : w); if(command.visual) map.schemaVersion=Math.max(3,map.schemaVersion) as 3 | 4; break
       case 'map.door.visual':
-        requireId(map.doors, command.doorId); map.doors = map.doors.map(d => d.id === command.doorId ? (() => { const next={...d,visual:command.visual ?? undefined}; if(!command.visual)delete next.visual; return next })() : d); if(command.visual) map.schemaVersion=3; break
-      case 'map.wall.place': if(command.wall.visual) map.schemaVersion=3; map.walls = [...map.walls.filter(w => w.id !== command.wall.id), command.wall]; break
+        requireId(map.doors, command.doorId); map.doors = map.doors.map(d => d.id === command.doorId ? (() => { const next={...d,visual:command.visual ?? undefined}; if(!command.visual)delete next.visual; return next })() : d); if(command.visual) map.schemaVersion=Math.max(3,map.schemaVersion) as 3 | 4; break
+      case 'map.wall.place': if(command.wall.visual) map.schemaVersion=Math.max(3,map.schemaVersion) as 3 | 4; map.walls = [...map.walls.filter(w => w.id !== command.wall.id), command.wall]; break
       case 'map.wall.remove':
         requireId(map.walls, command.wallId); map.walls = map.walls.filter(w => w.id !== command.wallId); map.doors = map.doors.filter(d => d.wallId !== command.wallId); break
-      case 'map.door.place': if(command.door.visual) map.schemaVersion=3; map.doors = [...map.doors.filter(d => d.wallId !== command.door.wallId), command.door]; break
+      case 'map.door.place': if(command.door.visual) map.schemaVersion=Math.max(3,map.schemaVersion) as 3 | 4; map.doors = [...map.doors.filter(d => d.wallId !== command.door.wallId), command.door]; break
       case 'map.door.update': requireId(map.doors, command.doorId); map.doors = map.doors.map(d => d.id === command.doorId ? { ...d, state: command.state } : d); break
       case 'map.door.remove': requireId(map.doors, command.doorId); map.doors = map.doors.filter(d => d.id !== command.doorId); break
       case 'map.scenery.place':
       case 'map.prop.place':
-        if (isScenery(command.prop)) map.schemaVersion = Math.max(2,map.schemaVersion) as 2 | 3;
+        if (isScenery(command.prop)) map.schemaVersion = Math.max(2,map.schemaVersion) as 2 | 3 | 4;
         if (map.props.some(p => p.id === command.prop.id)) throw new Error('Duplicate prop ID.')
         map.props.push(command.prop); break
       case 'map.prop.transform':

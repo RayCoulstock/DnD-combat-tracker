@@ -36,6 +36,7 @@
     "pg": "^8.23.1",
     "react": "latest",
     "react-dom": "latest",
+    "sharp": "^0.34.5",
     "socket.io": "^4.8.4",
     "socket.io-client": "^4.8.4",
     "three": "0.176.0",

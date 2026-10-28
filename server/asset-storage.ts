@@ -10,14 +10,14 @@ export class AssetError extends Error {
 export interface StagedAsset { key: string; size: number; hash: string }
 export interface AssetStorage {
   stage(input: Readable, maxBytes: number): Promise<StagedAsset>
-  publish(staged: StagedAsset, owner: string): Promise<string>
+  publish(staged: StagedAsset, owner: string, extension?: 'glb' | 'webp'): Promise<string>
   read(key: string): Promise<Readable>
   remove(key: string): Promise<void>
   exists(key: string): Promise<boolean>
   cleanStaging(): Promise<void>
 }
 const uuid = '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}'
-const keyPattern = new RegExp(`^(?:staging/${uuid}\\.part|${uuid}/[a-f0-9]{64}\\.glb)$`)
+const keyPattern = new RegExp(`^(?:staging/${uuid}\\.part|${uuid}/[a-f0-9]{64}\\.(?:glb|webp))$`)
 export class FilesystemAssetStorage implements AssetStorage {
   readonly root: string
   constructor(directory: string) {
@@ -43,16 +43,16 @@ export class FilesystemAssetStorage implements AssetStorage {
     try {
       await pipeline(bridge, new Transform({ transform(chunk: Buffer, _encoding, callback) {
         size += chunk.length
-        if (size > maxBytes) return callback(new AssetError(413, 'GLB exceeds the upload size limit.'))
+        if (size > maxBytes) return callback(new AssetError(413, 'File exceeds the upload size limit.'))
         hash.update(chunk); callback(null, chunk)
       } }), createWriteStream(path, { flags: 'wx', mode: 0o600 }))
-      if (!size) throw new AssetError(400, 'The GLB file is empty.')
+      if (!size) throw new AssetError(400, 'The uploaded file is empty.')
       return { key, size, hash: hash.digest('hex') }
     } catch (e) { await unlink(path).catch(() => {}); throw e }
     finally { input.unpipe(bridge); input.off('error', abort); input.off('aborted', abort); if (!input.destroyed) input.resume() }
   }
-  async publish(staged: StagedAsset, owner: string) {
-    const key = `${owner}/${staged.hash}.glb`
+  async publish(staged: StagedAsset, owner: string, extension: 'glb' | 'webp' = 'glb') {
+    const key = `${owner}/${staged.hash}.${extension}`
     await rename(await this.path(staged.key), await this.path(key)); return key
   }
   async read(key: string) { const path = await this.path(key); await stat(path); return createReadStream(path) }

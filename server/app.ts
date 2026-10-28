@@ -1,3 +1,4 @@
+import { registerFloorImageRoutes } from './floor-images.ts'
 import {expireMeasurements} from './tactical.ts'
 import {durableEncounter} from '../shared/domain.ts'
 import express, { type Request, type Response, type NextFunction } from 'express'
@@ -122,6 +123,7 @@ export function createApplication({ pool, secret, origin, production = false, al
   }
   const requireDM = (req: Request) => { const actor = requireActor(req); if (actor.role !== 'dm') throw new DomainError('FORBIDDEN', 'Dungeon Master access required.'); return actor }
   registerMapRoutes(app, pool, requireDM)
+  registerFloorImageRoutes(app, pool, assetStorage, requireDM, requireActor)
   registerAssetRoutes(app, pool, assetStorage, requireDM, assetValidationLimits, requireActor)
   app.get('/api/campaigns', async (req, res) => {
     const actor = requireActor(req)

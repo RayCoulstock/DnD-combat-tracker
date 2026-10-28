@@ -1,3 +1,4 @@
+import FloorImage3D from './FloorImage3D'
 import { isModalOpen } from './modalState'
 import FloatingObjectToolbar,{type ObjectToolbarContext} from './FloatingObjectToolbar'
 import ToolbarProjection from './ToolbarProjection'
@@ -120,7 +121,8 @@ function BattlefieldScene({ combatants, map, selectedId, activeId, onSelectToken
       <planeGeometry args={[map.width, map.height]} />
       <meshStandardMaterial color={dungeonMap ? '#242724' : '#666760'} roughness={0.92} metalness={0.02} />
     </mesh>
-    {map.showGrid && <BattlefieldGrid width={map.width} height={map.height} />}
+    {dungeonMap?.floorImage && <FloorImage3D image={dungeonMap.floorImage} width={map.width} height={map.height} scope={assetScope} context={assetContext} />}
+    {(dungeonMap?.floorImage?.showGrid ?? map.showGrid) && <BattlefieldGrid width={map.width} height={map.height} />}
     {!dungeonMap && <group>
       <mesh position={[0, 0.75, -map.height / 2]} castShadow receiveShadow><boxGeometry args={[map.width + 0.3, 1.5, 0.3]} /><meshStandardMaterial color="#4a4943" roughness={0.88} /></mesh>
       <mesh position={[-map.width / 2, 0.75, -map.height / 4]} castShadow receiveShadow><boxGeometry args={[0.3, 1.5, map.height / 2]} /><meshStandardMaterial color="#4a4943" roughness={0.88} /></mesh>
@@ -162,6 +164,12 @@ export default function BattleMap3D(props: BattleMap3DProps) {
   const controlsRef = useRef<OrbitControlsImpl>(null)
   const [rosterExpanded,setRosterExpanded]=useState(props.actor?.role==='player')
   const resetCamera = () => controlsRef.current?.reset()
+  const showGrid=props.dungeonMap?.floorImage?.showGrid??props.map.showGrid
+  const toggleGrid=()=>{
+    const map=props.dungeonMap
+    if(map?.floorImage&&props.onCommand)void props.onCommand({type:'map.floorImage.set',width:map.width,height:map.height,image:{...map.floorImage,showGrid:!showGrid}}).catch(error=>setMapError(error.message))
+    else props.onToggleGrid()
+  }
 
   return <section className="tabletop-shell" data-roster-expanded={rosterExpanded} aria-label={props.dungeonMap ? `Dungeon map: ${props.dungeonMap.name}` : 'Flat battlefield'}>
     {toolbar&&<FloatingObjectToolbar context={toolbar} target={toolbarRef}/>}
@@ -177,7 +185,7 @@ export default function BattleMap3D(props: BattleMap3DProps) {
         <Suspense fallback={null}><BattlefieldScene {...props} onSelectToken={selectToken} tacticalDraft={tools.draft} tacticalSelected={tools.selectedId} tacticalInteraction={tools.interaction} onSelectTactical={tools.select} toolbar={toolbar} toolbarRef={toolbarRef} controlsRef={controlsRef} /></Suspense>
       </Canvas>
       <div className="camera-toolbar" onPointerDown={e=>e.stopPropagation()} onPointerUp={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()} aria-label="Camera controls">      <button onClick={resetCamera}><RotateCcw size={16} /> Reset camera</button>
-      {props.showSharedControls !== false && <><button disabled={props.connected === false} onClick={props.onToggleGrid}>{props.map.showGrid ? <EyeOff size={16} /> : <Eye size={16} />} {props.map.showGrid ? 'Hide grid' : 'Show grid'}</button>
+      {props.showSharedControls !== false && <><button disabled={props.connected === false} onClick={toggleGrid}>{showGrid ? <EyeOff size={16} /> : <Eye size={16} />} {showGrid ? 'Hide grid' : 'Show grid'}</button>
       <button disabled={props.connected === false} onClick={props.onToggleLabels}>{props.map.showLabels ? <EyeOff size={16} /> : <Eye size={16} />} {props.map.showLabels ? 'Hide labels' : 'Show labels'}</button></>}
 <button onClick={()=>{const c=controlsRef.current;if(c){c.object.position.set(c.target.x,1.5*Math.max(props.map.width,props.map.height),c.target.z+.001);c.update()}}}>Top-down</button><button aria-label="Zoom out" onClick={()=>{const c=controlsRef.current;if(c){c.object.position.sub(c.target).multiplyScalar(1.2).add(c.target);c.update()}}}>−</button><button aria-label="Zoom in" onClick={()=>{const c=controlsRef.current;if(c){c.object.position.sub(c.target).multiplyScalar(.8).add(c.target);c.update()}}}>+</button>{props.showSharedControls!==false&&<button onClick={props.onReturnToTracker}><ChevronLeft size={14}/>Encounter tracker</button>}</div>
       <div className="map-scale-readout" onPointerDown={e=>e.stopPropagation()} onPointerUp={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()}><details><summary>1 sq = {props.map.gridSizeFeet} ft · {props.map.width} × {props.map.height} squares · Scale ▾</summary>      {props.actor?.role!=='player'&&props.onCommand&&<form className="grid-scale-control" onSubmit={e=>{e.preventDefault();const gridSizeFeet=Number(new FormData(e.currentTarget).get('feet'));setMapError('');void props.onCommand?.({type:'map.settings',showGrid:props.map.showGrid,showLabels:props.map.showLabels,gridSizeFeet}).catch(error=>setMapError(error.message))}}><label>Feet per square<input aria-label="Feet per square" name="feet" type="number" min={1} max={100} key={props.map.gridSizeFeet} defaultValue={props.map.gridSizeFeet} required disabled={props.connected===false}/></label><button disabled={props.connected===false}>Apply scale</button>{mapError&&<p role="alert">{mapError}</p>}</form>}
