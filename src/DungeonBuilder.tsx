@@ -1,3 +1,5 @@
+import Modal from './Modal'
+import { isModalOpen } from './modalState'
 import { z } from 'zod'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type {ObjectToolbarContext} from './FloatingObjectToolbar'
@@ -151,7 +153,7 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
   useEffect(() => {
     if (!editing) return
     const cancel = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
+      if (isModalOpen() || event.key !== 'Escape') return
       setTool('select'); setSelected(null); setPickingScenery(false); setArchitecturalPicker(null)
     }
     window.addEventListener('keydown', cancel, true)
@@ -160,6 +162,7 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
   useEffect(() => {
     if (!editing) return
     const key = (e: KeyboardEvent) => {
+      if (isModalOpen()) return
       if (!e.ctrlKey&&!e.metaKey&&!e.altKey&&!e.shiftKey&&!e.repeat&&connected&&!busy&&!preview&&!pickingScenery&&!architecturalPicker&&!(e.target instanceof HTMLElement&&(e.target.isContentEditable||e.target.closest('input,textarea,select,[role=dialog]')))) {const next=({v:'select',f:'floor',w:'wall',d:'door',o:'object',e:'erase'} as const)[e.key.toLowerCase() as 'v'|'f'|'w'|'d'|'o'|'e'];if(next){e.preventDefault();if(next==='object')setPickingScenery(true);else setTool(next);return}}
       if (!connected || busy || preview || pickingScenery || architecturalPicker || e.repeat || !prop || !isScenery(prop) || (e.target instanceof HTMLElement && (e.target.isContentEditable || e.target.closest('input,textarea,select')))) return
       const command: GameCommand | null = e.key === 'Delete' ? { type:'map.scenery.remove', propId:prop.id } : e.shiftKey && e.key.toLowerCase() === 'd' ? { type:'map.scenery.duplicate', propId:prop.id, newId:crypto.randomUUID(), position:{x:Math.min(document!.width-1,prop.position.x+1),z:Math.min(document!.height-1,prop.position.z+1)} } : null
@@ -192,14 +195,14 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
   }
   const editor: EditorInteraction = { activation:toolEpoch, document:document??undefined, toolbar:objectToolbar, drawing: ['wall-line','room','corridor'].includes(tool)?{kind:tool as 'wall-line'|'room'|'corridor',width:corridorWidth,wallsOnly,floor,material:wallMaterial,visual:visualFor(wallAsset)}:undefined,onDraw:command=>{void dispatch(command)}, wallVisual:visualFor(wallAsset),doorVisual:visualFor(doorAsset), snap, scenery: tool === 'sceneryMove' && prop && isScenery(prop) ? prop : sceneryAsset ?? undefined, assetScope: battlefield.assetScope, assetContext: battlefield.assetContext, tool, selectedId: selected?.objectId, previewRotation: tool==='objectMove'&&prop&&!isScenery(prop)?prop.rotation:rotation, onHit: hit, onPaint: cells => { void dispatch({ type: 'map.floor.paint', cells, material: floor }) } }
   return <section ref={workspaceRef} className="dungeon-builder" data-editing={editing} data-inspector-hidden={inspectorHidden}>
-    {architecturalPicker && library && <div className="miniature-dialog" role="dialog" aria-modal="true" aria-label={`Choose ${architecturalPicker.kind} visual`}><AssetLibrary api={library.api} csrf="" pickerTitle={`Choose ${architecturalPicker.kind} visual`} architecturalRole={architecturalPicker.kind} onClose={()=>setArchitecturalPicker(null)} onPick={asset=>{
+    {architecturalPicker && library && <Modal label={`Choose ${architecturalPicker.kind} visual`} onClose={()=>setArchitecturalPicker(null)}><AssetLibrary api={library.api} csrf="" pickerTitle={`Choose ${architecturalPicker.kind} visual`} architecturalRole={architecturalPicker.kind} onClose={()=>setArchitecturalPicker(null)} onPick={asset=>{
       setKnownAssets(previous=>({...previous,[asset.id]:asset}))
       const visual=visualFor(asset)!
       if(architecturalPicker.selected){if(architecturalPicker.kind==='wall'&&selectedWall)void dispatch({type:'map.wall.visual',wallId:selectedWall.id,visual});if(architecturalPicker.kind==='door'&&door)void dispatch({type:'map.door.visual',doorId:door.id,visual})}
       else if(architecturalPicker.kind==='wall'){setWallAsset(asset);setTool('wall')}else{setDoorAsset(asset);setTool('door')}
       setArchitecturalPicker(null)
-    }}/></div>}
-    {pickingScenery && <div className="miniature-dialog" role="dialog" aria-modal="true" aria-label="Add Object"><AssetLibrary api={library?.api ?? (async () => ({assets:[],total:0,maxBytes:25*1024*1024}))} pickerTitle="Add Object" onPickBuiltin={type => { setPropType(type); setSceneryAsset(null); setPickingScenery(false); setTool('object') }} csrf="" onClose={() => setPickingScenery(false)} onPick={chooseScenery} /></div>}
+    }}/></Modal>}
+    {pickingScenery && <Modal label="Add Object" onClose={()=>setPickingScenery(false)}><AssetLibrary api={library?.api ?? (async () => ({assets:[],total:0,maxBytes:25*1024*1024}))} pickerTitle="Add Object" onPickBuiltin={type => { setPropType(type); setSceneryAsset(null); setPickingScenery(false); setTool('object') }} csrf="" onClose={() => setPickingScenery(false)} onPick={chooseScenery} /></Modal>}
     <aside className="builder-tools inspector" hidden={!editing||inspectorHidden} aria-label="Map inspector">
       <header className="inspector-header"><span className="eyebrow">MAP EDITOR</span><h2>{document?.name??'Flat battlefield'}</h2><p>{document&&JSON.stringify({document,name})!==savedDocument?'● Unsaved template changes':'Saved template'} · {state.mapRevision??0} revisions</p><button disabled={!connected||busy||Boolean(preview)} onClick={()=>void save(false)}>Save map</button><button onClick={()=>{workspaceRef.current?.querySelectorAll('.inspector details').forEach(d=>d.removeAttribute('open'))}}>Collapse all</button><button onClick={()=>setInspectorHidden(true)}>Hide panel »</button></header>
       <div className="inspector-scroll"><fieldset disabled={!connected||busy||Boolean(preview)} className="inspector-fields"><legend className="visually-hidden">Map tools</legend>

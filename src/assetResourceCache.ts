@@ -1,6 +1,7 @@
 export interface CachedResource<T> { value: T; bytes: number; dispose: () => void }
 interface Entry<T> { users: number; promise: Promise<T>; resource?: CachedResource<T>; controller: AbortController; timer?: ReturnType<typeof setTimeout>; discarded: boolean }
-// Coalesce requests, bound distinct models/memory, and never dispose a resource in use.
+// Coalesce requests and bound idle retention. Active scenes own their resources;
+// cache retention limits must not reject models accepted by the preview/server.
 export class AssetResourceCache<T> {
   private entries = new Map<string, Entry<T>>()
   private bytes = 0; private running = 0; private waiting: Array<() => void> = []
@@ -19,11 +20,10 @@ export class AssetResourceCache<T> {
     let entry = this.entries.get(key)
     if (!entry) {
       for (const [k, candidate] of this.entries) if (this.entries.size >= this.maxEntries && !candidate.users) this.remove(k, candidate)
-      if (this.entries.size >= this.maxEntries) return { promise: Promise.reject<T>(new Error('3D model budget reached. Use fewer distinct models.')), release() {} }
       const created: Entry<T> = { users: 0, controller: new AbortController(), discarded: false, promise: undefined! }
       created.promise = this.limited(() => this.load(key, created.controller.signal)).then(resource => {
         for (const [k, candidate] of this.entries) if (this.bytes + resource.bytes > this.maxBytes && !candidate.users && candidate !== created) this.remove(k, candidate)
-        if (created.discarded || this.bytes + resource.bytes > this.maxBytes) { resource.dispose(); throw new Error('Model exceeds the available model memory budget.') }
+        if (created.discarded) { resource.dispose(); throw new DOMException('Model load was cancelled.', 'AbortError') }
         created.resource = resource; this.bytes += resource.bytes; return resource.value
       }).catch(error => { if (this.entries.get(key) === created) this.entries.delete(key); throw error })
       entry = created; this.entries.set(key, entry)
@@ -31,6 +31,9 @@ export class AssetResourceCache<T> {
     entry.users++; clearTimeout(entry.timer)
     let released = false
     const acquired = entry
-    return { promise: acquired.promise, release: () => { if (released) return; released = true; acquired.users--; if (!acquired.users) acquired.timer = setTimeout(() => this.remove(key, acquired), this.idleMs) } }
+    return { promise: acquired.promise, release: () => { if (released) return; released = true; acquired.users--; if (!acquired.users) {
+      if (this.bytes > this.maxBytes || this.entries.size > this.maxEntries) this.remove(key, acquired)
+      else acquired.timer = setTimeout(() => this.remove(key, acquired), this.idleMs)
+    } } }
   }
 }

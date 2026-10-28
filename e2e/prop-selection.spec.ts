@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { PerspectiveCamera, Vector3 } from 'three'
+import { projectBattlefield } from './workspace-helpers'
 
 test('placed chairs and tables can be selected and rotated', async ({ page }) => {
   await page.goto('/')
@@ -17,11 +17,10 @@ test('placed chairs and tables can be selected and rotated', async ({ page }) =>
   for (const prop of file.dungeonMap.props) {
     // Click the occupied cell outside the thin seat/tabletop geometry.
     await canvas.scrollIntoViewIfNeeded()
-    const box = (await canvas.boundingBox())!
-    const camera = new PerspectiveCamera(42, box.width / box.height, .1, 300)
-    camera.position.set(12, 14, 12); camera.lookAt(0, 0, 0); camera.updateMatrixWorld()
-    const point = new Vector3(prop.position.x - 9.1, 0, prop.position.z - 9.1).project(camera)
-    await page.mouse.click(box.x + (point.x + 1) * box.width / 2, box.y + (1 - point.y) * box.height / 2)
+    // The inspector changes canvas size during initialization. Use the mounted
+    // camera so the click follows its actual projection after layout settles.
+    const point = await projectBattlefield(page, {x: prop.position.x - 9.1, y: 0, z: prop.position.z - 9.1})
+    await page.mouse.click(point.x, point.y)
     await expect(tools.getByText(`Selected prop: ${prop.id}`, { exact: true })).toBeVisible()
     const floating=page.getByRole('toolbar',{name:prop.type+' controls',exact:true});await expect(floating).toBeVisible();for(const name of ['Move','Rotate','Scale','Duplicate','Delete','Properties'])await expect(floating.getByRole('button',{name,exact:true})).toBeEnabled()
     await floating.getByRole('button',{name:'Scale',exact:true}).click()

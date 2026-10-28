@@ -1,3 +1,4 @@
+import { isModalOpen } from './modalState'
 import FloatingObjectToolbar,{type ObjectToolbarContext} from './FloatingObjectToolbar'
 import ToolbarProjection from './ToolbarProjection'
 import {useEffect,useState} from 'react'
@@ -142,7 +143,7 @@ export default function BattleMap3D(props: BattleMap3DProps) {
   const tacticalDrawerRef=useRef<HTMLDetailsElement>(null)
   const tools=useTacticalTools({records:props.tactical??[],actor:props.actor??{id:'local',role:'dm'},send:props.onCommand,connected:props.connected??true,width:props.map.width,height:props.map.height,feet:props.map.gridSizeFeet,editorTool:`${props.assetContext?.encounterId??'local'}:${props.editor?.tool??'encounter'}:${props.editor?.activation??0}`})
   const toolbarRef=useRef<HTMLDivElement>(null),[dismissed,setDismissed]=useState<string|number|null>(null),[mapError,setMapError]=useState('')
-  useEffect(()=>{const cancel=(e:KeyboardEvent)=>{if(e.key==='Escape')setDismissed(props.selectedId)};window.addEventListener('keydown',cancel);return()=>window.removeEventListener('keydown',cancel)},[props.selectedId])
+  useEffect(()=>{const cancel=(e:KeyboardEvent)=>{if(!isModalOpen()&&e.key==='Escape')setDismissed(props.selectedId)};window.addEventListener('keydown',cancel);return()=>window.removeEventListener('keydown',cancel)},[props.selectedId])
   let toolbar:ObjectToolbarContext|undefined
   if(tools.current&&tools.mode==='navigate'){
     const item=tools.current,anchor=item.kind==='measurement'?item.end:item.position

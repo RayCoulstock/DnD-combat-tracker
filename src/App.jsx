@@ -1,3 +1,4 @@
+import Modal from './Modal'
 import { useMemo, useRef, useState } from 'react'
 import { Check, ChevronRight, Copy, Download, FileJson, HeartPulse, ImagePlus, List, Map, Minus, Plus, RotateCcw, Shield, Skull, Sparkles, Swords, Trash2, Upload, UserPlus, X } from 'lucide-react'
 import MiniatureSettings from './MiniatureSettings'
@@ -236,7 +237,7 @@ function App({ multiplayer = null, assetScope = undefined }) {
           </>}
         </section>
       </div>}
-      {showAddCombatant && <div className="modal-backdrop" onMouseDown={() => setShowAddCombatant(false)}>
+      {showAddCombatant && <Modal className="modal-backdrop" label="Add combatants" onClose={() => setShowAddCombatant(false)}>
         <form className="combatant-modal" onSubmit={addCombatant} onMouseDown={(event) => event.stopPropagation()}>
           <div className="modal-heading"><span className="modal-icon"><Upload size={19} /></span><div><span className="eyebrow">IMPORT CREATURE</span><h2>Add a combatant</h2></div><button type="button" className="close-button" disabled={!canChange} onClick={() => setShowAddCombatant(false)} aria-label="Close"><X size={19} /></button></div>
           <p className="modal-help">Paste a plain-text stat block. We’ll pull out its core stats, skills, senses, traits, actions, and reactions.</p>
@@ -249,7 +250,7 @@ function App({ multiplayer = null, assetScope = undefined }) {
           </div>
           <div className="modal-actions"><button type="button" className="cancel-button" disabled={!canChange} onClick={() => setShowAddCombatant(false)}>Cancel</button><button type="submit" className="primary" disabled={!canChange || !statBlock.trim()}><Plus size={17} /> Add to encounter</button></div>
         </form>
-      </div>}
+      </Modal>}
     </main>
   )
 }

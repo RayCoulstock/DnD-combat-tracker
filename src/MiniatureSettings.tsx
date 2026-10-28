@@ -1,3 +1,4 @@
+import Modal from './Modal'
 import { useEffect, useState } from 'react'
 import AssetLibrary from './AssetLibrary'
 import AssetPreview3D from './AssetPreview3D'
@@ -19,7 +20,7 @@ export default function MiniatureSettings({ combatant, api, csrf, send, onClose,
     try { await send({ type: 'combatant.miniature.update', combatantId: combatant.id, miniature: miniatureSchema.parse(appearance) }); onClose() }
     catch (e) { setMessage((e as Error).message) } finally { setBusy(false) }
   }
-  return <div className="miniature-dialog" role="dialog" aria-modal="true" aria-label={`Miniature settings for ${combatant.name}`}>
+  return <Modal label={`Miniature settings for ${combatant.name}`} onClose={onClose}>
     {picking ? <AssetLibrary api={api} csrf={csrf} onClose={() => setPicking(false)} onPick={chosen => { setAsset(chosen); setDraft(appearanceFromAsset(chosen, draft.baseSize)); setPicking(false); setMessage('') }} /> : <section className="miniature-settings">
       <h2>3D miniature — {combatant.name}</h2><p>Currently assigned: {asset?.id === draft.assetId ? asset.name : draft.assetId ?? 'Original placeholder'}</p>
       <button onClick={() => setPicking(true)} disabled={!connected || busy}>Browse Asset Library</button><button onClick={onClose}>Close miniature settings</button>
@@ -34,5 +35,5 @@ export default function MiniatureSettings({ combatant, api, csrf, send, onClose,
         <button>Save miniature</button><button type="button" onClick={() => void save({ ...draft, assetId: null })}>Restore placeholder token</button>
       </fieldset></form>{message && <p role="alert">{message}</p>}
     </section>}
-  </div>
+  </Modal>
 }
