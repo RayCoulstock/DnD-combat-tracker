@@ -1,3 +1,4 @@
+import { isModalOpen } from './modalState'
 import {useEffect,useRef,useState} from 'react'
 import {Html,Line} from '@react-three/drei'
 import {DoubleSide,Shape} from 'three'
@@ -6,7 +7,7 @@ import {feetToWorld,measurementDistance,type TacticalObject,type TacticalRecord}
 export interface TacticalInteraction{mode:'navigate'|'measure'|'template'|'move';rule:'euclidean'|'diagonal-one'|'diagonal-alternating';onPoint:(point:{x:number;z:number},finish:boolean)=>void;onMeasure:(start:{x:number;z:number},end:{x:number;z:number},finish:boolean)=>void}
 export function TacticalSurface({width,height,interaction}:{width:number;height:number;interaction:TacticalInteraction}){
  const start=useRef<{x:number;z:number}|null>(null)
- useEffect(()=>{const cancel=(e:KeyboardEvent)=>{if(e.key==='Escape')start.current=null};window.addEventListener('keydown',cancel);return()=>window.removeEventListener('keydown',cancel)},[])
+ useEffect(()=>{const cancel=(e:KeyboardEvent)=>{if(!isModalOpen()&&e.key==='Escape')start.current=null};window.addEventListener('keydown',cancel);return()=>window.removeEventListener('keydown',cancel)},[])
  const point=(e:ThreeEvent<PointerEvent>)=>{const raw={x:Math.max(0,Math.min(width,e.point.x+width/2)),z:Math.max(0,Math.min(height,e.point.z+height/2))};return interaction.mode==='measure'&&interaction.rule!=='euclidean'?{x:Math.round(raw.x),z:Math.round(raw.z)}:raw}
  return <mesh position={[0,.035,0]} rotation={[-Math.PI/2,0,0]} onPointerDown={e=>{if(e.button!==0)return;e.stopPropagation();if(e.pointerType==='touch'&&!e.isPrimary){start.current=null;return}start.current=point(e);(e.target as unknown as {setPointerCapture:(id:number)=>void}).setPointerCapture(e.pointerId)}} onPointerMove={e=>{e.stopPropagation();const p=point(e);if(interaction.mode==='measure'){if(start.current)interaction.onMeasure(start.current,p,false)}else interaction.onPoint(p,false)}} onPointerUp={e=>{if(e.button!==0)return;e.stopPropagation();const p=point(e);if(interaction.mode==='measure'){if(start.current)interaction.onMeasure(start.current,p,true)}else if(start.current&&e.delta<=3)interaction.onPoint(p,true);start.current=null}} onPointerCancel={()=>{start.current=null}}><planeGeometry args={[width,height]}/><meshBasicMaterial transparent opacity={0} depthWrite={false}/></mesh>
 }

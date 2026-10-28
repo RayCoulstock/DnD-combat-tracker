@@ -1,8 +1,8 @@
 import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
-import { Component, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Component, useEffect, useLayoutEffect, useMemo, useRef, useState, useId, type ReactNode } from 'react'
 import { Box3, Group, Vector3 } from 'three'
-import { loadGlb, cloneArchitecture, cloneMiniature, disposeInstance } from './modelResources'
+import { miniatureModels, cloneArchitecture, cloneMiniature, disposeInstance } from './modelResources'
 import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import type { Asset3D } from '../shared/assets'
@@ -33,17 +33,19 @@ function PreviewScene({ model, reset }: { model: Group; reset: number }) {
   </>
 }
 export default function AssetPreview3D({ asset, normalize = false, architecturalPreview = false }: { asset: Asset3D; normalize?: boolean; architecturalPreview?: boolean }) {
+  const cacheScope = useId()
   const [loaded, setLoaded] = useState<{ id: string; source: Group } | null>(null), [error, setError] = useState<{ id: string; message: string } | null>(null), [reset, setReset] = useState(0)
   const p = asset.presentation, architecture=architecturalPreview && p.architecture && ['wall','door'].includes(p.architecture.role) ? p.architecture : undefined
   useEffect(() => {
-    const controller = new AbortController(); let disposed = false, release: (() => void) | undefined
-    void loadGlb(`/api/assets/${asset.id}/file`, controller.signal).then(resource => {
-      release = resource.dispose
-      if (disposed) { release(); return }
-      setLoaded({ id: asset.id, source: resource.value })
+    let disposed = false
+    // Preview leases share lifecycle/budget policy with maps. A mount-scoped key
+    // prevents preview resources surviving an account switch from being reused.
+    const lease = miniatureModels.acquire(`/api/assets/${encodeURIComponent(asset.id)}/file#preview-${cacheScope}`)
+    void lease.promise.then(source => {
+      if (!disposed) setLoaded({ id: asset.id, source })
     }).catch(e => { if (!disposed) setError({ id: asset.id, message: e.message || 'Unable to load model.' }) })
-    return () => { disposed = true; controller.abort(); release?.() }
-  }, [asset.id])
+    return () => { disposed = true; lease.release() }
+  }, [asset.id, cacheScope])
   const prepared = useMemo(() => {
     if (loaded?.id !== asset.id) return null
     try {

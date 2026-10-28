@@ -27,7 +27,7 @@ const LoadedModel=memo(function LoadedModel({url,transform,fallback,kind,ghost,s
   return <>
     {model?<group rotation={[0,transform.rotation*Math.PI/180,0]} scale={transform.scale} position={[0,transform.verticalOffset,0]}><primitive object={model} dispose={null}/>{selected&&<mesh position={result!.centre} scale={result!.size}><boxGeometry/><meshBasicMaterial color="#70c8ff" wireframe depthTest={false}/></mesh>}</group>:fallback}
     {model&&!ghost&&<Html style={{pointerEvents:'none'}}><span className="visually-hidden" {...{[`data-${kind}-state`]:'ready'}}>3D {kind} ready</span></Html>}
-    {!model&&<Html position={[0,.8,0]} center style={ghost?{pointerEvents:'none'}:undefined}><span className="token-label" role={error?'alert':'status'} title={error}><span>{error?'Model unavailable':`Loading ${kind}…`}</span>{error&&!ghost&&<button onClick={e=>{e.stopPropagation();setResult(null);setRetry(n=>n+1)}}>Retry model</button>}</span></Html>}
+    {!model&&<Html position={[0,.8,0]} center style={ghost?{pointerEvents:'none'}:undefined}><span className="token-label" role={error?'alert':'status'} title={error}><span>{error?'Model unavailable':`Loading ${kind}…`}</span>{error&&<span className="model-error-detail">{error}</span>}{error&&!ghost&&<button onClick={e=>{e.stopPropagation();setResult(null);setRetry(n=>n+1)}}>Retry model</button>}</span></Html>}
   </>
 })
 export default function SharedModel3D({url,transform,fallback,unavailable=false,kind='scenery',ghost=false,selected=false,architecture}:{url:string;transform:Transform;fallback:ReactNode;unavailable?:boolean;kind?:'miniature'|'scenery'|'wall'|'door';ghost?:boolean;selected?:boolean;architecture?:Calibration}){

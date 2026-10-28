@@ -16,11 +16,14 @@ export function disposeModel(root: Object3D) {
 }
 export async function loadGlb(url: string, signal: AbortSignal) {
   const response = await fetch(url, { credentials: 'same-origin', signal })
-  if (!response.ok) throw new Error('Model unavailable or access ended. Showing a placeholder.')
+  if (!response.ok) throw new Error(`Model request failed (HTTP ${response.status}). ${response.status === 401 || response.status === 403 ? 'Sign in or rejoin the encounter, then retry.' : 'Check asset access and storage, then retry.'}`)
   const buffer = await response.arrayBuffer()
+  signal.throwIfAborted()
   const manager = new LoadingManager()
   manager.setURLModifier(resource => { if (!resource.startsWith('blob:')) throw new Error('External model resources are disabled.'); return resource })
-  const gltf = await new GLTFLoader(manager).parseAsync(buffer, '')
+  let gltf
+  try { gltf = await new GLTFLoader(manager).parseAsync(buffer, '') }
+  catch (error) { throw Object.assign(new Error(`Unable to parse GLB: ${error instanceof Error ? error.message : String(error)}`), { cause: error }) }
   const resources = new Group(); gltf.scenes.forEach(scene => resources.add(scene))
   gltf.scenes.forEach(scene => scene.traverse(object => { if (object instanceof Mesh && !object.material) object.material = new MeshStandardMaterial({ color: '#aaa99f' }) }))
   const geometries = new Set<Mesh['geometry']>(), textures = new Set<Texture>()
@@ -31,6 +34,7 @@ export async function loadGlb(url: string, signal: AbortSignal) {
   let bytes = buffer.byteLength
   geometries.forEach(g => { Object.values(g.attributes).forEach(a => { bytes += a.array.byteLength }); bytes += g.index?.array.byteLength ?? 0 })
   textures.forEach(t => { const image = t.image as { width?: number; height?: number }; bytes += (image?.width ?? 0) * (image?.height ?? 0) * 6 })
+  if (signal.aborted) { disposeModel(resources); signal.throwIfAborted() }
   return { value: gltf.scene, bytes, dispose: () => disposeModel(resources) }
 }
 export function normalization(root: Object3D) {

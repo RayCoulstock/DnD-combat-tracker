@@ -15,17 +15,17 @@ test('normalisation grounds/centres tiny, large, flat and multi-mesh models with
   assert.ok(new Box3().setFromObject(cloneMiniature(flat)).getSize(new Vector3()).z <= 1.001)
   assert.throws(() => cloneMiniature(new Group()), /bounds/)
 })
-test('cache shares fetch/parse, bounds distinct models and retains resources until last release', async () => {
+test('cache shares fetch/parse and bounds idle retention without rejecting active models', async () => {
   let loads = 0, disposed = 0
   const cache = new AssetResourceCache(async key => { loads++; return { value: key, bytes: 8, dispose() { disposed++ } } }, 1, 10, 5)
   const first = cache.acquire('same'), second = cache.acquire('same')
   assert.equal(await first.promise, await second.promise); assert.equal(loads, 1)
   first.release(); await new Promise(r => setTimeout(r, 10)); assert.equal(disposed, 0)
-  await assert.rejects(cache.acquire('other').promise, /budget/)
-  second.release(); await new Promise(r => setTimeout(r, 10)); assert.equal(disposed, 1)
+  const concurrent = cache.acquire('other'); assert.equal(await concurrent.promise, 'other'); concurrent.release()
+  second.release(); await new Promise(r => setTimeout(r, 10)); assert.equal(disposed, 2)
   const next = cache.acquire('other'); assert.equal(await next.promise, 'other'); next.release()
   const huge = new AssetResourceCache(async () => ({ value: 1, bytes: 20, dispose() { disposed++ } }), 2, 10, 1)
-  const failed = huge.acquire('large'); await assert.rejects(failed.promise, /memory budget/); failed.release()
+  const large = huge.acquire('large'); assert.equal(await large.promise, 1); const before = disposed; large.release(); assert.equal(disposed, before + 1)
 })
 
 test('skinned instances have independent bones and releasing one never disposes shared geometry', () => {
@@ -67,4 +67,40 @@ test('architectural normalization fits corrected width, grounding and endpoint a
   const turned=new Box3().setFromObject(cloneArchitecture(source,calibrationSchema.parse({facing:'+X'}))).getSize(new Vector3())
   assert.ok(Math.abs(turned.x-1)<1e-6);assert.ok(Math.abs(turned.y-.5)<1e-6)
   assert.throws(()=>cloneArchitecture(new Group(),calibrationSchema.parse({})),/safely/)
+})
+
+
+test('failed loads can retry; late completion after last release is disposed once', async () => {
+  let attempts = 0, disposed = 0
+  const cache = new AssetResourceCache(async () => {
+    if (++attempts === 1) throw new Error('HTTP 503')
+    return {value: new Group(), bytes: 1, dispose() {disposed++}}
+  }, 16, 10, 1)
+  const failed = cache.acquire('retry'); await assert.rejects(failed.promise, /503/); failed.release()
+  const retry = cache.acquire('retry'); assert.ok(await retry.promise instanceof Group); retry.release()
+  await new Promise(r => setTimeout(r, 5)); assert.equal(disposed, 1)
+  let finish!: (value: {value: Group; bytes: number; dispose: () => void}) => void
+  const late = new AssetResourceCache(() => new Promise(resolve => {finish = resolve}), 16, 10, 1)
+  const lease = late.acquire('late'); lease.release()
+  const rejection = assert.rejects(lease.promise, /cancelled/)
+  await new Promise(r => setTimeout(r, 5))
+  finish({value: new Group(), bytes: 1, dispose() {disposed++}})
+  await rejection; assert.equal(disposed, 2)
+})
+
+test('GLB loader uses authenticated fetch and provides actionable request/parse errors', async t => {
+  const {loadGlb} = await import('../src/modelResources.ts')
+  const {makeGlb} = await import('../test-fixtures/glb.ts')
+  let request: RequestInit | undefined
+  t.mock.method(globalThis, 'fetch', async (_url: unknown, init: RequestInit) => {request = init; return new Response(new Uint8Array(makeGlb()))})
+  const controller = new AbortController(), resource = await loadGlb('/api/assets/model/file#actor', controller.signal)
+  assert.equal(request?.credentials, 'same-origin'); assert.equal(request?.signal, controller.signal)
+  assert.ok(new Box3().setFromObject(cloneMiniature(resource.value)).getSize(new Vector3()).y > 0)
+  resource.dispose()
+  t.mock.method(globalThis, 'fetch', async () => new Response('', {status:403}))
+  await assert.rejects(loadGlb('/file', controller.signal), /HTTP 403.*rejoin/)
+  t.mock.method(globalThis, 'fetch', async () => new Response('invalid GLB'))
+  await assert.rejects(loadGlb('/file', controller.signal), /Unable to parse GLB/)
+  controller.abort()
+  await assert.rejects(loadGlb('/file', controller.signal), {name:'AbortError'})
 })
