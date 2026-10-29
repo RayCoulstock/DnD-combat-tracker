@@ -1,0 +1,44 @@
+/* The expanded workspace sits above app panels. Native modal dialogs retain the
+   browser top layer; battlefield depth labels stay in their isolated context. */
+:root { --layer-expanded-map:40; }
+body.map-viewport-expanded { overflow:hidden; }
+[data-map-expanded=true] { position:fixed!important; inset:0!important; margin:0!important; width:100vw!important; height:100dvh!important; min-height:0!important; max-height:none!important; border-radius:0!important; z-index:var(--layer-expanded-map); background:#171a19; }
+.viewport-toolbar { position:absolute; z-index:5; left:14px; top:12px; display:flex; align-items:center; flex-wrap:wrap; gap:4px; max-width:calc(100% - 28px); padding:5px; border:1px solid #e4ddd0; border-radius:9px; background:#f4f0e8; color:#322e28; }
+.viewport-toolbar button { padding:5px 7px; font-size:11px; }
+.viewport-toolbar details { position:relative; font-size:11px; }
+.viewport-toolbar details[open] { padding:5px; }
+.viewport-toolbar label { display:flex; align-items:center; gap:4px; }
+.viewport-toolbar p { flex-basis:100%; margin:3px; max-width:320px; font-size:11px; }
+.tabletop-shell .battlefield-help { top:58px; }
+.tabletop-shell .level-view-controls { top:62px; right:14px; max-width:calc(100% - 105px); }
+.tabletop-shell .tactical-drawer { top:145px; max-height:calc(100% - 250px); }
+.tabletop-shell .transition-travel-tools { position:absolute; z-index:3; right:14px; top:190px; background:#f4f0e8; color:#322e28; border-radius:9px; padding:8px; max-width:260px; max-height:calc(100% - 280px); overflow:auto; font-size:11px; }
+.transition-travel-tools div { display:flex; flex-wrap:wrap; gap:5px; padding:5px 0; }
+.transitions-panel label,.transitions-panel fieldset { display:block; min-width:0; margin:6px 0; }
+.transitions-panel input,.transitions-panel select,.transitions-panel textarea { max-width:100%; min-width:0; width:100%; }
+.transitions-panel button { margin:4px 0; }
+[data-map-expanded=true] .editor-history { top:105px; }
+[data-map-expanded=true] .editor-palette { top:150px; max-height:calc(100% - 240px); }
+[data-map-expanded=true] .inspector-reopen { top:105px; }
+@media(max-width:800px) {
+ .viewport-toolbar { left:5px; top:5px; max-width:calc(100% - 10px); gap:2px; }
+ .viewport-toolbar button { font-size:10px; padding:6px 4px; }
+ .tabletop-shell .level-view-controls { top:90px; right:5px; max-width:calc(100% - 90px); }
+ .tabletop-shell .tactical-drawer { top:175px; right:5px; max-width:220px; }
+ .tabletop-shell .transition-travel-tools { top:220px; right:5px; max-width:220px; }
+ [data-map-expanded=true] .editor-history { top:65px; }
+}
+.dungeon-builder[data-map-expanded=true] { grid-template-columns:minmax(0,1fr)!important; }
+.dungeon-builder[data-map-expanded=true]>.inspector { display:none!important; }
+.dungeon-builder[data-map-expanded=true][data-expanded-inspector=true][data-editing=true] { grid-template-columns:minmax(0,1fr) 330px!important; }
+.dungeon-builder[data-map-expanded=true][data-expanded-inspector=true][data-editing=true]>.inspector { display:flex!important; }
+@media(max-width:800px) {
+ .dungeon-builder[data-map-expanded=true][data-expanded-inspector=true][data-editing=true] { grid-template-columns:minmax(0,1fr)!important; }
+ .dungeon-builder[data-map-expanded=true][data-expanded-inspector=true][data-editing=true]>.inspector { position:absolute; z-index:6; right:0; top:65px; bottom:0; width:min(300px,calc(100% - 65px)); }
+}
+/* Override the legacy inspector's two-column fieldset layout at its scope. */
+.builder-tools .transitions-panel fieldset { display:block; }
+.transitions-panel>section { padding:10px; }
+.transition-confirmation { max-width:540px; margin:30px auto; }
+.transition-confirmation label { display:flex; gap:8px; align-items:flex-start; margin:14px 0; }
+.transition-confirmation button { margin:6px; padding:9px; }

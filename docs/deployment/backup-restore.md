@@ -85,3 +85,9 @@ GLB references across every level, template and retained history frame. Continue
 backing up the database and private asset volume as a matched set. Once v5 maps
 have been saved, an older application cannot read them; rollback requires the
 matching pre-upgrade database backup. See [multi-level maps](../multi-level-battle-maps.md).
+
+Floor transitions (schema version 6, migration 010) use the same matched database
+and private asset backup. Transition-only model references in current maps,
+templates and retained history must remain available. Older application versions
+cannot read v6 maps; follow the coordinated rollout and rollback guidance in
+[vertical navigation and fullscreen maps](../vertical-navigation-fullscreen.md).

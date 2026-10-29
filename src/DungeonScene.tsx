@@ -11,7 +11,8 @@ import { isScenery, sceneryAtPoint, type SceneryProp } from '../shared/scenery'
 import { canonicalWall, type Cell, type DungeonMap, type ProceduralProp, type Wall } from '../shared/dungeon'
 export interface EditorHit { edgeDistance?: number; position?: Cell; cell: Cell; wall: Wall; objectId?: string; kind?: 'prop' | 'wall' | 'door' }
 export interface EditorInteraction {
-  tool: 'select' | 'floor' | 'wall' | 'door' | 'object' | 'erase' | 'scenery' | 'sceneryMove' | 'wall-line' | 'room' | 'corridor' | 'objectMove'
+  tool: 'transition' | 'select' | 'floor' | 'wall' | 'door' | 'object' | 'erase' | 'scenery' | 'sceneryMove' | 'wall-line' | 'room' | 'corridor' | 'objectMove'
+  transitionPicking?:boolean
   activation?:number
   document?:DungeonMap
   drawing?: Omit<Drawing,'type'|'start'|'end'>

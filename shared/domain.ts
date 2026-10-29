@@ -1,3 +1,4 @@
+import {transitionRoute} from './transitions.ts'
 import {reuseDungeonGeometry,dungeonLevels,composeLevels,primaryLevelId} from './dungeon.ts'
 import { z } from 'zod'
 import {tacticalCommands,tacticalRecordSchema,activeTactical,assertTacticalBounds,type TacticalRecord} from './tactical.ts'
@@ -44,13 +45,14 @@ export function importEncounter(value: unknown, preservePermissions = false): En
   const ids = new Set(combatants.map(c => c.id))
   return reconcileLevelTokens({ ...(data.tactical?{tactical:data.tactical.filter(r=>r.kind==='template').map(r=>({...r,ownerId:preservePermissions?r.ownerId:'imported'}))}:{}), version: 1, round: data.round, activeId: ids.has(data.activeId!) ? data.activeId! : combatants[0]?.id ?? null,
     selectedId: ids.has(data.selectedId!) ? data.selectedId! : combatants[0]?.id ?? null,
-    usedAbilities: data.usedAbilities, combatants, ...(data.dungeonMap ? { dungeonMap: data.dungeonMap } : {}), battleMap: normalizeBattleMap(data.dungeonMap ? { ...(data.battleMap as object ?? {}), width: data.dungeonMap.width, height: data.dungeonMap.height } : data.battleMap, combatants.map(c => c.id)) })
+    usedAbilities: data.usedAbilities, combatants, ...(data.dungeonMap ? { dungeonMap: data.dungeonMap } : {}), battleMap: normalizeBattleMap(data.dungeonMap ? { ...(data.battleMap as object ?? {}), width: Math.max(...dungeonLevels(data.dungeonMap).map(l=>l.width)), height: Math.max(...dungeonLevels(data.dungeonMap).map(l=>l.height)) } : data.battleMap, combatants.map(c => c.id)) })
 }
 export const emptyEncounter = (): EncounterState => importEncounter({ version: 1, round: 1, combatants: [] })
 const target = { combatantId: idSchema }
 export const commandSchema = z.discriminatedUnion('type', [
   ...mapCommandSchemas, ...tacticalCommands,
   z.object({ type: z.literal('map.generate'), options: generationOptionsSchema }).strict(),
+  z.object({type:z.literal('combatant.transition.use'),...target,transitionId:z.string().min(1).max(100),from:z.enum(['source','destination']),allowRemoteSource:z.boolean().default(false),allowOccupied:z.boolean().default(false)}).strict(),
   z.object({type:z.literal('combatant.floor.transfer'),...target,floorId:z.string().min(1).max(100),destination:z.object({x:z.number().int(),z:z.number().int()}).strict()}).strict(),
   z.object({ type: z.literal('token.move'), ...target, destination: z.object({ x: z.number().int(), z: z.number().int() }).strict() }).strict(),
   z.object({ type: z.literal('combatant.miniature.update'), ...target, miniature: miniatureSchema }).strict(),
@@ -102,6 +104,19 @@ export function applyCommand(state: EncounterState, actor: Actor, command: GameC
   if ('combatantId' in command && !c) throw new DomainError('NOT_FOUND', 'Combatant not found.')
   const update = (patch: Partial<Combatant>) => ({ ...state, combatants: state.combatants.map(item => item === c ? { ...item, ...patch } : item) })
   switch (command.type) {
+    case 'combatant.transition.use': {
+      const transition=state.dungeonMap?.transitions?.find(t=>t.id===command.transitionId)
+      if(!transition)throw new DomainError('INVALID','Transition no longer exists.')
+      let route
+      try{route=transitionRoute(transition,command.from)}catch(error){throw new DomainError('INVALID',(error as Error).message)}
+      const {source,destination}=route,position=state.battleMap.tokens[String(c!.id)]
+      if(combatantFloorId(state,c!)!==source.floorId)throw new DomainError('INVALID','Combatant is not on the source floor.')
+      if((position?.x!==source.x||position?.z!==source.z)&&!command.allowRemoteSource)throw new DomainError('INVALID','Combatant is not on the source square. Confirm the remote transfer override.')
+      const level=state.dungeonMap&&dungeonLevels(state.dungeonMap).find(l=>l.id===destination.floorId)
+      if(!level||!isGridPosition(destination,level.width,level.height))throw new DomainError('INVALID','Transition destination is unavailable.')
+      if(state.combatants.some(other=>other!==c&&combatantFloorId(state,other)===destination.floorId&&state.battleMap.tokens[String(other.id)]?.x===destination.x&&state.battleMap.tokens[String(other.id)]?.z===destination.z)&&!command.allowOccupied)throw new DomainError('INVALID','Destination is occupied. Confirm stacking to continue.')
+      return {...update({floorId:destination.floorId}),battleMap:{...state.battleMap,tokens:{...state.battleMap.tokens,[String(c!.id)]:{x:destination.x,z:destination.z}}}}
+    }
     case 'combatant.floor.transfer': {
       const level=state.dungeonMap&&dungeonLevels(state.dungeonMap).find(l=>l.id===command.floorId)
       if(!level||!isGridPosition(command.destination,level.width,level.height))throw new DomainError('INVALID','Choose a destination inside an existing level.')
@@ -244,5 +259,7 @@ export function playerDungeon(map?:DungeonMap):DungeonMap|undefined{
   if(!levels.length)return undefined
   // Legacy maps retain their public wire format; multi-level maps expose visible levels only.
   if(!map.level)return {...map,props:levels[0].props}
-  return composeLevels(map,levels)
+  const visible=new Set(levels.map(l=>l.id))
+  const transitions=map.transitions?.filter(t=>visible.has(t.source.floorId)&&visible.has(t.destination.floorId)).map(t=>{const {dmNotes,...publicTransition}=t;void dmNotes;return publicTransition})
+  return composeLevels({...map,...(transitions?{transitions}:{})},levels)
 }
