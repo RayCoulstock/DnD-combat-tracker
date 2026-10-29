@@ -7,7 +7,7 @@ import {drawingBatch,type Drawing} from '../shared/drawing'
 export default function DrawingSurface({width,height,settings,onCommit,document}:{width:number;height:number;settings:Omit<Drawing,'type'|'start'|'end'>;onCommit:(command:Drawing)=>void;document?:DungeonMap}){
  const start=useRef<{x:number;z:number}|null>(null),[draft,setDraft]=useState<Drawing|null>(null)
  useEffect(()=>{const key=(e:KeyboardEvent)=>{if(!isModalOpen()&&e.key==='Escape'){start.current=null;setDraft(null)}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key)},[])
- const point=(e:ThreeEvent<PointerEvent>)=>({x:Math.max(0,Math.min(width,Math.round(e.point.x+width/2))),z:Math.max(0,Math.min(height,Math.round(e.point.z+height/2)))})
+ const point=(e:ThreeEvent<PointerEvent>)=>{const local=e.object.parent!.worldToLocal(e.point.clone());return {x:Math.max(0,Math.min(width,Math.round(local.x+width/2))),z:Math.max(0,Math.min(height,Math.round(local.z+height/2)))}}
  const update=(e:ThreeEvent<PointerEvent>)=>{if(start.current){const d={...settings,type:'map.draw' as const,start:start.current,end:point(e)};setDraft(d);return d}}
  let preview:ReturnType<typeof drawingBatch>|undefined
  let invalid=''

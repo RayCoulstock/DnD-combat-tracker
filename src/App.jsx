@@ -3,7 +3,7 @@ import { useMemo, useRef, useState } from 'react'
 import { Check, ChevronRight, Copy, Download, FileJson, HeartPulse, ImagePlus, List, Map, Minus, Plus, RotateCcw, Shield, Skull, Sparkles, Swords, Trash2, Upload, UserPlus, X } from 'lucide-react'
 import MiniatureSettings from './MiniatureSettings'
 import DungeonBuilder from './DungeonBuilder'
-import { emptyHistory } from '../shared/dungeon'
+import { emptyHistory,dungeonLevels,primaryLevelId } from '../shared/dungeon'
 import { generateDungeon } from '../shared/generator'
 import { applyCommand, applyMapEdit, isMapEdit, commandSchema, importEncounter as readEncounter } from '../shared/domain'
 
@@ -84,6 +84,8 @@ function App({ multiplayer = null, assetScope = undefined }) {
   const [{ encounter: localState, history: localHistory }, setLocal] = useState(() => ({ encounter: readEncounter({ version: 1, round: 3, activeId: 1, combatants: initialCombatants }), history: emptyHistory() }))
   const state = multiplayer?.snapshot.state ?? localState
   const { combatants, activeId, round, usedAbilities, battleMap } = state
+  const [activeFloorId,setActiveFloorId]=useState('ground')
+  const creationFloorId=state.dungeonMap&&dungeonLevels(state.dungeonMap).some(level=>level.id===activeFloorId)?activeFloorId:primaryLevelId(state.dungeonMap)
   const [miniatureOpen, setMiniatureOpen] = useState(false)
   const [selectedId, setSelectedId] = useState(1)
   const [amount, setAmount] = useState('')
@@ -135,13 +137,13 @@ function App({ multiplayer = null, assetScope = undefined }) {
     const parsed = parseStatBlock(statBlock, newInitiative, newSide)
     const quantity = Math.max(1, Math.min(20, Number(newQuantity) || 1))
     const additions = Array.from({ length: quantity }, (_, index) => ({ ...parsed, id: uniqueId(), name: quantity > 1 ? `${parsed.name} ${index + 1}` : parsed.name }))
-    perform({ type: 'combatant.add', combatants: additions })
+    perform({ type: 'combatant.add', floorId:creationFloorId, combatants: additions })
     setSelectedId(additions[0].id); setStatBlock(''); setNewInitiative(''); setNewQuantity('1'); setShowAddCombatant(false)
   }
   const duplicateCombatant = () => {
     if (!selected) return
     const duplicate = { ...selected, id: uniqueId(), name: `${selected.name} Copy` }
-    perform({ type: 'combatant.add', combatants: [duplicate] }); setSelectedId(duplicate.id)
+    perform({ type: 'combatant.add', floorId:creationFloorId, combatants: [duplicate] }); setSelectedId(duplicate.id)
   }
   const removeCombatant = () => { if (selected) perform({ type: 'combatant.remove', combatantId: selected.id }) }
   const clearEncounter = () => { if (window.confirm('Remove every combatant from this encounter?')) perform({ type: 'encounter.clear' }) }
@@ -190,7 +192,7 @@ function App({ multiplayer = null, assetScope = undefined }) {
       <input ref={artworkInputRef} className="visually-hidden" type="file" accept="image/*" onChange={updateArtwork} />
       {fileMessage && <div className={`file-message ${fileMessage.tone}`} role="status"><FileJson size={16} /><span>{fileMessage.text}</span><button onClick={() => setFileMessage(null)} aria-label="Dismiss message"><X size={14} /></button></div>}
 
-      {view !== 'tracker' ? <DungeonBuilder state={state} editing={view === 'editor'} connected={canChange} send={send} library={multiplayer?.library} battlefield={{ tactical: state.tactical ?? [], actor: multiplayer?.snapshot.actor ?? {id:'local',role:'dm'}, onCommand:send, connected:canChange, onAppearance:multiplayer?.library?()=>setMiniatureOpen(true):undefined, assetScope: multiplayer?.snapshot.actor.id ?? assetScope, assetContext: multiplayer ? { campaignId: multiplayer.snapshot.campaignId, encounterId: multiplayer.snapshot.encounterId } : undefined, combatants, round, selectedId: selected?.id ?? null, activeId, onSelectToken: setSelectedId, onMoveToken: moveToken, onToggleGrid: () => mapSettings({ showGrid: !battleMap.showGrid }), onToggleLabels: () => mapSettings({ showLabels: !battleMap.showLabels }), onReturnToTracker: () => setView('tracker'), canMove: canChange }} /> : <div className="workspace">
+      {view !== 'tracker' ? <DungeonBuilder state={state} editing={view === 'editor'} connected={canChange} send={send} library={multiplayer?.library} battlefield={{ onActiveLevelChange:setActiveFloorId, tactical: state.tactical ?? [], actor: multiplayer?.snapshot.actor ?? {id:'local',role:'dm'}, onCommand:send, connected:canChange, onAppearance:multiplayer?.library?()=>setMiniatureOpen(true):undefined, assetScope: multiplayer?.snapshot.actor.id ?? assetScope, assetContext: multiplayer ? { campaignId: multiplayer.snapshot.campaignId, encounterId: multiplayer.snapshot.encounterId } : undefined, combatants, round, selectedId: selected?.id ?? null, activeId, onSelectToken: setSelectedId, onMoveToken: moveToken, onToggleGrid: () => mapSettings({ showGrid: !battleMap.showGrid }), onToggleLabels: () => mapSettings({ showLabels: !battleMap.showLabels }), onReturnToTracker: () => setView('tracker'), canMove: canChange }} /> : <div className="workspace">
         <aside className="initiative-panel">
           <div className="panel-heading"><div><span className="eyebrow">COMBAT QUEUE</span><h2>Initiative order</h2></div><span className="count">{combatants.length}</span></div>
           <div className="initiative-list">

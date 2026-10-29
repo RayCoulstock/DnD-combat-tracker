@@ -1,3 +1,6 @@
+import {makeTexturedGlb} from '../../test-fixtures/glb.ts'
+import {dungeonLevels} from '../../shared/dungeon.ts'
+import {combatantSchema} from '../../shared/domain.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
@@ -108,6 +111,64 @@ test('floor images use private persistent assets, transactional map revisions, h
       await app.close();await recoverFloorImages(pool,storage);app=createApplication(options);await new Promise<void>(resolve=>app.http.listen(port,'127.0.0.1',resolve))
       await Promise.all([dm.connect(campaign.id),p1.connect(campaign.id)])
       assert.deepEqual(p1.snapshot!.state.dungeonMap!.floorImage,image);await p1.file(asset.id,campaign.id,encounter.id)
+    })
+    await t.test('three persistent levels isolate edits, references, permission checks and late player snapshots',async()=>{
+      await dm.command({type:'map.level.add',id:'tower',name:'Secret Tower',elevationFeet:15,width:24,height:24})
+      await dm.command({type:'map.level.add',id:'cellar',name:'Secret Cellar',elevationFeet:-15,width:16,height:16})
+      await dm.command({...command,levelId:'tower',width:24,height:24,image:{...image,imageId:replacement.id}})
+      await dm.command({...command,levelId:'cellar',width:16,height:16,image:{...image,imageId:replacement.id}})
+      const form=new FormData();form.set('metadata',JSON.stringify({name:'Tower barrel',category:'furniture'}));form.set('file',new Blob([new Uint8Array(await makeTexturedGlb())]),'barrel.glb')
+      const uploaded=await fetch(base+'/api/assets',{method:'POST',headers:{Cookie:dm.cookie,Origin:origin,'X-CSRF-Token':dm.csrf},body:form});assert.equal(uploaded.status,201);const model=await uploaded.json()
+      const modelFile=async(status:number)=>{const result=await fetch(base+`/api/assets/${model.id}/file?campaignId=${campaign.id}&encounterId=${encounter.id}`,{headers:{Cookie:p1.cookie}});assert.equal(result.status,status)}
+      for(const levelId of ['tower','cellar']){
+        await dm.command({type:'map.wall.place',levelId,wall:{id:'H:2:3',x:2,z:3,axis:'H',material:'stone'}})
+        await dm.command({type:'map.door.place',levelId,door:{id:'door',wallId:'H:2:3',state:'closed'}})
+        await dm.command({type:'map.scenery.place',levelId,prop:{id:'barrel',type:'asset',assetId:model.id,category:'furniture',label:'Secret barrel',position:{x:5,z:6},rotation:45,scale:2,verticalOffset:1.25,visible:true}})
+      }
+      await dm.command({type:'combatant.add',floorId:'tower',combatants:[combatantSchema.parse({id:'tower-token',name:'Hidden guard',side:'enemy',initiative:10,hp:8,maxHp:12,ac:13,conditions:[],saves:[],actions:[]})]})
+      await dm.command({type:'token.assign',combatantId:'tower-token',playerId:p1.snapshot!.actor.id})
+      await dm.command({type:'combatant.miniature.update',combatantId:'tower-token',miniature:{assetId:model.id,scale:1,rotation:0,verticalOffset:0,baseSize:'Medium',showBase:true}})
+      await dm.command({type:'combatant.edit',combatantId:'tower-token',combatant:{...dm.snapshot!.state.combatants.find(c=>c.id==='tower-token')!,artwork:'data:image/png;base64,'+Buffer.from(png).toString('base64')}})
+      const artwork=dm.snapshot!.state.combatants.find(c=>c.id==='tower-token')!.artwork!
+      assert.equal((await fetch(base+artwork,{headers:{Cookie:p1.cookie}})).status,403)
+      await waitFor(()=>p1.snapshot!.revision===dm.snapshot!.revision)
+      assert.equal(dungeonLevels(p1.snapshot!.state.dungeonMap!).length,1);assert.equal(p1.snapshot!.state.combatants.length,0)
+      assert.equal(JSON.stringify(p1.snapshot!.state).includes('Secret Tower'),false)
+      await p1.file(replacement.id,campaign.id,encounter.id,404);await modelFile(404)
+      await p1.command({type:'token.move',combatantId:'tower-token',destination:{x:2,z:2}},false)
+      await p1.command({type:'map.level.update',id:'tower',name:'Stolen',elevationFeet:15,playerVisible:true},false)
+      await p1.api(path+`/maps/${template.id}`,undefined,403)
+      await dm.command({type:'map.level.remove',id:'tower'},false)
+      await dm.command({type:'map.level.update',id:'tower',name:'Tower',elevationFeet:15,playerVisible:true})
+      await waitFor(()=>p1.snapshot!.state.combatants.length===1);await p1.file(replacement.id,campaign.id,encounter.id);await modelFile(200);assert.equal((await fetch(base+artwork,{headers:{Cookie:p1.cookie}})).status,200)
+      await dm.command({type:'map.level.update',id:'ground',name:'Private Ground',elevationFeet:0,playerVisible:false})
+      await waitFor(()=>p1.snapshot!.state.dungeonMap?.level?.id==='tower');await p1.file(asset.id,campaign.id,encounter.id,404)
+      await p1.command({type:'token.move',combatantId:'tower-token',destination:{x:22,z:22}})
+      await dm.command({type:'combatant.floor.transfer',combatantId:'tower-token',floorId:'cellar',destination:{x:3,z:4}})
+      await waitFor(()=>p1.snapshot!.state.combatants.length===0)
+      await dm.command({type:'map.level.duplicate',id:'cellar',newId:'copy',name:'Cellar copy',elevationFeet:-30})
+      await dm.command({type:'map.level.remove',id:'copy'});await dm.command({type:'map.undo'})
+      const full=dm.snapshot!.state.dungeonMap!;assert.equal(dungeonLevels(full).length,4)
+      const saved=await dm.api(path+'/maps',{name:'Multi level template',encounterId:encounter.id,encounterRevision:dm.snapshot!.revision},201)
+      assert.deepEqual((await dm.api(path+`/maps/${saved.id}`)).document,{...full,name:'Multi level template'})
+      await dm.api(`/floor-images/${replacement.id}/delete`,{revision:replacement.revision},409)
+      await dm.api(`/assets/${model.id}/delete`,{revision:model.revision},409)
+      await dm.command({type:'map.template.load',templateId:saved.id});assert.deepEqual(dm.snapshot!.state.dungeonMap,{...full,name:'Multi level template'})
+      await dm.command({type:'map.level.update',id:'tower',name:'Tower',elevationFeet:15,playerVisible:false})
+      await waitFor(()=>p1.snapshot!.state.levelsHidden===true)
+      assert.equal(p1.snapshot!.state.dungeonMap,undefined);assert.equal(p1.snapshot!.state.combatants.length,0)
+      await p1.file(replacement.id,campaign.id,encounter.id,404);await modelFile(404)
+      await dm.command({type:'map.level.update',id:'tower',name:'Tower',elevationFeet:15,playerVisible:true})
+      for(const client of clients)client.socket?.disconnect()
+      await app.close();app=createApplication(options);await new Promise<void>(resolve=>app.http.listen(port,'127.0.0.1',resolve))
+      await Promise.all([dm.connect(campaign.id),p1.connect(campaign.id)])
+      assert.deepEqual(dm.snapshot!.state.dungeonMap,{...full,name:'Multi level template'})
+      assert.ok(dm.snapshot!.state.mapUndoDepth!>0);await p1.file(replacement.id,campaign.id,encounter.id);await modelFile(200)
+      p2.socket?.disconnect();await p2.connect(campaign.id);assert.equal(dungeonLevels(p2.snapshot!.state.dungeonMap!).length,1);assert.equal(p2.snapshot!.state.combatants.length,0)
+      const snapshot=await p1.api(path+'/snapshot');assert.equal(dungeonLevels(snapshot.state.dungeonMap).length,1);assert.equal(JSON.stringify(snapshot.state).includes('Private Ground'),false)
+      await dm.command({type:'combatant.remove',combatantId:'tower-token'})
+      await dm.command({type:'map.template.load',templateId:template.id})
+      await dm.api(path+`/maps/${saved.id}/delete`,{revision:saved.revision})
     })
     await t.test('all shared references must be removed before file deletion',async()=>{
       await dm.command({...command,image:null});await dm.command({type:'map.history.clear'})

@@ -69,7 +69,7 @@ export const DungeonScene = memo(function DungeonScene({ map, editor, assetScope
     const openings = new Set(map.doors.map(d => d.wallId))
     const walls = (['stone', 'wood'] as const).map(material => ({ material, walls: map.walls.filter(w => w.material === material && !w.visual && !openings.has(w.id)) }))
     return { floors, walls }
-  }, [map])
+  }, [map.floors,map.walls,map.doors,map.width,map.height])
   const hitWall = (w: Wall): EditorHit => ({ cell: { x: Math.min(w.x, map.width - 1), z: Math.min(w.z, map.height - 1) }, wall: w, objectId: w.id, kind: 'wall' })
   return <>
     {map.props.filter(isScenery).map(prop => <Scenery3D key={prop.id} prop={prop} width={map.width} height={map.height} editor={editor} scope={assetScope} context={assetContext} />)}
@@ -93,7 +93,8 @@ function CellEditorSurface({ width, height, editor }: { width: number; height: n
   const [hover, setHover] = useState<EditorHit | null>(null)
   const stroke = useRef<Map<string, Cell> | null>(null)
   const getHit = (event: ThreeEvent<PointerEvent>): EditorHit | null => {
-    const x = event.point.x + width / 2, z = event.point.z + height / 2
+    const point=event.object.parent!.worldToLocal(event.point.clone())
+    const x = point.x + width / 2, z = point.z + height / 2
     if (x < 0 || x >= width || z < 0 || z >= height) return null
     const cell = { x: Math.floor(x), z: Math.floor(z) }, fx = x - cell.x, fz = z - cell.z
     const distances = [fz, 1 - fx, 1 - fz, fx], edges = ['north', 'east', 'south', 'west'] as const

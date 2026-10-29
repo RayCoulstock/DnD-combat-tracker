@@ -2,9 +2,10 @@ import {useEffect,useState} from 'react'
 import CalibrationFields from './CalibrationFields'
 import AssetPreview3D from './AssetPreview3D'
 import type {Asset3D} from '../shared/assets'
-import type {ArchitecturalVisual} from '../shared/architecture'
-export default function ArchitectureProperties({visual,asset,kind,onApply,onChoose,api}:{visual?:ArchitecturalVisual;asset?:Asset3D;kind:'wall'|'door';onApply:(visual:ArchitecturalVisual|null)=>void;onChoose:()=>void;api?:(path:string)=>Promise<unknown>}){
-  const [draft,setDraft]=useState(visual?.calibration)
+import type {ArchitecturalVisual,Calibration} from '../shared/architecture'
+export default function ArchitectureProperties({visual,asset,kind,onApply,onChoose,api,draftStore,draftKey}:{draftStore?:Map<string,Calibration>;draftKey?:string;visual?:ArchitecturalVisual;asset?:Asset3D;kind:'wall'|'door';onApply:(visual:ArchitecturalVisual|null)=>void;onChoose:()=>void;api?:(path:string)=>Promise<unknown>}){
+  const [draft,setDraftValue]=useState(()=>draftKey?draftStore?.get(draftKey)??visual?.calibration:visual?.calibration)
+  const setDraft=(value:Calibration)=>{setDraftValue(value);if(draftStore&&draftKey){if(draftStore.size>100)draftStore.clear();draftStore.set(draftKey,value)}}
   const [resolved,setResolved]=useState<Asset3D|null>(null)
   useEffect(()=>{let stopped=false;if(visual&&!asset&&api)void api(`/assets/${visual.assetId}`).then(result=>{if(!stopped)setResolved(result as Asset3D)}).catch(()=>{});return()=>{stopped=true}},[visual,asset,api])
   const previewAsset=asset??(resolved?.id===visual?.assetId?resolved:undefined)

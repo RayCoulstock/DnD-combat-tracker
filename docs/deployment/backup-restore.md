@@ -79,3 +79,9 @@ Floor-image maps (Milestone 5.2) use the same asset volume as GLBs. Back up the
 `floor_images`, image-reference tables and version-4 map documents together with
 their `.webp` files. The existing asset audit checks both GLBs and floor images.
 See `docs/battle-map-image-import.md` for migration ordering and rollback limits.
+
+Multi-level maps (schema version 5, migration 009) retain their floor image and
+GLB references across every level, template and retained history frame. Continue
+backing up the database and private asset volume as a matched set. Once v5 maps
+have been saved, an older application cannot read them; rollback requires the
+matching pre-upgrade database backup. See [multi-level maps](../multi-level-battle-maps.md).
