@@ -1,3 +1,4 @@
+import {transitionSchema} from './transitions.ts'
 import { floorImageSchema } from './floor-image.ts'
 import { z } from 'zod'
 import {drawingSchema,drawingBatch} from './drawing.ts'
@@ -16,14 +17,14 @@ export const proceduralPropSchema = z.object({ id: objectId, type: z.enum(propTy
 export type ProceduralProp = z.infer<typeof proceduralPropSchema>
 export const propSchema = z.discriminatedUnion('type', [proceduralPropSchema, scenerySchema])
 const geometryShape = z.object({
-  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]), floorImage: floorImageSchema.optional(), id: objectId, name: z.string().trim().min(1).max(150), width: size, height: size,
+  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6)]), floorImage: floorImageSchema.optional(), id: objectId, name: z.string().trim().min(1).max(150), width: size, height: size,
   theme: z.enum(themes), floors: z.array(cellSchema.extend({ type: z.enum(floorTypes) })).max(2500),
   walls: z.array(wallSchema).max(5100), doors: z.array(doorSchema).max(1000), props: z.array(propSchema).max(200),
 }).strict()
 export const LEGACY_LEVEL_ID = 'ground'
 export const levelMetadataSchema = z.object({id:objectId,name:z.string().trim().min(1).max(150),elevationFeet:z.number().finite().min(-1000).max(1000),playerVisible:z.boolean()}).strict()
 const additionalLevelSchema = geometryShape.omit({schemaVersion:true}).extend({elevationFeet:levelMetadataSchema.shape.elevationFeet,playerVisible:z.boolean()})
-const documentShape = geometryShape.extend({level:levelMetadataSchema.optional(),levels:z.array(additionalLevelSchema).max(11).optional()}).strict()
+const documentShape = geometryShape.extend({level:levelMetadataSchema.optional(),levels:z.array(additionalLevelSchema).max(11).optional(),transitions:z.array(transitionSchema).max(200).optional()}).strict()
 export type DungeonLevel = z.infer<typeof additionalLevelSchema>
 export type LevelMetadata = z.infer<typeof levelMetadataSchema>
 export type DungeonMap = z.infer<typeof documentShape>
@@ -66,12 +67,23 @@ const validateGeometry = (map: z.infer<typeof geometryShape>, ctx: z.RefinementC
 export const dungeonSchema = documentShape.superRefine((map,ctx)=>{
   validateGeometry(map,ctx)
   if((map.level||map.levels)&&map.schemaVersion<5)ctx.addIssue({code:'custom',message:'Dungeon levels require map version 5.'})
-  if(map.schemaVersion===5&&!map.level)ctx.addIssue({code:'custom',message:'Version 5 requires primary level metadata.'})
+  if(map.schemaVersion>=5&&!map.level)ctx.addIssue({code:'custom',message:'Version 5 requires primary level metadata.'})
   const ids=new Set([map.level?.id??LEGACY_LEVEL_ID]),elevations=[map.level?.elevationFeet??0]
   for(const level of map.levels??[]){
     if(ids.has(level.id))ctx.addIssue({code:'custom',message:'Level IDs must be unique.'})
     if(elevations.some(e=>Math.abs(e-level.elevationFeet)<.1))ctx.addIssue({code:'custom',message:'Levels must be at least 0.1 feet apart to avoid coincident floor surfaces.'})
     elevations.push(level.elevationFeet);ids.add(level.id);validateGeometry({...level,schemaVersion:5},ctx)
+  }
+  if(map.transitions&&map.schemaVersion<6)ctx.addIssue({code:'custom',message:'Transitions require map version 6.'})
+  const transitionIds=new Set<string>(),levels=[{...map,id:map.level?.id??LEGACY_LEVEL_ID},...(map.levels??[])]
+  for(const transition of map.transitions??[]){
+    if(transitionIds.has(transition.id))ctx.addIssue({code:'custom',message:'Transition IDs must be unique.'})
+    transitionIds.add(transition.id)
+    if(transition.source.floorId===transition.destination.floorId)ctx.addIssue({code:'custom',message:'A vertical transition must connect different floors.'})
+    for(const point of [transition.source,transition.destination]){
+      const level=levels.find(l=>l.id===point.floorId)
+      if(!level||point.x>=level.width||point.z>=level.height)ctx.addIssue({code:'custom',message:'Transition endpoints require existing floors and in-bounds squares.'})
+    }
   }
 })
 const legacyMetadata:LevelMetadata={id:LEGACY_LEVEL_ID,name:'Ground Floor',elevationFeet:0,playerVisible:true}
@@ -79,7 +91,7 @@ const levelCache=new WeakMap<DungeonMap,DungeonLevel[]>()
 // One adapter for legacy documents and version 5; stable views avoid geometry rebuilds on combat updates.
 export function dungeonLevels(map:DungeonMap):DungeonLevel[]{
   const cached=levelCache.get(map);if(cached)return cached
-  const {level,levels,schemaVersion,...geometry}=map;void schemaVersion
+  const {level,levels,schemaVersion,transitions,...geometry}=map;void schemaVersion;void transitions
   const result=[{...geometry,...(level??legacyMetadata)},...(levels??[])]
   levelCache.set(map,result);return result
 }
@@ -105,7 +117,7 @@ export function composeLevels(map:DungeonMap,levels:DungeonLevel[]):DungeonMap{
   if(!levels.length)throw new Error('The last dungeon level cannot be deleted.')
   const [first,...rest]=levels
   const {id,name,elevationFeet,playerVisible,...geometry}=first
-  return {...geometry,id:map.id,name:map.name,schemaVersion:5,level:{id,name,elevationFeet,playerVisible},levels:rest}
+  return {...geometry,id:map.id,name:map.name,schemaVersion:map.schemaVersion===6?6:5,...(map.transitions?{transitions:map.transitions}:{}),level:{id,name,elevationFeet,playerVisible},levels:rest}
 }
 export function blankDungeon(id: string, name: string, width = 20, height = 20): DungeonMap {
   return dungeonSchema.parse({ schemaVersion: 1, id, name, width, height, theme: 'stone-dungeon', floors: [], walls: [], doors: [], props: [] })
@@ -113,6 +125,8 @@ export function blankDungeon(id: string, name: string, width = 20, height = 20):
 // Legacy versions remain valid; scenery uses 2, architectural visuals 3, and floor images 4. Never downgrade a document.
 export const readDungeon = (value: unknown): DungeonMap => dungeonSchema.parse(value)
 export const mapCommandSchemas = [
+  z.object({type:z.literal('map.transition.set'),transition:transitionSchema}).strict(),
+  z.object({type:z.literal('map.transition.remove'),transitionId:objectId}).strict(),
   z.object({type:z.literal('map.level.add'),id:objectId,name:levelMetadataSchema.shape.name,elevationFeet:levelMetadataSchema.shape.elevationFeet,width:size,height:size}).extend({levelId:objectId.optional()}).strict(),
   z.object({type:z.literal('map.level.update'),id:objectId,name:levelMetadataSchema.shape.name,elevationFeet:levelMetadataSchema.shape.elevationFeet,playerVisible:z.boolean()}).extend({levelId:objectId.optional()}).strict(),
   z.object({type:z.literal('map.level.duplicate'),id:objectId,newId:objectId,name:levelMetadataSchema.shape.name,elevationFeet:levelMetadataSchema.shape.elevationFeet}).extend({levelId:objectId.optional()}).strict(),
@@ -168,7 +182,7 @@ function editSingleMap(frame: MapFrame, history: MapHistory, command: MapCommand
     switch (command.type) {
       case 'map.floorImage.set':
         map.width = command.width; map.height = command.height
-        if (command.image) { map.floorImage = command.image; map.schemaVersion = Math.max(4,map.schemaVersion) as 4 | 5 } else delete map.floorImage
+        if (command.image) { map.floorImage = command.image; map.schemaVersion = Math.max(4,map.schemaVersion) as 4 | 5 | 6 } else delete map.floorImage
         break
       case 'map.draw': {
         const {levelId,...drawing}=command;void levelId
@@ -184,7 +198,7 @@ function editSingleMap(frame: MapFrame, history: MapHistory, command: MapCommand
         for(const w of batch.walls)if(!walls.has(w.id)&&!(command.kind==='corridor'&&connects(w)))walls.set(w.id,w)
         map.walls=[...walls.values()]
         for(const f of batch.floors)if(command.kind==='room'||!existingFloors.has(`${f.x}:${f.z}`))existingFloors.set(`${f.x}:${f.z}`,f)
-        map.floors=[...existingFloors.values()];if(command.visual)map.schemaVersion=Math.max(3,map.schemaVersion) as 3 | 4 | 5
+        map.floors=[...existingFloors.values()];if(command.visual)map.schemaVersion=Math.max(3,map.schemaVersion) as 3 | 4 | 5 | 6
         break
       }
       case 'map.floor.paint': {
@@ -197,18 +211,18 @@ function editSingleMap(frame: MapFrame, history: MapHistory, command: MapCommand
         map.floors = [...cells.values()].sort((a, b) => a.z - b.z || a.x - b.x); break
       }
       case 'map.wall.visual':
-        requireId(map.walls, command.wallId); map.walls = map.walls.map(w => w.id === command.wallId ? (() => { const next={...w,visual:command.visual ?? undefined}; if(!command.visual)delete next.visual; return next })() : w); if(command.visual) map.schemaVersion=Math.max(3,map.schemaVersion) as 3 | 4 | 5; break
+        requireId(map.walls, command.wallId); map.walls = map.walls.map(w => w.id === command.wallId ? (() => { const next={...w,visual:command.visual ?? undefined}; if(!command.visual)delete next.visual; return next })() : w); if(command.visual) map.schemaVersion=Math.max(3,map.schemaVersion) as 3 | 4 | 5 | 6; break
       case 'map.door.visual':
-        requireId(map.doors, command.doorId); map.doors = map.doors.map(d => d.id === command.doorId ? (() => { const next={...d,visual:command.visual ?? undefined}; if(!command.visual)delete next.visual; return next })() : d); if(command.visual) map.schemaVersion=Math.max(3,map.schemaVersion) as 3 | 4 | 5; break
-      case 'map.wall.place': if(command.wall.visual) map.schemaVersion=Math.max(3,map.schemaVersion) as 3 | 4 | 5; map.walls = [...map.walls.filter(w => w.id !== command.wall.id), command.wall]; break
+        requireId(map.doors, command.doorId); map.doors = map.doors.map(d => d.id === command.doorId ? (() => { const next={...d,visual:command.visual ?? undefined}; if(!command.visual)delete next.visual; return next })() : d); if(command.visual) map.schemaVersion=Math.max(3,map.schemaVersion) as 3 | 4 | 5 | 6; break
+      case 'map.wall.place': if(command.wall.visual) map.schemaVersion=Math.max(3,map.schemaVersion) as 3 | 4 | 5 | 6; map.walls = [...map.walls.filter(w => w.id !== command.wall.id), command.wall]; break
       case 'map.wall.remove':
         requireId(map.walls, command.wallId); map.walls = map.walls.filter(w => w.id !== command.wallId); map.doors = map.doors.filter(d => d.wallId !== command.wallId); break
-      case 'map.door.place': if(command.door.visual) map.schemaVersion=Math.max(3,map.schemaVersion) as 3 | 4 | 5; map.doors = [...map.doors.filter(d => d.wallId !== command.door.wallId), command.door]; break
+      case 'map.door.place': if(command.door.visual) map.schemaVersion=Math.max(3,map.schemaVersion) as 3 | 4 | 5 | 6; map.doors = [...map.doors.filter(d => d.wallId !== command.door.wallId), command.door]; break
       case 'map.door.update': requireId(map.doors, command.doorId); map.doors = map.doors.map(d => d.id === command.doorId ? { ...d, state: command.state } : d); break
       case 'map.door.remove': requireId(map.doors, command.doorId); map.doors = map.doors.filter(d => d.id !== command.doorId); break
       case 'map.scenery.place':
       case 'map.prop.place':
-        if (isScenery(command.prop)) map.schemaVersion = Math.max(2,map.schemaVersion) as 2 | 3 | 4 | 5;
+        if (isScenery(command.prop)) map.schemaVersion = Math.max(2,map.schemaVersion) as 2 | 3 | 4 | 5 | 6;
         if (map.props.some(p => p.id === command.prop.id)) throw new Error('Duplicate prop ID.')
         map.props.push(command.prop); break
       case 'map.prop.transform':
@@ -238,6 +252,12 @@ export function editMap(frame:MapFrame,history:MapHistory,command:MapCommand):{f
   if(command.type==='map.undo'||command.type==='map.redo'||command.type==='map.history.clear'||command.type==='map.blank'||command.type==='map.load'||command.type==='map.template.load')return editSingleMap(frame,history,command)
   const document=frame.document
   if(!document)throw new Error('Create or load a dungeon map first.')
+  if(command.type==='map.transition.set'||command.type==='map.transition.remove'){
+    const transitions=document.transitions??[]
+    if(command.type==='map.transition.remove'&&!transitions.some(t=>t.id===command.transitionId))throw new Error('Transition no longer exists.')
+    const next=readDungeon({...composeLevels(document,dungeonLevels(document)),schemaVersion:6,transitions:command.type==='map.transition.set'?[...transitions.filter(t=>t.id!==command.transition.id),command.transition]:transitions.filter(t=>t.id!==command.transitionId)})
+    return {frame:{...frame,document:reuseDungeonGeometry(document,next)},history:{undo:bounded([...history.undo,structuredClone(frame)]),redo:[]}}
+  }
   if(!command.type.startsWith('map.level.')&&!document.level&&!command.levelId)return editSingleMap(frame,history,command)
   let levels=dungeonLevels(document)
   if(command.type==='map.level.add'){
@@ -266,6 +286,8 @@ export function editMap(frame:MapFrame,history:MapHistory,command:MapCommand):{f
     const {schemaVersion,...geometry}=result;void schemaVersion
     levels=levels.map((l,i)=>i===index?{...geometry,id:source.id,name:source.name,elevationFeet:source.elevationFeet,playerVisible:source.playerVisible}:l)
   }
-  const next=reuseDungeonGeometry(document,readDungeon(composeLevels(document,levels)))
+  const composed=composeLevels(document,levels)
+  if(command.type==='map.level.remove'&&composed.transitions)composed.transitions=composed.transitions.filter(t=>t.source.floorId!==command.id&&t.destination.floorId!==command.id)
+  const next=reuseDungeonGeometry(document,readDungeon(composed))
   return {frame:{document:next,width:next.width,height:next.height},history:{undo:bounded([...history.undo,structuredClone(frame)]),redo:[]}}
 }

@@ -1,3 +1,4 @@
+import {exerciseVerticalNavigation} from './vertical-navigation-acceptance'
 import {test,expect,type Page} from '@playwright/test'
 import {randomUUID} from 'node:crypto'
 import {makeFloorImage} from '../test-fixtures/floor-image'
@@ -11,7 +12,7 @@ async function sceneLevels(page:Page){return page.locator('.battlefield-wrap can
  const resource=performance.getEntriesByType('resource').find(e=>e.name.includes('/@react-three_fiber.js'))!,{_roots}=await import(/* @vite-ignore */resource.name),state=_roots.get(node).store.getState(),result:{id:string;y:number;interactive:boolean;images:number;models:number;transforms:{y:number;scale:number;rotation:number}[];tokens:number[]}[]=[]
  state.scene.traverse((object:{userData:{levelId?:string;levelInteractive?:boolean};position:{y:number};traverse:(fn:(child:{name:string;type:string;matrixWorld:{elements:number[]};scale:{x:number};rotation:{y:number}})=>void)=>void})=>{if(object.userData.levelId){let images=0,models=0;const transforms:{y:number;scale:number;rotation:number}[]=[],tokens:number[]=[];object.traverse(child=>{if(child.name==='floor-image')images++;if(child.type==='Mesh')models++;if(child.name==='scenery-placement-transform')transforms.push({y:child.matrixWorld.elements[13],scale:child.scale.x,rotation:child.rotation.y});if(child.name==='combatant-token')tokens.push(child.matrixWorld.elements[13])});result.push({id:object.userData.levelId,y:object.position.y,interactive:object.userData.levelInteractive===true,images,models,transforms,tokens})}});return result
 })}
-test('three populated levels retain images, geometry, transforms, tokens, drafts and player visibility through save/reload',async({page,browser})=>{
+test('three populated levels retain images, geometry, transforms, tokens, drafts and player visibility through save/reload, transitions and fullscreen',async({page,browser})=>{
  const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message))
  await page.goto('/');await page.getByRole('button',{name:'Multiplayer',exact:true}).click()
  await page.getByLabel('Email',{exact:true}).fill(randomUUID()+'@example.test');await page.getByLabel('Password (12+ characters)',{exact:true}).fill('Multi Level Maps Password 2053!');await page.getByRole('button',{name:'Create account',exact:true}).click()
@@ -71,6 +72,7 @@ test('three populated levels retain images, geometry, transforms, tokens, drafts
   await expect(player.getByRole('status').filter({hasText:'The DM has not revealed a level.'})).toBeVisible();expect(await sceneLevels(player)).toEqual([])
   for(const name of ['Ground Floor','Tower']){const panel=page.getByRole('region',{name:`Level: ${name}`,exact:true});await panel.getByLabel(`${name} player visibility`,{exact:true}).check();await panel.getByRole('button',{name:'Apply level settings',exact:true}).click()}
   await player.reload();await expect(player.getByLabel('Active level',{exact:true}).locator('option')).toHaveCount(2)
+  await exerciseVerticalNavigation(page,player,path,tower.id)
   expect(errors).toEqual([])
  }finally{await context.close()}
 })
