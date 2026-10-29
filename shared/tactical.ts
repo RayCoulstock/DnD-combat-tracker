@@ -7,14 +7,14 @@ export const templateSchema=z.object({kind:z.literal('template'),shape:z.enum(['
 }).strict()
 export const measurementSchema=z.object({kind:z.literal('measurement'),start:point,end:point,rule:z.enum(measurementRules)}).strict()
 export const tacticalObjectSchema=z.discriminatedUnion('kind',[templateSchema,measurementSchema])
-const identity={id:z.uuid(),ownerId:z.string().min(1).max(100),expiresAt:z.number().finite().optional()}
+const identity={floorId:z.string().min(1).max(100).optional(),id:z.uuid(),ownerId:z.string().min(1).max(100),expiresAt:z.number().finite().optional()}
 export const tacticalRecordSchema=z.discriminatedUnion('kind',[templateSchema.extend(identity),measurementSchema.extend(identity)]).superRefine((r,ctx)=>{if(r.kind==='template'&&r.expiresAt!==undefined||r.kind==='measurement'&&r.expiresAt===undefined)ctx.addIssue({code:'custom',message:'Only shared measurements require an expiry.'})})
 export type TacticalObject=z.infer<typeof tacticalObjectSchema>
 export type TacticalRecord=z.infer<typeof tacticalRecordSchema>
 export type Template=z.infer<typeof templateSchema>
 export const tacticalCommands=[
- z.object({type:z.literal('tactical.create'),id:z.uuid(),object:tacticalObjectSchema}).strict(),
- z.object({type:z.literal('tactical.update'),id:z.uuid(),object:tacticalObjectSchema}).strict(),
+ z.object({type:z.literal('tactical.create'),id:z.uuid(),object:tacticalObjectSchema,floorId:z.string().min(1).max(100).optional()}).strict(),
+ z.object({type:z.literal('tactical.update'),id:z.uuid(),object:tacticalObjectSchema,floorId:z.string().min(1).max(100).optional()}).strict(),
  z.object({type:z.literal('tactical.remove'),id:z.uuid()}).strict(),
  z.object({type:z.literal('tactical.clear')}).strict(),
 ]as const

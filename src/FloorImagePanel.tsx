@@ -3,11 +3,11 @@ import { floorImageSchema, type FloorImage, type FloorImageAsset } from '../shar
 import { readDungeon, type DungeonMap } from '../shared/dungeon'
 import type { GameCommand } from '../shared/domain'
 interface Props {
-  document?:DungeonMap; api?: (path:string,body?:unknown)=>Promise<unknown>
+  levelId?:string; document?:DungeonMap; api?: (path:string,body?:unknown)=>Promise<unknown>
   disabled:boolean; send:(command:GameCommand)=>Promise<void>
   onPreview:(command:Extract<GameCommand,{type:'map.floorImage.set'}>|null)=>void
 }
-export default function FloorImagePanel({document,api,disabled,send,onPreview}:Props){
+export default function FloorImagePanel({levelId,document,api,disabled,send,onPreview}:Props){
   const [image,setImage]=useState<FloorImage|null>(document?.floorImage??null)
   const [width,setWidth]=useState(document?.width??20),[height,setHeight]=useState(document?.height??20)
   const [progress,setProgress]=useState<number|null>(null),[message,setMessage]=useState(''),[images,setImages]=useState<FloorImageAsset[]>([]),[selected,setSelected]=useState(''),[maxBytes,setMaxBytes]=useState(15*1024*1024)
@@ -47,13 +47,13 @@ export default function FloorImagePanel({document,api,disabled,send,onPreview}:P
   const drop=(event:DragEvent)=>{event.preventDefault();event.stopPropagation();if(event.dataTransfer.files.length!==1){setMessage('Drop one image at a time.');return}void upload(event.dataTransfer.files[0])}
   const command=()=>{
     if(!document)throw new Error('Create a blank map before adding a floor image.')
-    const parsed=readDungeon({...document,width,height,...(image?{floorImage:floorImageSchema.parse(image),schemaVersion:4}:{floorImage:undefined})})
-    return {type:'map.floorImage.set' as const,image:parsed.floorImage??null,width:parsed.width,height:parsed.height}
+    const parsed=readDungeon({...document,width,height,...(image?{floorImage:floorImageSchema.parse(image),schemaVersion:Math.max(4,document.schemaVersion)}:{floorImage:undefined})})
+    return {type:'map.floorImage.set' as const,levelId,image:parsed.floorImage??null,width:parsed.width,height:parsed.height}
   }
   const preview=()=>{try{onPreview(command());setMessage('Local calibration preview. Other players see the saved version until you apply.')}catch(error){setMessage((error as Error).message)}}
   const apply=async(remove=false)=>{
     try{
-      await send(remove?{type:'map.floorImage.set',image:null,width:document!.width,height:document!.height}:command())
+      await send(remove?{type:'map.floorImage.set',levelId,image:null,width:document!.width,height:document!.height}:command())
       if(!stopped.current){onPreview(null);setMessage('Floor image settings saved.')}
     }catch(error){if(!stopped.current)setMessage((error as Error).message)}
   }
@@ -67,7 +67,7 @@ export default function FloorImagePanel({document,api,disabled,send,onPreview}:P
           <p>Drop one PNG, JPEG or WebP here. Up to {(maxBytes/1024/1024).toFixed(1)} MiB; no SVG or animation.</p>
         </div>
         {images.length>0&&<><label>Uploaded floor images<select aria-label="Uploaded floor images" value={selected} onChange={event=>{setSelected(event.target.value);const asset=images.find(item=>item.id===event.target.value);if(asset)chooseImage(asset)}}><option value="">Choose an uploaded image</option>{images.map((asset,index)=><option key={asset.id} value={asset.id}>{asset.width} × {asset.height} · image {index+1} · {asset.id.slice(0,8)}</option>)}</select></label>{selected&&<button type="button" onClick={()=>{const asset=images.find(item=>item.id===selected);if(asset&&api)void api(`/floor-images/${asset.id}/delete`,{revision:asset.revision}).then(()=>{if(!stopped.current){setImages(items=>items.filter(item=>item.id!==asset.id));setSelected('');setMessage('Unreferenced image deleted.')}}).catch(error=>{if(!stopped.current)setMessage(error.message)})}}>Delete unreferenced image</button>}</>}
-        {image&&<><img className="floor-image-preview" src={`/api/floor-images/${image.imageId}/file`} alt="Floor image preview"/>
+        {image&&<><img loading="lazy" className="floor-image-preview" src={`/api/floor-images/${image.imageId}/file`} alt="Floor image preview"/>
           <label>Image grid mode<select aria-label="Image grid mode" value={image.mode} onChange={event=>setImage({...image,mode:event.target.value as FloorImage['mode'],showGrid:event.target.value==='gridless'})}><option value="gridded">Gridded image (printed grid)</option><option value="gridless">Gridless image</option></select></label>
           <label><input type="checkbox" checked={image.locked} onChange={event=>edit('locked',event.target.checked)}/>Lock image transformations</label>
         </>}

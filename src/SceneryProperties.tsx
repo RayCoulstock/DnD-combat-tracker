@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { sceneryLimits, type SceneryProp } from '../shared/scenery'
 import type { GameCommand } from '../shared/domain'
-export default function SceneryProperties({prop,width,height,send,onMove}:{prop:SceneryProp;width:number;height:number;send:(c:GameCommand)=>void;onMove:()=>void}){
-  const[draft,setDraft]=useState(prop)
+export default function SceneryProperties({prop,width,height,send,onMove,draftStore,draftKey}:{draftStore?:Map<string,SceneryProp>;draftKey?:string;prop:SceneryProp;width:number;height:number;send:(c:GameCommand)=>void;onMove:()=>void}){
+  const[draft,setDraftValue]=useState(()=>draftKey?draftStore?.get(draftKey)??prop:prop)
+  const setDraft=(value:SceneryProp)=>{setDraftValue(value);if(draftStore&&draftKey){if(draftStore.size>100)draftStore.clear();draftStore.set(draftKey,value)}}
   const transform=(value:SceneryProp)=>({position:value.position,rotation:value.rotation,scale:value.scale,verticalOffset:value.verticalOffset,visible:value.visible})
   return <section className="scenery-properties" aria-label="Selected scenery properties"><h3>Selected scenery: {prop.label}</h3><small>{prop.id} · {prop.category}</small>
     <form onSubmit={e=>{e.preventDefault();send({type:'map.scenery.update',propId:prop.id,transform:transform(draft)})}}>

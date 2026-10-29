@@ -1,3 +1,7 @@
+import {transaction} from './db.ts'
+import {loadState} from './game.ts'
+import {projectEncounter} from '../shared/domain.ts'
+import {visibleMapAssets} from './scenery.ts'
 import { multipart } from './asset-upload.ts'
 import type { Express, Request, Response } from 'express'
 import { rateLimit } from 'express-rate-limit'
@@ -5,7 +9,7 @@ import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { assetMetadataSchema, assetCategories, type Asset3D } from '../shared/assets.ts'
 import type { Actor } from '../shared/domain.ts'
-import { transaction, type Pool } from './db.ts'
+import { type Pool } from './db.ts'
 import { assetLimits } from './asset-config.ts'
 import { AssetError, type AssetStorage, type StagedAsset } from './asset-storage.ts'
 import { validateAsset } from './asset-validation.ts'
@@ -45,6 +49,11 @@ export function registerAssetRoutes(app: Express, pool: Pool, storage: AssetStor
         WHERE a.id=$1 AND c.id=$3 AND e.id=$4 AND c.active_encounter_id=e.id AND c.session_active
           AND (EXISTS(SELECT 1 FROM combatant_asset_references r JOIN combatants b ON b.encounter_id=r.encounter_id AND b.id=r.combatant_id WHERE r.asset_id=a.id AND r.encounter_id=e.id AND b.visible)
             OR EXISTS(SELECT 1 FROM encounter_scenery_asset_references s WHERE s.asset_id=a.id AND s.encounter_id=e.id AND s.visible_current)) AND a.owner_id=c.owner_id AND a.upload_status='ready' LIMIT 1`, [id, actor.id, context.campaignId, context.encounterId])).rows[0]
+      if(row){
+        const state=await transaction(pool,db=>loadState(db,context.encounterId!))
+        const publicState=projectEncounter(state,actor)
+        if(!visibleMapAssets(publicState.dungeonMap).includes(id)&&!publicState.combatants.some(c=>c.miniature?.assetId===id))row=undefined
+      }
     }
     if (!row) throw new AssetError(404, 'Asset is unavailable.')
     if (row.upload_status !== 'ready') throw new AssetError(409, 'Asset is not ready for preview.')

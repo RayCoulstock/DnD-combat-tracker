@@ -2,16 +2,15 @@ import { syncTemplateImages } from './floor-image-references.ts'
 import type { PoolClient } from 'pg'
 import { DomainError } from '../shared/domain.ts'
 import { isScenery } from '../shared/scenery.ts'
-import { readDungeon, type DungeonMap, type MapHistory } from '../shared/dungeon.ts'
-export const visibleMapAssets = (document?: DungeonMap | null) => [...new Set([
-  ...(document?.props.filter(isScenery).filter(p=>p.visible).map(p=>p.assetId) ?? []),
-  ...(document?.walls.filter(w=>!document.doors.some(d=>d.wallId===w.id)).flatMap(w=>w.visual?[w.visual.assetId]:[]) ?? []),
-  ...(document?.doors.flatMap(d=>d.visual?[d.visual.assetId]:[]) ?? []),
-])]
-export const sceneryAssets = (document?: DungeonMap | null) => [...new Set([
-  ...(document?.props.filter(isScenery).map(p=>p.assetId) ?? []),
-  ...([...document?.walls ?? [],...document?.doors ?? []].flatMap(o=>o.visual?[o.visual.assetId]:[])),
-])]
+import { dungeonLevels, readDungeon, type DungeonMap, type MapHistory } from '../shared/dungeon.ts'
+export const visibleMapAssets = (document?:DungeonMap|null) => [...new Set((document?dungeonLevels(document):[]).filter(l=>l.playerVisible).flatMap(l=>[
+ ...l.props.filter(isScenery).filter(p=>p.visible).map(p=>p.assetId),
+ ...l.walls.filter(w=>!l.doors.some(d=>d.wallId===w.id)).flatMap(w=>w.visual?[w.visual.assetId]:[]),
+ ...l.doors.flatMap(d=>d.visual?[d.visual.assetId]:[]),
+]))]
+export const sceneryAssets = (document?:DungeonMap|null) => [...new Set((document?dungeonLevels(document):[]).flatMap(l=>[
+ ...l.props.filter(isScenery).map(p=>p.assetId),...[...l.walls,...l.doors].flatMap(o=>o.visual?[o.visual.assetId]:[]),
+]))]
 export const historyAssets = (history: MapHistory) => [...new Set([...history.undo,...history.redo].flatMap(f=>sceneryAssets(f.document)))]
 export async function syncEncounterScenery(db:PoolClient,encounterId:string,document:DungeonMap|undefined,history:MapHistory,available:Set<string>,allowUnresolved:boolean,prior:Set<string>,required:string[]=[]){
   const ids=[...new Set([...sceneryAssets(document),...historyAssets(history)])]

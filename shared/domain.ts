@@ -1,15 +1,16 @@
+import {reuseDungeonGeometry,dungeonLevels,composeLevels,primaryLevelId} from './dungeon.ts'
 import { z } from 'zod'
 import {tacticalCommands,tacticalRecordSchema,activeTactical,assertTacticalBounds,type TacticalRecord} from './tactical.ts'
 import { isScenery } from './scenery.ts'
 import { miniatureSchema } from './miniatures.ts'
 import { generationOptionsSchema, generateDungeon } from './generator.ts'
 import { dungeonSchema, editMap, emptyHistory, mapCommandSchemas, type DungeonMap, type MapCommand, type MapHistory } from './dungeon.ts'
-import { createBattleMapState, isGridPosition, moveToken, normalizeBattleMap, reconcileBattleMap } from '../src/mapState.ts'
+import { createBattleMapState, isGridPosition, normalizeBattleMap, reconcileBattleMap } from '../src/mapState.ts'
 
 export const idSchema = z.union([z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/), z.number().int().safe().nonnegative()]).refine(v => !['__proto__', 'constructor', 'prototype'].includes(String(v)))
 const text = z.string().max(10000)
 export const combatantSchema = z.object({
-  miniature: miniatureSchema.optional(), hpShown: z.boolean().optional(),
+  floorId:z.string().min(1).max(100).optional(), miniature: miniatureSchema.optional(), hpShown: z.boolean().optional(),
   id: idSchema, name: z.string().trim().min(1).max(200), short: z.string().max(20).default('?'),
   side: z.enum(['hero', 'enemy']), role: text.default(''), initiative: z.number().finite().min(-1000).max(1000),
   hp: z.number().int().min(0).max(100000), maxHp: z.number().int().min(1).max(100000),
@@ -31,6 +32,7 @@ export const encounterFileSchema = z.object({
 }).refine(s => new Set(s.combatants.map(c => String(c.id))).size === s.combatants.length, 'Duplicate combatant IDs').refine(s=>!s.tactical||new Set(s.tactical.map(r=>r.id)).size===s.tactical.length,'Duplicate tactical IDs')
 export interface EncounterState {
   tactical?:TacticalRecord[]
+  levelsHidden?:boolean
   dungeonMap?: DungeonMap; mapRevision?: number; mapUndoDepth?: number; mapRedoDepth?: number
   version: 1; round: number; activeId: string | number | null; selectedId: string | number | null
   usedAbilities: Record<string, boolean>; combatants: Combatant[]; battleMap: ReturnType<typeof createBattleMapState>
@@ -40,15 +42,16 @@ export function importEncounter(value: unknown, preservePermissions = false): En
   const data = encounterFileSchema.parse(value)
   const combatants = data.combatants.map(c => preservePermissions ? c : { ...c, ownerId: null })
   const ids = new Set(combatants.map(c => c.id))
-  return { ...(data.tactical?{tactical:data.tactical.filter(r=>r.kind==='template').map(r=>({...r,ownerId:preservePermissions?r.ownerId:'imported'}))}:{}), version: 1, round: data.round, activeId: ids.has(data.activeId!) ? data.activeId! : combatants[0]?.id ?? null,
+  return reconcileLevelTokens({ ...(data.tactical?{tactical:data.tactical.filter(r=>r.kind==='template').map(r=>({...r,ownerId:preservePermissions?r.ownerId:'imported'}))}:{}), version: 1, round: data.round, activeId: ids.has(data.activeId!) ? data.activeId! : combatants[0]?.id ?? null,
     selectedId: ids.has(data.selectedId!) ? data.selectedId! : combatants[0]?.id ?? null,
-    usedAbilities: data.usedAbilities, combatants, ...(data.dungeonMap ? { dungeonMap: data.dungeonMap } : {}), battleMap: normalizeBattleMap(data.dungeonMap ? { ...(data.battleMap as object ?? {}), width: data.dungeonMap.width, height: data.dungeonMap.height } : data.battleMap, combatants.map(c => c.id)) }
+    usedAbilities: data.usedAbilities, combatants, ...(data.dungeonMap ? { dungeonMap: data.dungeonMap } : {}), battleMap: normalizeBattleMap(data.dungeonMap ? { ...(data.battleMap as object ?? {}), width: data.dungeonMap.width, height: data.dungeonMap.height } : data.battleMap, combatants.map(c => c.id)) })
 }
 export const emptyEncounter = (): EncounterState => importEncounter({ version: 1, round: 1, combatants: [] })
 const target = { combatantId: idSchema }
 export const commandSchema = z.discriminatedUnion('type', [
   ...mapCommandSchemas, ...tacticalCommands,
   z.object({ type: z.literal('map.generate'), options: generationOptionsSchema }).strict(),
+  z.object({type:z.literal('combatant.floor.transfer'),...target,floorId:z.string().min(1).max(100),destination:z.object({x:z.number().int(),z:z.number().int()}).strict()}).strict(),
   z.object({ type: z.literal('token.move'), ...target, destination: z.object({ x: z.number().int(), z: z.number().int() }).strict() }).strict(),
   z.object({ type: z.literal('combatant.miniature.update'), ...target, miniature: miniatureSchema }).strict(),
   z.object({ type: z.literal('token.assign'), ...target, playerId: z.uuid().nullable() }).strict(),
@@ -56,7 +59,7 @@ export const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('combatant.conditions'), ...target, conditions: z.array(z.string().max(100)).max(50) }).strict(),
   z.object({ type: z.literal('combatant.hp.visibility'), ...target, shown: z.boolean() }).strict(),
   z.object({ type: z.literal('combatant.visibility'), ...target, visible: z.boolean() }).strict(),
-  z.object({ type: z.literal('combatant.add'), combatants: z.array(combatantSchema).min(1).max(20) }).strict(),
+  z.object({ type: z.literal('combatant.add'), floorId:z.string().min(1).max(100).optional(), combatants: z.array(combatantSchema).min(1).max(20) }).strict(),
   z.object({ type: z.literal('combatant.edit'), ...target, combatant: combatantSchema }).strict(),
   z.object({ type: z.literal('combatant.remove'), ...target }).strict(),
   z.object({ type: z.literal('ability.toggle'), ...target, key: z.string().max(400) }).strict(),
@@ -76,18 +79,21 @@ export function applyCommand(state: EncounterState, actor: Actor, command: GameC
     const records=activeTactical(state.tactical,now)
     if(command.type==='tactical.clear'){if(actor.role!=='dm')throw new DomainError('FORBIDDEN','Only the DM may clear shared overlays.');return{...state,tactical:[]}}
     const existing=records.find(r=>r.id===command.id)
-    if(command.type!=='tactical.create'&&(!existing||(actor.role!=='dm'&&existing.ownerId!==actor.id)))throw new DomainError('FORBIDDEN','Only the owner or DM may change this overlay.')
+    if(command.type!=='tactical.create'&&(!existing||actor.role==='player'&&!levelVisible(state,existing.floorId)||(actor.role!=='dm'&&existing.ownerId!==actor.id)))throw new DomainError('FORBIDDEN','Only the owner or DM may change this overlay.')
     if(command.type==='tactical.remove')return{...state,tactical:records.filter(r=>r.id!==command.id)}
-    try{assertTacticalBounds(command.object,state.battleMap.width,state.battleMap.height)}catch{throw new DomainError('INVALID','Overlay anchor is outside the battlefield.')}
+    const floorId=command.floorId??existing?.floorId??primaryLevelId(state.dungeonMap),level=state.dungeonMap&&dungeonLevels(state.dungeonMap).find(l=>l.id===floorId)
+    if(state.dungeonMap&&!level||actor.role==='player'&&!levelVisible(state,floorId))throw new DomainError('FORBIDDEN','Level access denied.')
+    try{assertTacticalBounds(command.object,level?.width??state.battleMap.width,level?.height??state.battleMap.height)}catch{throw new DomainError('INVALID','Overlay anchor is outside the battlefield.')}
     if(command.type==='tactical.create'){
       if(existing||records.length>=64||(actor.role!=='dm'&&records.filter(r=>r.ownerId===actor.id).length>=8))throw new DomainError('INVALID','Duplicate overlay or shared overlay limit reached.')
-      return{...state,tactical:[...records,{...command.object,id:command.id,ownerId:actor.id,...(command.object.kind==='measurement'?{expiresAt:now+120000}:{})}]}
+      return{...state,tactical:[...records,{...command.object,floorId,id:command.id,ownerId:actor.id,...(command.object.kind==='measurement'?{expiresAt:now+120000}:{})}]}
     }
+    if(existing!.floorId&&command.floorId&&command.floorId!==existing!.floorId)throw new DomainError('INVALID','Overlay level cannot change.')
     if(existing!.kind!==command.object.kind)throw new DomainError('INVALID','Overlay kind cannot change.')
-    return{...state,tactical:records.map(r=>r.id===command.id?{...command.object,id:r.id,ownerId:r.ownerId,expiresAt:r.expiresAt}:r)}
+    return{...state,tactical:records.map(r=>r.id===command.id?{...command.object,floorId:r.floorId,id:r.id,ownerId:r.ownerId,expiresAt:r.expiresAt}:r)}
   }
   const c = 'combatantId' in command ? state.combatants.find(c => String(c.id) === String(command.combatantId)) : undefined
-  if (actor.role !== 'dm' && (command.type !== 'token.move' || !c?.visible || c.ownerId !== actor.id)) throw new DomainError('FORBIDDEN', 'This action is not permitted.')
+  if (actor.role !== 'dm' && (command.type !== 'token.move' || !c?.visible || c.ownerId !== actor.id || !combatantLevelVisible(state,c))) throw new DomainError('FORBIDDEN', 'This action is not permitted.')
   if (command.type === 'map.generate') {
     if (actor.role !== 'dm') throw new DomainError('FORBIDDEN', 'Only the DM may generate maps.')
     return applyMapEdit(state, actor, { type: 'map.load', document: generateDungeon(command.options) }, emptyHistory()).state
@@ -96,9 +102,14 @@ export function applyCommand(state: EncounterState, actor: Actor, command: GameC
   if ('combatantId' in command && !c) throw new DomainError('NOT_FOUND', 'Combatant not found.')
   const update = (patch: Partial<Combatant>) => ({ ...state, combatants: state.combatants.map(item => item === c ? { ...item, ...patch } : item) })
   switch (command.type) {
+    case 'combatant.floor.transfer': {
+      const level=state.dungeonMap&&dungeonLevels(state.dungeonMap).find(l=>l.id===command.floorId)
+      if(!level||!isGridPosition(command.destination,level.width,level.height))throw new DomainError('INVALID','Choose a destination inside an existing level.')
+      return {...update({floorId:level.id}),battleMap:{...state.battleMap,tokens:{...state.battleMap.tokens,[String(c!.id)]:command.destination}}}
+    }
     case 'token.move':
-      if (!isGridPosition(command.destination, state.battleMap.width, state.battleMap.height)) throw new DomainError('INVALID', 'Destination is outside the battlefield.')
-      return { ...state, battleMap: moveToken(state.battleMap, command.combatantId, command.destination) }
+      if (!isGridPosition(command.destination, ...combatantBounds(state,c!))) throw new DomainError('INVALID', 'Destination is outside the battlefield.')
+      return { ...state, battleMap: {...state.battleMap,tokens:{...state.battleMap.tokens,[String(command.combatantId)]:command.destination}} }
     case 'combatant.miniature.update': return update({ miniature: command.miniature })
     case 'token.assign': return update({ ownerId: command.playerId })
     case 'combatant.hp.update': return update({ hp: Math.min(command.hp, c!.maxHp) })
@@ -107,12 +118,12 @@ export function applyCommand(state: EncounterState, actor: Actor, command: GameC
     case 'combatant.visibility': return update({ visible: command.visible })
     case 'combatant.edit': {
       if (String(command.combatant.id) !== String(c!.id)) throw new DomainError('INVALID', 'Combatant identity cannot change.')
-      return { ...update({ ...command.combatant, id: c!.id, ownerId: c!.ownerId }), combatants: update({ ...command.combatant, id: c!.id, ownerId: c!.ownerId }).combatants.sort((a, b) => b.initiative - a.initiative) }
+      return { ...update({ ...command.combatant, id: c!.id, ownerId: c!.ownerId, floorId:c!.floorId }), combatants: update({ ...command.combatant, id: c!.id, ownerId: c!.ownerId, floorId:c!.floorId }).combatants.sort((a, b) => b.initiative - a.initiative) }
     }
     case 'combatant.add': {
-      const combatants = [...state.combatants, ...command.combatants.map(c => ({ ...c, ownerId: null }))].sort((a, b) => b.initiative - a.initiative)
+      const combatants = [...state.combatants, ...command.combatants.map(c => ({ ...c, floorId:command.floorId??c.floorId??primaryLevelId(state.dungeonMap), ownerId: null }))].sort((a, b) => b.initiative - a.initiative)
       if (combatants.length > 100 || new Set(combatants.map(c => String(c.id))).size !== combatants.length) throw new DomainError('INVALID', 'Too many or duplicate combatants.')
-      return { ...state, combatants, activeId: state.activeId ?? combatants[0]?.id ?? null, battleMap: reconcileBattleMap(state.battleMap, combatants.map(c => c.id)) }
+      return reconcileLevelTokens({ ...state, combatants, activeId: state.activeId ?? combatants[0]?.id ?? null })
     }
     case 'combatant.remove': {
       const combatants = state.combatants.filter(item => item !== c)
@@ -140,20 +151,31 @@ export const isMapEdit = (command: GameCommand): command is MapCommand => mapCom
 export function applyMapEdit(state: EncounterState, actor: Actor, command: MapCommand, history: MapHistory) {
   if (actor.role !== 'dm') throw new DomainError('FORBIDDEN', 'Only the DM may edit maps.')
   try {
-    if (command.type === 'map.floorImage.set' && Object.values(state.battleMap.tokens).some(p => p.x >= command.width || p.z >= command.height)) throw new Error('Resize would move combatants outside the map. Move them inside the new bounds first.')
+    if (!state.dungeonMap?.level && command.type === 'map.floorImage.set' && Object.values(state.battleMap.tokens).some(p => p.x >= command.width || p.z >= command.height)) throw new Error('Resize would move combatants outside the map. Move them inside the new bounds first.')
     const result = editMap({ document: state.dungeonMap ?? null, width: state.battleMap.width, height: state.battleMap.height }, history, command)
-    if ((command.type === 'map.undo' || command.type === 'map.redo') && (state.dungeonMap?.floorImage || result.frame.document?.floorImage) && Object.values(state.battleMap.tokens).some(p => p.x >= result.frame.width || p.z >= result.frame.height)) throw new Error('Undo/redo would move combatants outside the map. Move them inside the restored bounds first.')
-    const next: EncounterState = { ...state, dungeonMap: result.frame.document ?? undefined,
+    if (!state.dungeonMap?.level && (command.type === 'map.undo' || command.type === 'map.redo') && (state.dungeonMap?.floorImage || result.frame.document?.floorImage) && Object.values(state.battleMap.tokens).some(p => p.x >= result.frame.width || p.z >= result.frame.height)) throw new Error('Undo/redo would move combatants outside the map. Move them inside the restored bounds first.')
+    let next: EncounterState = { ...state, tactical:state.tactical?.map(r=>({...r,floorId:r.floorId??primaryLevelId(state.dungeonMap)})), combatants:state.combatants.map(c=>({...c,floorId:c.floorId??primaryLevelId(state.dungeonMap)})), dungeonMap: result.frame.document ?? undefined,
       battleMap: reconcileBattleMap({ ...state.battleMap, width: result.frame.width, height: result.frame.height }, state.combatants.map(c => c.id)),
       mapUndoDepth: result.history.undo.length, mapRedoDepth: result.history.redo.length }
+    const nextLevels=next.dungeonMap?dungeonLevels(next.dungeonMap):[]
+    const replacing=command.type==='map.load'||command.type==='map.blank'
+    if(replacing)next={...next,combatants:next.combatants.map(c=>nextLevels.some(l=>l.id===(c.floorId??primaryLevelId(state.dungeonMap)))?c:{...c,floorId:primaryLevelId(next.dungeonMap)})}
+    if(!replacing&&next.dungeonMap){
+      for(const c of next.combatants){
+        const id=c.floorId??primaryLevelId(state.dungeonMap),level=nextLevels.find(l=>l.id===id),p=state.battleMap.tokens[String(c.id)]
+        if(!level)throw new Error('Move combatants off this level before removing it or undoing its creation.')
+        if(p&&!isGridPosition(p,level.width,level.height))throw new Error('Move combatants inside the new level bounds before resizing or undoing.')
+      }
+    }
+    next=reconcileLevelTokens({...next,battleMap:{...next.battleMap,tokens:state.battleMap.tokens}})
     return { state: next, history: result.history }
   } catch (error) { throw new DomainError('INVALID', error instanceof Error ? error.message : 'Invalid map edit.') }
 }
 // Explicit allowlists: never send opaque stored objects to players.
 export function projectEncounter(state: EncounterState, actor: Actor): EncounterState {
   if (actor.role === 'dm') return state
-  const combatants = state.combatants.filter(c => c.visible).map(c => {
-    const publicData = { id: c.id, name: c.name, short: c.short, side: c.side, initiative: c.initiative,
+  const combatants = state.combatants.filter(c => c.visible&&combatantLevelVisible(state,c)).map(c => {
+    const publicData = { floorId:c.floorId??primaryLevelId(state.dungeonMap), id: c.id, name: c.name, short: c.short, side: c.side, initiative: c.initiative,
       miniature: c.miniature, miniatureStatus: c.miniatureStatus,
       ownerId: c.ownerId, visible: true, hpShown: c.hpShown === true, hp: c.hpShown === true ? c.hp : 0, maxHp: c.hpShown === true ? c.maxHp : 1, ac: 0, role: '', speed: '', conditions: c.conditions,
       saves: [], actions: [], privateNotes: '' }
@@ -163,14 +185,16 @@ export function projectEncounter(state: EncounterState, actor: Actor): Encounter
   })
   const ids = new Set(combatants.map(c => String(c.id)))
   const owned = combatants.filter(c => c.ownerId === actor.id)
-  return { ...state, dungeonMap: state.dungeonMap ? { ...state.dungeonMap, props: state.dungeonMap.props.filter(p => !isScenery(p) || p.visible) } : undefined, mapUndoDepth: undefined, mapRedoDepth: undefined, combatants, selectedId: null, activeId: ids.has(String(state.activeId)) ? state.activeId : null,
+  const dungeonMap=playerDungeon(state.dungeonMap)
+  const levels=dungeonMap?dungeonLevels(dungeonMap):[]
+  return { ...state, levelsHidden:Boolean(state.dungeonMap&&!dungeonMap), tactical:state.tactical?.filter(r=>levelVisible(state,r.floorId)).map(r=>({...r,floorId:r.floorId??primaryLevelId(state.dungeonMap)})), dungeonMap, mapUndoDepth: undefined, mapRedoDepth: undefined, combatants, selectedId: null, activeId: ids.has(String(state.activeId)) ? state.activeId : null,
     usedAbilities: Object.fromEntries(Object.entries(state.usedAbilities).filter(([key]) => owned.some(c => key.startsWith(`${c.id}:`)))),
-    battleMap: { ...state.battleMap, tokens: Object.fromEntries(Object.entries(state.battleMap.tokens).filter(([id]) => ids.has(id))) } }
+    battleMap: { ...state.battleMap, ...(state.dungeonMap?{width:Math.max(4,...levels.map(l=>l.width)),height:Math.max(4,...levels.map(l=>l.height))}:{}), tokens: Object.fromEntries(Object.entries(state.battleMap.tokens).filter(([id]) => ids.has(id))) } }
 }
 export interface Snapshot { mapDocumentOmitted?: boolean; campaignId: string; encounterId: string; name: string; revision: number; sessionActive: boolean; state: EncounterState; actor: Actor }
 // Retain the same document reference for combat-only updates. Missing patches require a full join snapshot.
 export function mergeMapSnapshot(previous: Snapshot | null, next: Snapshot): Snapshot | null {
-  if (!next.mapDocumentOmitted) return next
+  if (!next.mapDocumentOmitted) return next.state.dungeonMap&&previous?.encounterId===next.encounterId?{...next,state:{...next.state,dungeonMap:reuseDungeonGeometry(previous.state.dungeonMap,next.state.dungeonMap)}}:next
   if (!previous || previous.encounterId !== next.encounterId || previous.state.mapRevision !== next.state.mapRevision || !previous.state.dungeonMap) return null
   return { ...next, mapDocumentOmitted: false, state: { ...next.state, dungeonMap: previous.state.dungeonMap } }
 }
@@ -196,3 +220,29 @@ export interface ClientEvents {
 }
 
 export const durableEncounter=(state:EncounterState):EncounterState=>state.tactical?{...state,tactical:state.tactical.filter(r=>r.kind==='template')}:state
+
+export const combatantFloorId=(state:EncounterState,c:Pick<Combatant,'floorId'>)=>c.floorId??primaryLevelId(state.dungeonMap)
+export const levelVisible=(state:EncounterState,id?:string)=>!state.dungeonMap||dungeonLevels(state.dungeonMap).some(l=>l.id===(id??primaryLevelId(state.dungeonMap))&&l.playerVisible)
+export const combatantLevelVisible=(state:EncounterState,c:Combatant)=>levelVisible(state,c.floorId)
+function combatantBounds(state:EncounterState,c:Combatant):[number,number]{
+  const level=state.dungeonMap&&dungeonLevels(state.dungeonMap).find(l=>l.id===combatantFloorId(state,c))
+  return level?[level.width,level.height]:[state.battleMap.width,state.battleMap.height]
+}
+export function reconcileLevelTokens(state:EncounterState):EncounterState{
+  if(!state.dungeonMap)return state
+  const levels=dungeonLevels(state.dungeonMap),tokens:EncounterState['battleMap']['tokens']={}
+  for(const level of levels){
+    const ids=state.combatants.filter(c=>combatantFloorId(state,c)===level.id).map(c=>c.id)
+    Object.assign(tokens,reconcileBattleMap({...state.battleMap,width:level.width,height:level.height},ids).tokens)
+  }
+  if(state.combatants.some(c=>!levels.some(l=>l.id===combatantFloorId(state,c))))throw new DomainError('INVALID','Combatant references an unknown level.')
+  return {...state,battleMap:{...state.battleMap,width:Math.max(...levels.map(l=>l.width)),height:Math.max(...levels.map(l=>l.height)),tokens}}
+}
+export function playerDungeon(map?:DungeonMap):DungeonMap|undefined{
+  if(!map)return undefined
+  const levels=dungeonLevels(map).filter(l=>l.playerVisible).map(l=>({...l,props:l.props.filter(p=>!isScenery(p)||p.visible)}))
+  if(!levels.length)return undefined
+  // Legacy maps retain their public wire format; multi-level maps expose visible levels only.
+  if(!map.level)return {...map,props:levels[0].props}
+  return composeLevels(map,levels)
+}
