@@ -1,0 +1,4 @@
+.combatant-library {padding:24px;max-width:1100px;width:min(90vw,1100px);max-height:85vh;overflow:auto;background:#252622;color:#eee}
+.combatant-library label {display:block;margin:12px 0}.combatant-library input:not([type=checkbox]),.combatant-library select,.combatant-library textarea {display:block;width:100%;padding:8px;color:inherit;background:#343630;border:1px solid #666}
+.combatant-library button {margin:5px;padding:8px}.combatant-library-columns {display:grid;grid-template-columns:1fr 2fr;gap:24px}.combatant-library ul {list-style:none;padding:0}.combatant-library fieldset {min-width:0}.combatant-library pre {white-space:pre-wrap}
+@media(max-width:700px){.combatant-library-columns{grid-template-columns:1fr}}

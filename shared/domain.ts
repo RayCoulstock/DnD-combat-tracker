@@ -11,6 +11,7 @@ import { createBattleMapState, isGridPosition, normalizeBattleMap, reconcileBatt
 export const idSchema = z.union([z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/), z.number().int().safe().nonnegative()]).refine(v => !['__proto__', 'constructor', 'prototype'].includes(String(v)))
 const text = z.string().max(10000)
 export const combatantSchema = z.object({
+  sourceLibraryId:z.uuid().optional(), persistentIdentity:z.boolean().optional(), unplaced:z.boolean().optional(),
   floorId:z.string().min(1).max(100).optional(), miniature: miniatureSchema.optional(), hpShown: z.boolean().optional(),
   id: idSchema, name: z.string().trim().min(1).max(200), short: z.string().max(20).default('?'),
   side: z.enum(['hero', 'enemy']), role: text.default(''), initiative: z.number().finite().min(-1000).max(1000),
@@ -51,6 +52,8 @@ export const emptyEncounter = (): EncounterState => importEncounter({ version: 1
 const target = { combatantId: idSchema }
 export const commandSchema = z.discriminatedUnion('type', [
   ...mapCommandSchemas, ...tacticalCommands,
+  z.object({type:z.literal('library.add'),entryId:z.uuid(),instanceId:z.uuid(),useSavedState:z.boolean().default(true),allowDuplicate:z.boolean().default(false),floorId:z.string().min(1).max(100).optional(),destination:z.object({x:z.number().int(),z:z.number().int()}).strict().optional()}).strict(),
+  z.object({type:z.literal('library.state.save'),combatantId:idSchema,expectedRevision:z.number().int().nonnegative(),conditions:z.array(z.string().max(100)).max(50)}).strict(),
   z.object({ type: z.literal('map.generate'), options: generationOptionsSchema }).strict(),
   z.object({type:z.literal('combatant.transition.use'),...target,transitionId:z.string().min(1).max(100),from:z.enum(['source','destination']),allowRemoteSource:z.boolean().default(false),allowOccupied:z.boolean().default(false)}).strict(),
   z.object({type:z.literal('combatant.floor.transfer'),...target,floorId:z.string().min(1).max(100),destination:z.object({x:z.number().int(),z:z.number().int()}).strict()}).strict(),
@@ -61,7 +64,7 @@ export const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('combatant.conditions'), ...target, conditions: z.array(z.string().max(100)).max(50) }).strict(),
   z.object({ type: z.literal('combatant.hp.visibility'), ...target, shown: z.boolean() }).strict(),
   z.object({ type: z.literal('combatant.visibility'), ...target, visible: z.boolean() }).strict(),
-  z.object({ type: z.literal('combatant.add'), floorId:z.string().min(1).max(100).optional(), combatants: z.array(combatantSchema).min(1).max(20) }).strict(),
+  z.object({ type: z.literal('combatant.add'), allowPersistentDuplicate:z.boolean().default(false), floorId:z.string().min(1).max(100).optional(), combatants: z.array(combatantSchema).min(1).max(20) }).strict(),
   z.object({ type: z.literal('combatant.edit'), ...target, combatant: combatantSchema }).strict(),
   z.object({ type: z.literal('combatant.remove'), ...target }).strict(),
   z.object({ type: z.literal('ability.toggle'), ...target, key: z.string().max(400) }).strict(),
@@ -104,6 +107,7 @@ export function applyCommand(state: EncounterState, actor: Actor, command: GameC
   if ('combatantId' in command && !c) throw new DomainError('NOT_FOUND', 'Combatant not found.')
   const update = (patch: Partial<Combatant>) => ({ ...state, combatants: state.combatants.map(item => item === c ? { ...item, ...patch } : item) })
   switch (command.type) {
+    case 'library.add': case 'library.state.save': throw new DomainError('INVALID','Library commands require server persistence.')
     case 'combatant.transition.use': {
       const transition=state.dungeonMap?.transitions?.find(t=>t.id===command.transitionId)
       if(!transition)throw new DomainError('INVALID','Transition no longer exists.')
@@ -115,16 +119,16 @@ export function applyCommand(state: EncounterState, actor: Actor, command: GameC
       const level=state.dungeonMap&&dungeonLevels(state.dungeonMap).find(l=>l.id===destination.floorId)
       if(!level||!isGridPosition(destination,level.width,level.height))throw new DomainError('INVALID','Transition destination is unavailable.')
       if(state.combatants.some(other=>other!==c&&combatantFloorId(state,other)===destination.floorId&&state.battleMap.tokens[String(other.id)]?.x===destination.x&&state.battleMap.tokens[String(other.id)]?.z===destination.z)&&!command.allowOccupied)throw new DomainError('INVALID','Destination is occupied. Confirm stacking to continue.')
-      return {...update({floorId:destination.floorId}),battleMap:{...state.battleMap,tokens:{...state.battleMap.tokens,[String(c!.id)]:{x:destination.x,z:destination.z}}}}
+      return {...update({floorId:destination.floorId,...(c!.unplaced?{unplaced:false}:{})}),battleMap:{...state.battleMap,tokens:{...state.battleMap.tokens,[String(c!.id)]:{x:destination.x,z:destination.z}}}}
     }
     case 'combatant.floor.transfer': {
       const level=state.dungeonMap&&dungeonLevels(state.dungeonMap).find(l=>l.id===command.floorId)
       if(!level||!isGridPosition(command.destination,level.width,level.height))throw new DomainError('INVALID','Choose a destination inside an existing level.')
-      return {...update({floorId:level.id}),battleMap:{...state.battleMap,tokens:{...state.battleMap.tokens,[String(c!.id)]:command.destination}}}
+      return {...update({floorId:level.id,...(c!.unplaced?{unplaced:false}:{})}),battleMap:{...state.battleMap,tokens:{...state.battleMap.tokens,[String(c!.id)]:command.destination}}}
     }
     case 'token.move':
       if (!isGridPosition(command.destination, ...combatantBounds(state,c!))) throw new DomainError('INVALID', 'Destination is outside the battlefield.')
-      return { ...state, battleMap: {...state.battleMap,tokens:{...state.battleMap.tokens,[String(command.combatantId)]:command.destination}} }
+      return { ...update(c!.unplaced?{unplaced:false}:{}), battleMap: {...state.battleMap,tokens:{...state.battleMap.tokens,[String(command.combatantId)]:command.destination}} }
     case 'combatant.miniature.update': return update({ miniature: command.miniature })
     case 'token.assign': return update({ ownerId: command.playerId })
     case 'combatant.hp.update': return update({ hp: Math.min(command.hp, c!.maxHp) })
@@ -136,9 +140,13 @@ export function applyCommand(state: EncounterState, actor: Actor, command: GameC
       return { ...update({ ...command.combatant, id: c!.id, ownerId: c!.ownerId, floorId:c!.floorId }), combatants: update({ ...command.combatant, id: c!.id, ownerId: c!.ownerId, floorId:c!.floorId }).combatants.sort((a, b) => b.initiative - a.initiative) }
     }
     case 'combatant.add': {
+      if(!command.allowPersistentDuplicate){
+        const seen=new Set(state.combatants.filter(c=>c.persistentIdentity).map(c=>c.sourceLibraryId))
+        for(const item of command.combatants)if(item.persistentIdentity&&item.sourceLibraryId){if(seen.has(item.sourceLibraryId))throw new DomainError('CONFLICT','This character is already in the encounter. Enable the duplicate override.');seen.add(item.sourceLibraryId)}
+      }
       const combatants = [...state.combatants, ...command.combatants.map(c => ({ ...c, floorId:command.floorId??c.floorId??primaryLevelId(state.dungeonMap), ownerId: null }))].sort((a, b) => b.initiative - a.initiative)
       if (combatants.length > 100 || new Set(combatants.map(c => String(c.id))).size !== combatants.length) throw new DomainError('INVALID', 'Too many or duplicate combatants.')
-      return reconcileLevelTokens({ ...state, combatants, activeId: state.activeId ?? combatants[0]?.id ?? null })
+      return reconcileLevelTokens({ ...state, combatants, battleMap:reconcileBattleMap(state.battleMap,combatants.map(c=>c.id)), activeId: state.activeId ?? combatants[0]?.id ?? null })
     }
     case 'combatant.remove': {
       const combatants = state.combatants.filter(item => item !== c)
@@ -191,7 +199,7 @@ export function projectEncounter(state: EncounterState, actor: Actor): Encounter
   if (actor.role === 'dm') return state
   const combatants = state.combatants.filter(c => c.visible&&combatantLevelVisible(state,c)).map(c => {
     const publicData = { floorId:c.floorId??primaryLevelId(state.dungeonMap), id: c.id, name: c.name, short: c.short, side: c.side, initiative: c.initiative,
-      miniature: c.miniature, miniatureStatus: c.miniatureStatus,
+      miniature: c.miniature, miniatureStatus: c.miniatureStatus, unplaced:c.unplaced,
       ownerId: c.ownerId, visible: true, hpShown: c.hpShown === true, hp: c.hpShown === true ? c.hp : 0, maxHp: c.hpShown === true ? c.maxHp : 1, ac: 0, role: '', speed: '', conditions: c.conditions,
       saves: [], actions: [], privateNotes: '' }
     if (c.ownerId !== actor.id) return publicData as Combatant

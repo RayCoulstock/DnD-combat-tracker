@@ -1,3 +1,4 @@
+import CombatantLibrary from './CombatantLibrary'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { io, type Socket } from 'socket.io-client'
 import App from './App.jsx'
@@ -10,6 +11,7 @@ import {createSessionBootstrap} from './sessionBootstrap'
 import './multiplayer.css'
 
 export default function Multiplayer() {
+  const [combatantLibraryOpen,setCombatantLibraryOpen]=useState(false)
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [mode, setMode] = useState<'local' | 'online'>(() => location.hash.startsWith('#invite=') || localStorage.getItem('ledger.playMode') === 'online' ? 'online' : 'local')
   useEffect(() => { localStorage.setItem('ledger.playMode', mode) }, [mode])
@@ -144,9 +146,10 @@ export default function Multiplayer() {
   const selectedCombatant = snapshot?.state.combatants.find(c => c.id === selected) ?? snapshot?.state.combatants[0]
   const player = actor?.role === 'player'
   return <>
-    <nav className="multiplayer-nav" aria-label="Play mode"><strong>Encounter Ledger</strong><button onClick={() => setMode('local')} aria-pressed={mode === 'local'}>Local tracker</button><button onClick={() => setMode('online')} aria-pressed={mode === 'online'}>Multiplayer</button>{mode === 'online' && actor?.role === 'dm' && <button onClick={() => setLibraryOpen(value => !value)} aria-pressed={libraryOpen}>Asset Library</button>}{mode === 'online' && <div className="multiplayer-connection"><span role="status" className={`connection ${status.toLowerCase()}`}>{status}</span>{actor?.role === 'dm' && online && <small>{members.filter(m=>m.connected).length} players online</small>}</div>}</nav>
+    <nav className="multiplayer-nav" aria-label="Play mode"><strong>Encounter Ledger</strong><button onClick={() => setMode('local')} aria-pressed={mode === 'local'}>Local tracker</button><button onClick={() => setMode('online')} aria-pressed={mode === 'online'}>Multiplayer</button>{mode === 'online' && actor?.role === 'dm' && <button onClick={() => setLibraryOpen(value => !value)} aria-pressed={libraryOpen}>Asset Library</button>}{mode==='online'&&actor?.role==='dm'&&!snapshot&&<button onClick={()=>setCombatantLibraryOpen(true)}>Combatant Library</button>}{mode === 'online' && <div className="multiplayer-connection"><span role="status" className={`connection ${status.toLowerCase()}`}>{status}</span>{actor?.role === 'dm' && online && <small>{members.filter(m=>m.connected).length} players online</small>}</div>}</nav>
     <div hidden={mode !== 'local'}><App assetScope={actor?.id} /></div>
     {mode === 'online' && <>
+      {combatantLibraryOpen&&actor?.role==='dm'&&<CombatantLibrary api={api} csrf={csrf} snapshot={null} onClose={()=>setCombatantLibraryOpen(false)} onAdd={async()=>{throw new Error('Open an encounter first.')}} send={send}/>}
       {libraryOpen && actor?.role === 'dm' && <AssetLibrary key={actor.id} api={api} csrf={csrf} onClose={() => setLibraryOpen(false)} />}
       <div hidden={libraryOpen && actor?.role === 'dm'}>
       {error && <p className="online-message" role="alert">{error}</p>}

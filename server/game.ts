@@ -1,3 +1,6 @@
+import { ownedEntry } from './combatant-library.ts'
+import { instantiateLibrary, characterStateSchema } from '../shared/combatantLibrary.ts'
+import { isGridPosition } from '../src/mapState.ts'
 import { syncEncounterImages, imageIds, historyImageIds } from './floor-image-references.ts'
 import type { PoolClient } from 'pg'
 import { isDeepStrictEqual } from 'node:util'
@@ -104,8 +107,35 @@ export async function execute(pool: Pool, actor: Actor, campaignId: string, data
       if (!template) throw new DomainError('FORBIDDEN', 'Map access denied.')
       command = { type: 'map.load', document: readDungeon(template.document) }
     }
+    if(command.type==='library.add'){
+      const entry=await ownedEntry(db,actor,command.entryId)
+      if(entry.kind!=='monster-template'&&entry.campaignId&&entry.campaignId!==campaignId)throw new DomainError('INVALID','This character belongs to another campaign.')
+      const saved=(await db.query('SELECT state FROM campaign_character_state WHERE campaign_id=$1 AND library_id=$2',[campaignId,entry.id])).rows[0]
+      let instance=instantiateLibrary(entry,command.instanceId,current,command.useSavedState?saved?.state:undefined,command.allowDuplicate)
+      const assetId=instance.miniature?.assetId
+      if(assetId&&!(await db.query("SELECT 1 FROM assets_3d WHERE id=$1 AND owner_id=$2 AND upload_status='ready' FOR UPDATE",[assetId,actor.id])).rowCount)instance={...instance,miniature:{...instance.miniature!,assetId:null}}
+      const floorId=command.floorId??primaryLevelId(current.dungeonMap)
+      const level=current.dungeonMap&&dungeonLevels(current.dungeonMap).find(l=>l.id===floorId)
+      if(current.dungeonMap&&!level)throw new DomainError('INVALID','Choose an existing floor.')
+      if(command.destination&&!isGridPosition(command.destination,level?.width??current.battleMap.width,level?.height??current.battleMap.height))throw new DomainError('INVALID','Choose a square inside the active floor.')
+      instance={...instance,floorId,unplaced:!command.destination}
+      if(command.destination)current.battleMap={...current.battleMap,tokens:{...current.battleMap.tokens,[String(instance.id)]:command.destination}}
+      command={type:'combatant.add',floorId,combatants:[instance],allowPersistentDuplicate:command.allowDuplicate}
+    }
+    if(command.type==='library.state.save'){
+      if(actor.role!=='dm')throw new DomainError('FORBIDDEN','Dungeon Master access required.')
+      const c=current.combatants.find(c=>String(c.id)===String(command.combatantId))
+      if(!c?.sourceLibraryId)throw new DomainError('INVALID','This combatant has no library identity.')
+      const entry=await ownedEntry(db,actor,c.sourceLibraryId)
+      if(entry.kind==='monster-template'||entry.campaignId&&entry.campaignId!==campaignId)throw new DomainError('INVALID','This is not a character in this campaign.')
+      const prior=(await db.query('SELECT revision FROM campaign_character_state WHERE campaign_id=$1 AND library_id=$2 FOR UPDATE',[campaignId,entry.id])).rows[0]
+      if((prior?.revision??0)!==command.expectedRevision)throw new DomainError('CONFLICT','Campaign state changed. Review it before saving again.')
+      if(command.conditions.some(condition=>!c.conditions.includes(condition)))throw new DomainError('INVALID','Choose long-term conditions from this combatant.')
+      await db.query(`INSERT INTO campaign_character_state(campaign_id,library_id,state) VALUES($1,$2,$3) ON CONFLICT(campaign_id,library_id) DO UPDATE SET state=$3,revision=campaign_character_state.revision+1,updated_at=now()`,[campaignId,entry.id,characterStateSchema.parse({hp:c.hp,maxHp:c.maxHp,conditions:command.conditions})])
+    }
     let next: EncounterState, history: MapHistory | undefined
-    if (isMapEdit(command)) {
+    if(command.type==='library.state.save'){next=current}
+    else if (isMapEdit(command)) {
       const saved = (await db.query('SELECT history FROM encounter_maps WHERE encounter_id=$1', [encounter.id])).rows[0]
       const result = applyMapEdit(current, actor, command, saved?.history ?? emptyHistory())
       next = result.state; history = result.history
