@@ -1,3 +1,4 @@
+import { registerCombatantLibraryRoutes } from './combatant-library.ts'
 import { registerFloorImageRoutes } from './floor-images.ts'
 import {expireMeasurements} from './tactical.ts'
 import {durableEncounter,projectEncounter} from '../shared/domain.ts'
@@ -122,6 +123,7 @@ export function createApplication({ pool, secret, origin, production = false, al
     return req.session.actor
   }
   const requireDM = (req: Request) => { const actor = requireActor(req); if (actor.role !== 'dm') throw new DomainError('FORBIDDEN', 'Dungeon Master access required.'); return actor }
+  registerCombatantLibraryRoutes(app,pool,requireDM)
   registerMapRoutes(app, pool, requireDM)
   registerFloorImageRoutes(app, pool, assetStorage, requireDM, requireActor)
   registerAssetRoutes(app, pool, assetStorage, requireDM, assetValidationLimits, requireActor)
@@ -250,7 +252,7 @@ export function createApplication({ pool, secret, origin, production = false, al
     const data = await transaction(pool, async db => {
       const rows = await db.query(`SELECT e.id AS encounter_id FROM combatants b JOIN encounters e ON e.id=b.encounter_id JOIN campaigns c ON c.id=e.campaign_id
         WHERE b.data->>'artwork'=$1 AND (($2='dm' AND c.owner_id=$3) OR ($2='player' AND c.session_active AND c.active_encounter_id=e.id AND b.visible AND b.owner_id=$3 AND EXISTS(SELECT 1 FROM memberships m WHERE m.id=$3 AND m.campaign_id=c.id AND m.revoked_at IS NULL)))`, [`/api/artwork/${id}`, actor.role, actor.id])
-      if (!rows.rowCount) throw new DomainError('FORBIDDEN', 'Artwork access denied.')
+      if (!rows.rowCount && !(actor.role==='dm'&&(await db.query("SELECT 1 FROM combatant_library WHERE owner_id=$1 AND definition->>'artwork'=$2",[actor.id,`/api/artwork/${id}`])).rowCount)) throw new DomainError('FORBIDDEN', 'Artwork access denied.')
       if(actor.role==='player'){let allowed=false;for(const row of rows.rows){const state=projectEncounter(await loadState(db,row.encounter_id),actor);if(state.combatants.some(c=>c.artwork===`/api/artwork/${id}`))allowed=true}if(!allowed)throw new DomainError('FORBIDDEN','Artwork access denied.')}
       return artworkStorage.get(db, id)
     }); if (!data) throw new DomainError('NOT_FOUND', 'Artwork not found.')

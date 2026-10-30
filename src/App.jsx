@@ -1,3 +1,5 @@
+import CombatantLibrary, { CampaignStateSave } from './CombatantLibrary'
+import { parseStatBlock } from '../shared/statBlock.js'
 import Modal from './Modal'
 import { useMemo, useRef, useState } from 'react'
 import { Check, ChevronRight, Copy, Download, FileJson, HeartPulse, ImagePlus, List, Map, Minus, Plus, RotateCcw, Shield, Skull, Sparkles, Swords, Trash2, Upload, UserPlus, X } from 'lucide-react'
@@ -18,58 +20,6 @@ const initialCombatants = [
 const availableConditions = ['Blinded', 'Charmed', 'Frightened', 'Grappled', 'Poisoned', 'Prone', 'Stunned']
 const exampleStatBlock = `Concavenator Large Beast (Theropod), Unaligned AC 14 (Scaly Skin) Initiative +4 (14) HP 56 (6d10 + 26) Speed 40 ft. Mod Save STR 16 +3 +3 DEX 14 +2 +2 CON 14 +2 +2 Mod Save INT 4 −3 −2 WIS 11 +0 +0 CHA 14 +2 +3 Skills Athletics +3, Intimidation +3, Stealth +3 Senses Passive Perception 12 Languages None CR 3 (XP 700; PB +2) Traits Mysterious Hump: Display. Concavenator has Advantage on Charisma checks. Mysterious Hump: Fatty Storage. Concavenator only needs to drink once per month. Muscular Forearms. Concavenator has Advantage on any check or Saving Throw to avoid the Grappled condition. Actions Combined Claw and Bite. Melee Attack Roll: +7, reach 5 ft., one target. Hit: 9 (2d6 + 2) Slashing damage plus 9 (2d6 + 2) Piercing damage. Reactions Mysterious Hump: Micro-thermoregulation. Trigger: Concavenator is hit by an attack or fails a Saving Throw. Response: Concavenator has Resistance to Cold or Fire damage until the end of the turn.`
 
-const sectionHeadings = ['Traits', 'Actions', 'Bonus Actions', 'Reactions', 'Legendary Actions']
-
-function getSection(text, heading) {
-  const nextHeadings = sectionHeadings.filter((item) => item !== heading).join('|')
-  return text.match(new RegExp(`(?:^|\\s)${heading}\\s+([\\s\\S]*?)(?=\\s(?:${nextHeadings})\\s|$)`, 'i'))?.[1]?.trim() || ''
-}
-
-function parseFeatures(text, category) {
-  if (!text) return []
-  const titlePattern = /(?:^|\.\s+)([A-Z][\w’'-]*(?:\s+(?:(?:and|or|of|the|to)|[A-Z][\w’':-]*))*)\.\s+/g
-  const matches = [...text.matchAll(titlePattern)]
-  return matches.map((match, index) => ({
-    name: match[1],
-    text: text.slice(match.index + match[0].length, matches[index + 1] ? matches[index + 1].index + 1 : text.length).trim(),
-    category,
-  }))
-}
-
-function parseStatBlock(text, initiative, side) {
-  const normalized = text.replace(/\s+/g, ' ').trim()
-  const findNumber = (label, fallback) => Number(normalized.match(new RegExp(`${label}\\s+(\\d+)`, 'i'))?.[1] ?? fallback)
-  const scores = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'].map((ability) => [ability, Number(text.match(new RegExp(`${ability}\\s+(\\d+)`, 'i'))?.[1] ?? 10)])
-  const hp = findNumber('(?:Hit Points?|HP)', 10)
-  const name = normalized.match(/^(.+?)(?=\s+(?:Tiny|Small|Medium|Large|Huge|Gargantuan)\s)/i)?.[1] || text.split('\n').find((line) => line.trim())?.trim() || 'Unknown Combatant'
-  const role = normalized.match(new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+(.+?)(?=\\s+(?:AC|Armor Class)\\s+\\d+)`, 'i'))?.[1]
-  const importedInitiative = normalized.match(/Initiative\s+[+−-]?\d+\s*\((\d+)\)/i)?.[1]
-  const details = [
-    ['Skills', normalized.match(/Skills\s+(.+?)(?=\s+Senses\s)/i)?.[1]],
-    ['Senses', normalized.match(/Senses\s+(.+?)(?=\s+Languages\s)/i)?.[1]],
-    ['Languages', normalized.match(/Languages\s+(.+?)(?=\s+CR\s)/i)?.[1]],
-    ['Challenge', normalized.match(/CR\s+(.+?)(?=\s+Traits\s|\s+Actions\s|$)/i)?.[1]],
-  ].filter(([, value]) => value)
-  const actions = sectionHeadings.flatMap((heading) => parseFeatures(getSection(normalized, heading), heading))
-
-  return {
-    id: Date.now(),
-    initiative: Number(initiative || importedInitiative || 10),
-    name,
-    short: name.split(/\s+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase(),
-    role: role || (side === 'hero' ? 'Player character' : 'Creature'),
-    side,
-    hp,
-    maxHp: hp,
-    ac: findNumber('(?:Armor Class|AC)', 10),
-    speed: normalized.match(/Speed\s+(.+?)(?=\s+(?:Mod|STR|Skills|Senses|Languages|CR|Traits|Actions)\s)/i)?.[1]?.trim() || '30 ft',
-    conditions: [],
-    saves: scores,
-    details,
-    actions: actions.length ? actions : [{ name: 'Imported stat block', text: 'No named traits or actions were found in this stat block.', category: 'Notes' }],
-  }
-}
-
 function HealthBar({ value, max }) {
   const percent = Math.max(0, Math.min(100, (value / max) * 100))
   const tone = percent <= 25 ? 'critical' : percent <= 50 ? 'wounded' : 'healthy'
@@ -86,6 +36,10 @@ function App({ multiplayer = null, assetScope = undefined }) {
   const { combatants, activeId, round, usedAbilities, battleMap } = state
   const [activeFloorId,setActiveFloorId]=useState('ground')
   const creationFloorId=state.dungeonMap&&dungeonLevels(state.dungeonMap).some(level=>level.id===activeFloorId)?activeFloorId:primaryLevelId(state.dungeonMap)
+  const [combatantLibraryOpen,setCombatantLibraryOpen]=useState(false)
+  const [libraryInitial,setLibraryInitial]=useState(undefined)
+  const [campaignSaveOpen,setCampaignSaveOpen]=useState(false)
+  const [pendingLibrary,setPendingLibrary]=useState(null)
   const [miniatureOpen, setMiniatureOpen] = useState(false)
   const [selectedId, setSelectedId] = useState(1)
   const [amount, setAmount] = useState('')
@@ -186,13 +140,22 @@ function App({ multiplayer = null, assetScope = undefined }) {
         <div className="header-actions"><button className="clear-button" onClick={clearEncounter} disabled={!canChange || !combatants.length}><Trash2 size={16} /> Clear</button><div className="file-actions"><button className="ghost icon-button" disabled={!canChange} onClick={() => encounterInputRef.current?.click()} title="Import encounter"><Upload size={16} /><span>Import</span></button><button className="ghost icon-button" onClick={exportEncounter} title="Export encounter"><Download size={16} /><span>Export</span></button></div><button className="ghost" disabled={!canChange} onClick={() => setShowAddCombatant(true)}><Plus size={17} /> Add combatant</button><button className="primary" onClick={nextTurn} disabled={!canChange || !combatants.length}>Next turn <ChevronRight size={18} /></button></div>
       </header>
 
+      {multiplayer?.library && <><button disabled={!canChange} onClick={()=>{setLibraryInitial(undefined);setCombatantLibraryOpen(true)}}>Combatant Library</button>{selected&&<button disabled={!canChange} onClick={()=>{setLibraryInitial(selected);setCombatantLibraryOpen(true)}}>Save selected combatant to library</button>}{selected?.sourceLibraryId&&selected.persistentIdentity&&<button disabled={!canChange} onClick={()=>setCampaignSaveOpen(true)}>Save to Campaign</button>}</>}
+      {campaignSaveOpen&&multiplayer?.library&&selected&&<Modal label="Save to Campaign" onClose={()=>setCampaignSaveOpen(false)}><CampaignStateSave key={selected.id} api={multiplayer.library.api} snapshot={multiplayer.snapshot} combatant={selected} send={send}/></Modal>}
+      {combatantLibraryOpen&&multiplayer?.library&&<CombatantLibrary api={multiplayer.library.api} csrf={multiplayer.csrf??''} snapshot={multiplayer.snapshot} initial={libraryInitial} send={send} onClose={()=>setCombatantLibraryOpen(false)} onAdd={async(entry,useSavedState,allowDuplicate,place)=>{
+        const command={type:'library.add',entryId:entry.id,instanceId:uniqueId(),useSavedState,allowDuplicate}
+        if(place){setPendingLibrary({command,encounterId:multiplayer.snapshot.encounterId,name:entry.name});setView('map');window.dispatchEvent(new Event('ledger:map-open'))}
+        else await send({...command,floorId:creationFloorId})
+        setCombatantLibraryOpen(false)
+      }}/>}
+      {pendingLibrary&&pendingLibrary.encounterId===multiplayer?.snapshot.encounterId&&<p role="status">Click a square on the active floor to place {pendingLibrary.name}. <button onClick={()=>setPendingLibrary(null)}>Cancel placement</button></p>}
       {multiplayer?.library && selected && <button className="miniature-action" disabled={!canChange} onClick={() => setMiniatureOpen(true)}>Assign 3D Miniature</button>}
       {miniatureOpen && multiplayer?.library && selected && <MiniatureSettings key={`${multiplayer.snapshot.encounterId}:${selected.id}`} combatant={selected} api={multiplayer.library.api} csrf={multiplayer.csrf ?? ''} send={send} connected={canChange} onClose={() => setMiniatureOpen(false)} />}
       <input ref={encounterInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={importEncounter} />
       <input ref={artworkInputRef} className="visually-hidden" type="file" accept="image/*" onChange={updateArtwork} />
       {fileMessage && <div className={`file-message ${fileMessage.tone}`} role="status"><FileJson size={16} /><span>{fileMessage.text}</span><button onClick={() => setFileMessage(null)} aria-label="Dismiss message"><X size={14} /></button></div>}
 
-      {view !== 'tracker' ? <DungeonBuilder state={state} editing={view === 'editor'} connected={canChange} send={send} library={multiplayer?.library} battlefield={{ editing:view==='editor',onToggleEditorMode:()=>setView(view==='editor'?'map':'editor'), onActiveLevelChange:setActiveFloorId, tactical: state.tactical ?? [], actor: multiplayer?.snapshot.actor ?? {id:'local',role:'dm'}, onCommand:send, connected:canChange, onAppearance:multiplayer?.library?()=>setMiniatureOpen(true):undefined, assetScope: multiplayer?.snapshot.actor.id ?? assetScope, assetContext: multiplayer ? { campaignId: multiplayer.snapshot.campaignId, encounterId: multiplayer.snapshot.encounterId } : undefined, combatants, round, selectedId: selected?.id ?? null, activeId, onSelectToken: setSelectedId, onMoveToken: moveToken, onToggleGrid: () => mapSettings({ showGrid: !battleMap.showGrid }), onToggleLabels: () => mapSettings({ showLabels: !battleMap.showLabels }), onReturnToTracker: () => setView('tracker'), canMove: canChange }} /> : <div className="workspace">
+      {view !== 'tracker' ? <DungeonBuilder state={state} editing={view === 'editor'} connected={canChange} send={send} library={multiplayer?.library} battlefield={{ onPlaceSquare:pendingLibrary&&pendingLibrary.encounterId===multiplayer?.snapshot.encounterId?async(destination,floorId)=>{try{await send({...pendingLibrary.command,floorId:floorId??creationFloorId,destination});setSelectedId(pendingLibrary.command.instanceId);setPendingLibrary(null)}catch(error){setFileMessage({tone:'error',text:error.message})}}:undefined, editing:view==='editor',onToggleEditorMode:()=>setView(view==='editor'?'map':'editor'), onActiveLevelChange:setActiveFloorId, tactical: state.tactical ?? [], actor: multiplayer?.snapshot.actor ?? {id:'local',role:'dm'}, onCommand:send, connected:canChange, onAppearance:multiplayer?.library?()=>setMiniatureOpen(true):undefined, assetScope: multiplayer?.snapshot.actor.id ?? assetScope, assetContext: multiplayer ? { campaignId: multiplayer.snapshot.campaignId, encounterId: multiplayer.snapshot.encounterId } : undefined, combatants, round, selectedId: selected?.id ?? null, activeId, onSelectToken: setSelectedId, onMoveToken: moveToken, onToggleGrid: () => mapSettings({ showGrid: !battleMap.showGrid }), onToggleLabels: () => mapSettings({ showLabels: !battleMap.showLabels }), onReturnToTracker: () => setView('tracker'), canMove: canChange }} /> : <div className="workspace">
         <aside className="initiative-panel">
           <div className="panel-heading"><div><span className="eyebrow">COMBAT QUEUE</span><h2>Initiative order</h2></div><span className="count">{combatants.length}</span></div>
           <div className="initiative-list">
@@ -242,6 +205,7 @@ function App({ multiplayer = null, assetScope = undefined }) {
       {showAddCombatant && <Modal className="modal-backdrop" label="Add combatants" onClose={() => setShowAddCombatant(false)}>
         <form className="combatant-modal" onSubmit={addCombatant} onMouseDown={(event) => event.stopPropagation()}>
           <div className="modal-heading"><span className="modal-icon"><Upload size={19} /></span><div><span className="eyebrow">IMPORT CREATURE</span><h2>Add a combatant</h2></div><button type="button" className="close-button" disabled={!canChange} onClick={() => setShowAddCombatant(false)} aria-label="Close"><X size={19} /></button></div>
+          {multiplayer?.library&&<button type="button" disabled={!canChange} onClick={()=>{setShowAddCombatant(false);setLibraryInitial(undefined);setCombatantLibraryOpen(true)}}>Choose from Combatant Library</button>}
           <p className="modal-help">Paste a plain-text stat block. We’ll pull out its core stats, skills, senses, traits, actions, and reactions.</p>
           <label className="field-label" htmlFor="stat-block">STAT BLOCK</label>
           <textarea id="stat-block" value={statBlock} onChange={(event) => setStatBlock(event.target.value)} placeholder={exampleStatBlock} autoFocus />
