@@ -1,15 +1,13 @@
 import { test, expect, type Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
-import { PerspectiveCamera, Vector3 } from 'three'
+import { projectBattlefield } from './workspace-helpers'
 import { makeTexturedGlb } from '../test-fixtures/glb'
 async function api(page:Page,path:string,body?:unknown){
   return page.evaluate(async({path,body})=>{const{csrf}=await(await fetch('/api/session')).json();const res=await fetch('/api'+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:body===undefined?undefined:JSON.stringify(body)});if(!res.ok)throw new Error(await res.text());return res.json()},{path,body})
 }
-async function square(page:Page,x:number,z:number,width=20,height=20){
-  const canvas=page.locator('canvas:visible');await canvas.scrollIntoViewIfNeeded();const box=(await canvas.boundingBox())!
-  const camera=new PerspectiveCamera(42,box.width/box.height,.1,300);camera.position.set(12,14,12);camera.lookAt(0,0,0);camera.updateMatrixWorld()
-  const point=new Vector3(x-width/2+.5,0,z-height/2+.5).project(camera)
-  await page.mouse.click(box.x+(point.x+1)*box.width/2,box.y+(1-point.y)*box.height/2)
+async function square(page:Page,x:number,z:number,width:number,height:number){
+  const point=await projectBattlefield(page,{x:x-width/2+.5,y:0,z:z-height/2+.5})
+  await page.mouse.click(point.x,point.y)
 }
 test.use({actionTimeout:15000})
 test('DM imports once, assigns a default model, reuses independent monsters and reloads the library',async({page})=>{
@@ -36,7 +34,7 @@ test('DM imports once, assigns a default model, reuses independent monsters and 
   let snapshot=await api(page,path+'/snapshot');expect(snapshot.state.combatants).toHaveLength(1);expect(snapshot.state.combatants[0].unplaced).toBe(true)
   await page.getByRole('button',{name:'Combatant Library',exact:true}).click();await page.getByRole('button',{name:'Library Goblin · Monster Template',exact:true}).click();await page.getByRole('button',{name:'Add to Encounter — choose square',exact:true}).click()
   await expect(page.getByRole('status').filter({hasText:'Click a square'})).toBeVisible();await expect(page.locator('canvas:visible')).toBeVisible()
-  await square(page,8,9)
+  await square(page,8,9,snapshot.state.battleMap.width,snapshot.state.battleMap.height)
   await expect.poll(async()=>(await api(page,path+'/snapshot')).state.combatants.length).toBe(2)
   snapshot=await api(page,path+'/snapshot');const placed=snapshot.state.combatants.find((c:{unplaced:boolean})=>!c.unplaced)
   expect(snapshot.state.battleMap.tokens[placed.id]).toEqual({x:8,z:9});expect(placed.miniature.assetId).toBe(asset.id);expect(placed.miniature.scale).toBe(1.5)
