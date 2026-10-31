@@ -26,3 +26,12 @@ export async function projectBattlefield(page:Page,point:{x:number;y:number;z:nu
  },{message:'Wait for the visible battlefield renderer, controls and canvas size to be ready',timeout:15000}).toBe(true)
  return projected!
 }
+
+// Unlike page.mouse.click, a locator click checks that the projected point really
+// receives input (no picker/backdrop or workspace overlay in front of the map).
+// Keep the position relative to the canvas so Playwright's scroll handling cannot
+// turn a correct projection into an unrelated viewport click.
+export async function clickBattlefield(page:Page,point:{x:number;y:number;z:number}){
+ const position=await projectBattlefield(page,point),canvas=page.locator('.battlefield-wrap canvas:visible'),box=(await canvas.boundingBox())!
+ await canvas.click({position:{x:position.x-box.x,y:position.y-box.y}})
+}
