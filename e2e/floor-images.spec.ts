@@ -2,12 +2,12 @@ import {test,expect,type Page} from '@playwright/test'
 import {randomUUID} from 'node:crypto'
 import {makeFloorImage} from '../test-fixtures/floor-image'
 import {makeTexturedGlb} from '../test-fixtures/glb'
-import {expandEditor,projectBattlefield} from './workspace-helpers'
+import {expandEditor,clickBattlefield} from './workspace-helpers'
 async function api(page:Page,path:string,body?:unknown){return page.evaluate(async({path,body})=>{
   const {csrf}=await(await fetch('/api/session')).json(),response=await fetch('/api'+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:body===undefined?undefined:JSON.stringify(body)})
   if(!response.ok)throw Error(await response.text());return response.json()
 },{path,body})}
-async function clickFloor(page:Page,x:number,z:number,width=20,height=10){const point=await projectBattlefield(page,{x:x-width/2,y:.002,z:z-height/2});await page.mouse.click(point.x,point.y)}
+async function clickFloor(page:Page,x:number,z:number,width=20,height=10){await clickBattlefield(page,{x:x-width/2,y:.002,z:z-height/2})}
 test('DM uploads and calibrates an image under walls, a GLB and a combatant; players, saved maps and history restore it',async({page,browser})=>{
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message))
   await page.goto('/');await page.getByRole('button',{name:'Multiplayer',exact:true}).click()
@@ -70,7 +70,15 @@ test('DM uploads and calibrates an image under walls, a GLB and a combatant; pla
     await editor.getByRole('button',{name:'Draw wall',exact:true}).click();await clickFloor(page,5.5,3.02)
     await expect.poll(async()=>(await api(page,path+'/snapshot')).state.dungeonMap.walls.length).toBe(1)
     const asset=await page.evaluate(async bytes=>{const{csrf}=await(await fetch('/api/session')).json(),data=new FormData();data.set('metadata',JSON.stringify({name:'Image barrel',category:'furniture'}));data.set('file',new Blob([new Uint8Array(bytes)]),'barrel.glb');const result=await fetch('/api/assets',{method:'POST',headers:{'X-CSRF-Token':csrf},body:data});if(!result.ok)throw Error(await result.text());return result.json()},Array.from(await makeTexturedGlb()))
-    await editor.getByRole('button',{name:'Add Object',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Add Object',exact:true});await dialog.locator('.asset-card').filter({hasText:'Image barrel'}).click();await dialog.getByRole('button',{name:'Use this model',exact:true}).click();await clickFloor(page,12.5,5.5)
+    await editor.getByRole('button',{name:'Add Object',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Add Object',exact:true});await dialog.locator('.asset-card').filter({hasText:'Image barrel'}).click();await dialog.getByRole('button',{name:'Use this model',exact:true}).click()
+    await expect(dialog).toHaveCount(0)
+    const placement=editor.getByRole('group',{name:'Object placement settings',exact:true})
+    await expect(placement.getByText('Image barrel',{exact:true})).toBeVisible();await expect(placement).toBeEnabled()
+    await expect(editor.getByRole('button',{name:'Add Object',exact:true})).toHaveAttribute('aria-pressed','true')
+    await clickFloor(page,12.5,5.5)
+    // Separate a missed placement/command from player-side model loading. Do not
+    // retry the click: that could create duplicate scenery and conceal a failure.
+    await expect.poll(async()=>{const state=(await api(page,path+'/snapshot')).state;return state.dungeonMap.props.map((prop:{assetId?:string;position:{x:number;z:number}})=>({assetId:prop.assetId,position:prop.position}))},{message:'Scenery placement must persist the selected asset at the clicked square'}).toEqual([{assetId:asset.id,position:{x:12,z:5}}])
     await expect(player.locator('[data-scenery-state=ready]')).toHaveCount(1)
     snapshot=await api(page,path+'/snapshot');expect(snapshot.state.dungeonMap.props[0].assetId).toBe(asset.id);expect(snapshot.state.dungeonMap.floorImage).toEqual(image)
     expect(imageRequests).toBe(1) // Walls/scenery and unrelated state never reload the texture.

@@ -1,0 +1,117 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="concept.css"></head><body>
+<div class="appbar">
+  <div class="brand"><div class="logo">⚔</div>Encounter Ledger</div>
+  <div class="modepill">● Multiplayer table <span class="chev">▾</span></div>
+  <div class="nav"><span class="on">▦ Table</span><span>❖ Libraries <span class="chev">▾</span></span></div>
+  <div class="appright">
+    <div class="conn"><span class="dot"></span>Connected · 2 online</div>
+    <div class="ibtn-dark">?</div>
+    <div class="me"><div class="av" style="background:var(--accent)">DM</div>Ray <span class="chev">▾</span></div>
+  </div>
+</div>
+<div class="sessionbar">
+  <div class="crumbs">
+    <div class="crumb"><span class="l">Campaign</span><span class="v">When the Mountain Weeps <small>▾</small></span></div>
+    <span class="slash">/</span>
+    <div class="crumb big"><span class="l">Encounter</span><span class="v">Myconid Fey Portal <small>▾</small></span></div>
+  </div>
+  <div class="roundbox"><span class="eyebrow">Round</span><strong>1</strong><span class="pill ok"><span class="dot"></span>Live</span></div>
+  <div class="views"><span>☰ Tracker</span><span>▦ Battle map</span><span class="on">✎ Map editor</span></div>
+  <div class="sessright">
+    <div class="stack"><div class="avs"><i style="background:#3c6e91">K</i><i style="background:#7a5a9e">E</i><i style="background:#b07a2f;opacity:.4">S</i></div><span class="sub">2/3</span><span class="chev">▾</span></div>
+    <span class="btn">Session <span class="chev">▾</span></span>
+    <div class="split"><span class="btn">＋ Add combatant</span><span class="btn"><span class="chev">▾</span></span></div>
+    <span class="btn primary">Next turn ›</span>
+  </div>
+</div>
+<div class="ws">
+  <div class="rail">
+    <div class="railbtn">»</div><div style="height:2px"></div>
+    <div class="rtok active" style="border-color:var(--accent);color:var(--accent)">MS</div>
+    <div class="rtok" style="border-color:var(--accent);color:var(--accent)">MW</div>
+    <div class="rtok" style="border-color:var(--accent);color:var(--accent)">MW</div>
+    <div class="rtok" style="border-color:var(--party);color:var(--party)">FA</div>
+    <div class="rtok" style="border-color:var(--party);color:var(--party)">TB</div>
+    <div class="raillabel">Initiative · Round 1</div>
+  </div>
+
+  <div class="stage" style="background-position:40% 40%">
+    <svg style="position:absolute;inset:0;width:100%;height:100%" viewBox="0 0 1194 880">
+      <line x1="520" y1="640" x2="860" y2="560" stroke="#f2c27a" stroke-width="7" stroke-dasharray="14 8" opacity=".95"/>
+      <circle cx="520" cy="640" r="7" fill="#f2c27a"/><circle cx="860" cy="560" r="7" fill="#fff" stroke="#f2c27a" stroke-width="3"/>
+      <rect x="868" y="528" width="96" height="24" rx="12" fill="#1f1d1a"/><text x="916" y="545" text-anchor="middle" font-family="Inter" font-size="12" font-weight="700" fill="#f2c27a">7 sq · 35 ft</text>
+    </svg>
+
+    <div class="dock" style="left:12px;top:12px">
+      <div class="db on">▤ Ground floor · 0 ft <span class="chev">▾</span></div>
+      <div class="db">Single floor <span class="chev">▾</span></div>
+    </div>
+    <div class="dock hint"><b>Wall</b> drag along grid lines <span class="kbd">Shift</span> straight <span class="kbd">Esc</span> cancel</div>
+    <div class="dock" style="right:12px;top:12px">
+      <div class="db">↶ Undo</div><div class="db dim">↷ Redo</div><div class="db">History <span class="chev">▾</span></div>
+      <div class="vsep"></div>
+      <div class="db">⛶ <span class="chev">▾</span></div>
+    </div>
+
+    <!-- editor palette with flyout -->
+    <div class="dock palette">
+      <div class="tool"><span class="k">V</span><span class="i">⌖</span>Select</div>
+      <div class="psep"></div>
+      <div class="tool"><span class="k">F</span><span class="i">▦</span>Floor</div>
+      <div class="tool on"><span class="k">W</span><span class="i">▬</span>Wall<span class="fly"></span></div>
+      <div class="tool"><span class="k">D</span><span class="i">⊓</span>Door</div>
+      <div class="psep"></div>
+      <div class="tool"><span class="k">O</span><span class="i">❖</span>Object</div>
+      <div class="tool"><span class="k">L</span><span class="i">⇅</span>Link</div>
+      <div class="tool"><span class="k">I</span><span class="i">▣</span>Image</div>
+      <div class="psep"></div>
+      <div class="tool"><span class="k">E</span><span class="i">⌫</span>Erase</div>
+    </div>
+    <div class="dock" style="left:76px;top:332px;padding:4px;gap:2px">
+      <div class="db on">▬ Wall segment</div><div class="db">╱ Line</div><div class="db">□ Room</div><div class="db">═ Corridor</div>
+    </div>
+
+    <div class="dock" style="left:12px;bottom:12px">
+      <div class="db">⟲ Reset</div><div class="db">◫ Top-down</div>
+      <div class="vsep"></div>
+      <div class="db">−</div><div class="db dim" style="min-width:40px">100%</div><div class="db">＋</div>
+      <div class="vsep"></div>
+      <div class="db on">▦ Grid</div><div class="db">Aa Labels</div>
+    </div>
+    <div class="dock" style="right:12px;bottom:12px;padding:4px 6px"><div class="db">1 sq = <b>5 ft</b> · 30 × 30 <span class="chev">▾</span></div></div>
+  </div>
+
+  <!-- C3 inspector -->
+  <div class="insp">
+    <div class="ihead">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div><div class="eyebrow">Map editor</div><div class="serif" style="font-size:19px;font-weight:600;margin-top:2px">Myconid Fey Portal</div><div class="sub" style="margin-top:2px">Editing <b style="color:var(--ink)">Ground floor · 0 ft</b></div></div>
+        <div style="display:flex;gap:4px"><div class="iconbtn" title="Collapse all">⇈</div><div class="iconbtn" title="Hide inspector">»</div></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:10px"><span class="pill warn"><span class="dot"></span>Unsaved changes</span><span class="sub">rev 234</span><span class="btn sm primary" style="margin-left:auto">Save map</span></div>
+    </div>
+    <div class="isecs">
+      <div class="glabel">Editing</div>
+      <div class="sec open">
+        <div class="sh"><span class="si">▬</span><span class="t">Active tool · Wall</span><span class="sub">Stone</span><span class="tw">▾</span></div>
+        <div class="sb">
+          <div><label>Material</label><div class="sg"><span class="on">Stone</span><span>Wood</span></div></div>
+          <div><label>Wall visual</label><div class="asset"><div class="thumb"></div><div style="flex:1"><div style="font-weight:600;font-size:12.5px">Mossy Cavern Wall</div><div class="sub">3D asset · GLB</div></div><span class="btn sm">Change</span></div></div>
+          <div class="trow">Snap to grid <span class="toggle on"></span></div>
+        </div>
+      </div>
+      <div class="sec"><div class="sh"><span class="si">⌖</span><span class="t">Selection</span><span class="sub">Nothing selected</span><span class="tw">▸</span></div></div>
+
+      <div class="glabel">This level</div>
+      <div class="sec"><div class="sh"><span class="si">▤</span><span class="t">Levels</span><span class="pill mute">2 floors</span><span class="tw">▸</span></div></div>
+      <div class="sec"><div class="sh"><span class="si">▣</span><span class="t">Floor image</span><span class="sub">30 × 30 · calibrated</span><span class="tw">▸</span></div></div>
+      <div class="sec"><div class="sh"><span class="si">❖</span><span class="t">Scenery</span><span class="pill mute">16 placed</span><span class="tw">▸</span></div></div>
+      <div class="sec"><div class="sh"><span class="si">⇅</span><span class="t">Transitions</span><span class="pill mute">0</span><span class="tw">▸</span></div></div>
+
+      <div class="glabel">Map</div>
+      <div class="sec"><div class="sh"><span class="si">⎙</span><span class="t">File &amp; templates</span><span class="sub">3 saved</span><span class="tw">▸</span></div></div>
+      <div class="sec"><div class="sh"><span class="si">✦</span><span class="t">Generate dungeon</span><span class="tw">▸</span></div></div>
+    </div>
+    <div style="border-top:1px solid var(--line-strong);background:#fff;padding:10px 14px" class="sub">Last edit · wall placed 12s ago</div>
+  </div>
+</div></body></html>

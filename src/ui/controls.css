@@ -1,0 +1,80 @@
+@import './tokens.css';
+
+.ledger-control.ledger-button {
+  box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
+  gap: var(--ledger-space-2); min-height: var(--ledger-target); min-width: var(--ledger-target);
+  padding: 8px 12px; margin: 0; border: 1px solid var(--ledger-control-line);
+  border-radius: var(--ledger-radius-control); background: var(--ledger-card); color: var(--ledger-ink);
+  font: 500 13px/1.4 var(--ledger-font-ui); cursor: pointer; text-decoration: none;
+  white-space: normal; overflow-wrap: anywhere;
+}
+.ledger-control.ledger-button:hover:not(:disabled) { background: var(--ledger-well); }
+.ledger-control.ledger-button--primary { background: var(--ledger-accent); border-color: var(--ledger-accent); color: var(--ledger-card); }
+.ledger-control.ledger-button--primary:hover:not(:disabled) { background: var(--ledger-accent-hover); }
+.ledger-control.ledger-button--danger { color: var(--ledger-accent); }
+.ledger-control.ledger-button--ghost { background: transparent; border-color: transparent; }
+.ledger-control.ledger-button:disabled { opacity: 1; color: var(--ledger-muted); background: var(--ledger-well); border-color: var(--ledger-line); cursor: not-allowed; }
+.ledger-control.ledger-button:focus-visible,
+.ledger-surface .ledger-input:focus-visible,
+.ledger-inspector-section > summary:focus-visible,
+.ledger-floating [role=menuitem]:focus-visible {
+  outline: 3px solid var(--ledger-focus); outline-offset: 3px;
+}
+.ledger-control.ledger-status-pill {
+  display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px;
+  color: var(--ledger-ink); background: var(--ledger-well); font: 600 12px/1.5 var(--ledger-font-ui);
+  white-space: normal; overflow-wrap: anywhere;
+}
+.ledger-control.ledger-status-pill--success { color: var(--ledger-ok); background: var(--ledger-ok-soft); }
+.ledger-control.ledger-status-pill--warning { color: var(--ledger-warn); background: var(--ledger-warn-soft); }
+.ledger-control.ledger-status-pill--danger { color: var(--ledger-accent); background: var(--ledger-accent-soft); }
+.ledger-control.ledger-status-pill--party { color: var(--ledger-party); background: var(--ledger-party-soft); }
+.ledger-split-button { display: inline-flex; align-items: stretch; max-width: 100%; }
+.ledger-split-button > .ledger-button { border-radius: var(--ledger-radius-control) 0 0 var(--ledger-radius-control); }
+.ledger-split-button > .ledger-menu-trigger { border-radius: 0 var(--ledger-radius-control) var(--ledger-radius-control) 0; border-left-width: 0; flex-shrink: 0; }
+.ledger-floating {
+  box-sizing: border-box; position: fixed; inset: auto; margin: 0; padding: 6px;
+  min-width: min(200px, calc(100vw - 16px)); max-width: min(380px, calc(100vw - 16px));
+  max-height: calc(100dvh - 16px); overflow: auto; border: 1px solid var(--ledger-line);
+  border-radius: var(--ledger-radius-panel); background: var(--ledger-card); color: var(--ledger-ink);
+  box-shadow: var(--ledger-shadow-panel); font: 14px/1.5 var(--ledger-font-ui); z-index: var(--ledger-layer-popover);
+}
+.ledger-floating.ledger-popover { padding: var(--ledger-space-4); }
+.ledger-menu-group { padding: 8px; color: var(--ledger-muted); font-size: 12px; font-weight: 600; }
+.ledger-floating .ledger-menu-item {
+  width: 100%; justify-content: flex-start; border-color: transparent; text-align: left;
+}
+.ledger-floating .ledger-menu-item:focus { background: var(--ledger-well); }
+.ledger-inspector-section {
+  border: 1px solid var(--ledger-line); border-radius: var(--ledger-radius-panel);
+  background: var(--ledger-card); color: var(--ledger-ink); font: 14px/1.5 var(--ledger-font-ui); margin-block: 8px;
+}
+.ledger-inspector-section > summary { min-height: 44px; padding: 12px; box-sizing: border-box; cursor: pointer; overflow-wrap: anywhere; }
+.ledger-inspector-section[open] > summary { border-bottom: 1px solid var(--ledger-line); box-shadow: inset 3px 0 var(--ledger-accent); }
+.ledger-section-description { margin-left: 8px; color: var(--ledger-muted); }
+.ledger-inspector-body { padding: var(--ledger-space-4); }
+dialog.ledger-drawer {
+  box-sizing: border-box; position: fixed; inset: 0 0 0 auto; margin: 0;
+  width: min(480px, 100%); max-width: 100%; height: 100dvh; max-height: 100dvh;
+  padding: 0; border: 0; border-left: 1px solid var(--ledger-line); border-radius: 0;
+  background: var(--ledger-surface); color: var(--ledger-ink); font: 14px/1.5 var(--ledger-font-ui);
+}
+dialog.ledger-drawer[open] { display: flex; flex-direction: column; }
+dialog.ledger-drawer:not([open]) { display: none; }
+.ledger-drawer-heading { display: flex; align-items: start; gap: 16px; padding: 20px; border-bottom: 1px solid var(--ledger-line); flex-shrink: 0; }
+.ledger-drawer-heading h2 { flex: 1; margin: 0; font: 600 20px/1.5 var(--ledger-font-heading); overflow-wrap: anywhere; }
+.ledger-drawer-body { flex: 1; min-height: 0; overflow: auto; padding: 20px; }
+.ledger-drawer-footer { padding: 16px; border-top: 1px solid var(--ledger-line); flex-shrink: 0; }
+/* The first adopted surface. No selectors apply to the map, shell or other forms. */
+.miniature-settings.ledger-surface { color: var(--ledger-ink); background: var(--ledger-surface); font-family: var(--ledger-font-ui); box-sizing: border-box; }
+.miniature-settings.ledger-surface h2 { font-family: var(--ledger-font-heading); line-height: 1.5; overflow-wrap: anywhere; }
+.miniature-settings.ledger-surface form label:not(.ledger-checkbox-label) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 12px; margin-block: 8px; }
+.miniature-settings.ledger-surface form label:not(.ledger-checkbox-label) .ledger-input { width: 100%; min-width: 0; }
+.ledger-surface .ledger-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 16px; }
+.ledger-surface .ledger-input { box-sizing: border-box; min-height: var(--ledger-target); padding: 8px; margin: 6px 0; max-width: 100%; border: 1px solid var(--ledger-control-line); border-radius: var(--ledger-radius-control); color: var(--ledger-ink); background: var(--ledger-card); font: inherit; }
+.ledger-surface input.ledger-input[type=checkbox] { min-width: 24px; min-height: 24px; vertical-align: middle; }
+.ledger-surface .ledger-checkbox-label { display: flex; align-items: center; gap: 8px; min-height: var(--ledger-target); }
+.ledger-surface .ledger-help { color: var(--ledger-muted); line-height: 1.6; }
+.ledger-surface fieldset { min-width: 0; padding: 16px; border-color: var(--ledger-line); border-radius: var(--ledger-radius-panel); }
+@media (max-width: 600px) { .miniature-settings.ledger-surface { padding: 12px; } .miniature-settings.ledger-surface form label:not(.ledger-checkbox-label) { grid-template-columns: minmax(0, 1fr); gap: 4px; } .ledger-drawer-heading, .ledger-drawer-body { padding: 16px; } }
+@media (prefers-reduced-motion: reduce) { .ledger-control, .ledger-floating, .ledger-inspector-section, .ledger-drawer { animation: none; transition: none; scroll-behavior: auto; } }

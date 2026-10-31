@@ -1,0 +1,20 @@
+{
+  "attachments": {
+    "ui-concept-v2-source.zip": "c2af2f671e5e972418ec66ec68a31795a93750a0037b2d78acbcc0183a0f8239",
+    "ui-design-guidelines-v2.1.md": "da6e1e727404aa35e8f2fa49fc2ddde9d311308986f84a4048abbcf91de8dd31"
+  },
+  "reference_files": {
+    "references/ui-design-guidelines-v2.1.original.md": "da6e1e727404aa35e8f2fa49fc2ddde9d311308986f84a4048abbcf91de8dd31",
+    "references/v2/01-blueprint.html": "89b1423bec5b3a27fe185e8e18ca5433df53987bbbaa0f208eb6cf20000b3579",
+    "references/v2/01-blueprint.png": "123273f038f4e04cd493897bbb8eaa690a776c3797a46df167073313a83c0ccc",
+    "references/v2/02-battle-map.html": "eaa951ef361d4b93ae9971ef043d166035bb691f13356504ca5043cdf7eac1e8",
+    "references/v2/02-battle-map.png": "d1ccbeeb8ce72950a6e7be79a50d6c935b9add53eb09f8e87e4aa6e07e474468",
+    "references/v2/03-map-editor.html": "fa6c79f098b2134d3537de5250e5f44f8a10863f3ec0145316e8bab161fdba08",
+    "references/v2/03-map-editor.png": "b686c90586382e9939ff15a78e257986c61434a60e1f2249c451758be4758037",
+    "references/v2/04-tracker.html": "c2269b7831399b33561dcd8363ed5bf837bf272e1631f75d3b30af9eb8e9510d",
+    "references/v2/04-tracker.png": "bdfb0029efd6e0d13dbfeba96de5df4ca8d9973f42942549b2a14e841542b34a",
+    "references/v2/concept.css": "c8355eeb2aa7b054268b439d57d4eea841af72adcef710439d28bacafb6107d9",
+    "references/v2/mapbg.jpg": "4a666eb42b2283d799de573fbb042c63544abc91bddb276a60c0ec6bbe28756d",
+    "references/v2/ui-design-guidelines.md": "8089802b3cf55cd7c37f54091fad92dc6c49717218c8b41e3a77bc30ea76b90c"
+  }
+}

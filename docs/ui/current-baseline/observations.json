@@ -1,0 +1,179 @@
+{
+  "date": "2026-10-31",
+  "sourceCommit": "0a2aedfb1c0b9965665740d20761d8351ce7ee8f",
+  "mode": "local demo; synthetic built-in combatants; no backend; external fonts blocked",
+  "observations": [
+    {
+      "file": "1440-tracker.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "view": "tracker",
+      "documentWidth": 1440,
+      "documentHeight": 1073,
+      "canvas": null
+    },
+    {
+      "file": "1440-battle-map.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "view": "battle-map",
+      "documentWidth": 1440,
+      "documentHeight": 1000,
+      "canvas": {
+        "x": 73,
+        "y": 155,
+        "width": 1346,
+        "height": 830
+      }
+    },
+    {
+      "file": "1440-map-editor.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "view": "map-editor",
+      "documentWidth": 1440,
+      "documentHeight": 1000,
+      "canvas": {
+        "x": 73,
+        "y": 155,
+        "width": 1016,
+        "height": 830
+      }
+    },
+    {
+      "file": "1280-tracker.png",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "view": "tracker",
+      "documentWidth": 1285,
+      "documentHeight": 973,
+      "canvas": null
+    },
+    {
+      "file": "1280-battle-map.png",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "view": "battle-map",
+      "documentWidth": 1280,
+      "documentHeight": 900,
+      "canvas": {
+        "x": 73,
+        "y": 155,
+        "width": 1186,
+        "height": 730
+      }
+    },
+    {
+      "file": "1280-map-editor.png",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "view": "map-editor",
+      "documentWidth": 1280,
+      "documentHeight": 900,
+      "canvas": {
+        "x": 73,
+        "y": 155,
+        "width": 856,
+        "height": 730
+      }
+    },
+    {
+      "file": "768-tracker.png",
+      "viewport": {
+        "width": 768,
+        "height": 1024
+      },
+      "view": "tracker",
+      "documentWidth": 808,
+      "documentHeight": 1097,
+      "canvas": null
+    },
+    {
+      "file": "768-battle-map.png",
+      "viewport": {
+        "width": 768,
+        "height": 1024
+      },
+      "view": "battle-map",
+      "documentWidth": 768,
+      "documentHeight": 1024,
+      "canvas": {
+        "x": 73,
+        "y": 155,
+        "width": 674,
+        "height": 854
+      }
+    },
+    {
+      "file": "768-map-editor.png",
+      "viewport": {
+        "width": 768,
+        "height": 1024
+      },
+      "view": "map-editor",
+      "documentWidth": 768,
+      "documentHeight": 1024,
+      "canvas": {
+        "x": 73,
+        "y": 155,
+        "width": 384,
+        "height": 854
+      }
+    },
+    {
+      "file": "390-tracker.png",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "view": "tracker",
+      "documentWidth": 390,
+      "documentHeight": 1447,
+      "canvas": null
+    },
+    {
+      "file": "390-battle-map.png",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "view": "battle-map",
+      "documentWidth": 390,
+      "documentHeight": 844,
+      "canvas": {
+        "x": 57,
+        "y": 171,
+        "width": 328,
+        "height": 658
+      }
+    },
+    {
+      "file": "390-map-editor.png",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "view": "map-editor",
+      "documentWidth": 390,
+      "documentHeight": 844,
+      "canvas": {
+        "x": 57,
+        "y": 171,
+        "width": 328,
+        "height": 658
+      }
+    }
+  ]
+}

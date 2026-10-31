@@ -1,0 +1,33 @@
+/* Namespaced values only: importing foundations does not reset the existing app. */
+:root {
+  --ledger-bg: #f4f0e8;
+  --ledger-surface: #fbf9f4;
+  --ledger-well: #ece6da;
+  --ledger-card: #ffffff;
+  --ledger-ink: #1f1d1a;
+  --ledger-muted: #625b50;
+  --ledger-line: #d6ccba;
+  --ledger-control-line: #8a8071;
+  --ledger-accent: #9e2b20;
+  --ledger-accent-hover: #812219;
+  --ledger-accent-soft: #f6e3df;
+  --ledger-ok: #27623e;
+  --ledger-ok-soft: #e3f1e8;
+  --ledger-warn: #80510b;
+  --ledger-warn-soft: #f8ecd6;
+  --ledger-party: #315c7d;
+  --ledger-party-soft: #e3ecf4;
+  --ledger-focus: #1b5fa7;
+  --ledger-font-ui: 'DM Sans', system-ui, sans-serif;
+  --ledger-font-heading: 'Libre Baskerville', Georgia, serif;
+  --ledger-space-1: 4px;
+  --ledger-space-2: 8px;
+  --ledger-space-3: 12px;
+  --ledger-space-4: 16px;
+  --ledger-space-6: 24px;
+  --ledger-radius-control: 8px;
+  --ledger-radius-panel: 12px;
+  --ledger-target: 40px;
+  --ledger-shadow-panel: 0 6px 24px #1f1d1a33;
+  --ledger-layer-popover: 60;
+}

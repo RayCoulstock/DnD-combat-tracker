@@ -2,6 +2,8 @@ import { test, expect, type Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { PerspectiveCamera, Vector3 } from 'three'
 import { makeTexturedGlb } from '../test-fixtures/glb'
+import { projectBattlefield } from './workspace-helpers'
+async function cameraState(page:Page){return page.locator('.battlefield-wrap canvas:visible').evaluate(async node=>{for(const resource of performance.getEntriesByType('resource').filter(r=>r.name.includes('/@react-three_fiber.js')).reverse()){const module=await import(resource.name),state=module._roots.get(node)?.store.getState();if(state?.controls)return{position:state.camera.position.toArray(),target:state.controls.target.toArray()}}throw new Error('No mounted camera')})}
 async function api(page: Page, path: string, body?: unknown) {
   return page.evaluate(async ({path,body})=>{const{csrf}=await(await fetch('/api/session')).json();const r=await fetch('/api'+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:body===undefined?undefined:JSON.stringify(body)});if(!r.ok)throw new Error(await r.text());return r.json()},{path,body})
 }
@@ -34,6 +36,7 @@ async function floorClick(page: Page, x: number, z: number) {
   const p=new Vector3(x-9.5,0,z-9.5).project(camera);await page.mouse.click(box.x+(p.x+1)*box.width/2,box.y+(1-p.y)*box.height/2)
 }
 test('DM assigns shared miniatures live; two players retain movement, fallback and independent cameras', async ({page,browser})=>{
+  const frames:string[]=[],sockets:string[]=[];page.on('websocket',socket=>{sockets.push(socket.url());socket.on('framesent',event=>{if(String(event.payload).includes('game.command'))frames.push(String(event.payload))})})
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message))
   await page.goto('/');await page.getByRole('button',{name:'Multiplayer',exact:true}).click()
   await page.getByLabel('Email',{exact:true}).fill(randomUUID()+'@example.test');await page.getByLabel('Password (12+ characters)',{exact:true}).fill('Miniature Browser Password 2049!');await page.getByRole('button',{name:'Create account',exact:true}).click()
@@ -92,6 +95,14 @@ test('DM assigns shared miniatures live; two players retain movement, fallback a
     await contexts[0].setOffline(true);await expect(players[0].locator('.connection')).toHaveText('Reconnecting');await contexts[0].setOffline(false);await expect(players[0].locator('.connection')).toHaveText('Connected');await expect(players[0].locator('[data-miniature-state=ready]')).toHaveCount(2);expect(modelRequests).toBe(1)
     await page.locator('.initiative-item:visible').filter({hasText:'Hero 2'}).click();await page.getByRole('button',{name:'Assign 3D Miniature',exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:'Restore placeholder token',exact:true}).click();await expect(players[0].locator('[data-miniature-state=ready]')).toHaveCount(1)
     await page.getByRole('button',{name:'3D Map',exact:true}).click();await expect(page.locator('main:visible [data-miniature-state=ready]')).toHaveCount(1);await page.screenshot({path:'/tmp/playable-miniatures.png',fullPage:true})
+    // Phase 1: presentation/draft changes must not mutate an encounter or reconnect.
+    await projectBattlefield(page,{x:0,y:0,z:0});await page.locator('.map-initiative-list button').filter({hasText:'Hero 1'}).click()
+    const before=await api(page,path+'/snapshot'),pose=await cameraState(page),mapCanvas=page.locator('.battlefield-wrap canvas:visible'),handle=await mapCanvas.elementHandle(),socketCount=sockets.length,frameCount=frames.length
+    await page.getByRole('button',{name:'Assign 3D Miniature',exact:true}).click();const settings=page.getByRole('dialog',{name:'Miniature settings for Hero 1',exact:true})
+    await expect(settings.getByText('3D model assigned',{exact:true})).toBeVisible();await settings.getByLabel('Miniature scale',{exact:true}).fill('2')
+    await settings.getByRole('button',{name:'Browse Asset Library',exact:true}).click();await settings.getByRole('button',{name:'Cancel selection',exact:true}).click();await expect(settings.getByLabel('Miniature scale',{exact:true})).toHaveValue('2')
+    await settings.getByRole('button',{name:'Close miniature settings',exact:true}).click()
+    const after=await api(page,path+'/snapshot');expect(after.revision).toBe(before.revision);expect(after.state.combatants).toEqual(before.state.combatants);expect(await cameraState(page)).toEqual(pose);expect(await mapCanvas.evaluate((node,previous)=>node===previous,handle)).toBe(true);expect(sockets).toHaveLength(socketCount);expect(frames).toHaveLength(frameCount)
     const unknown=randomUUID();await api(page,path+'/encounters',{name:'Unknown miniature',file:{...file,combatants:[{...file.combatants[0],miniature:{assetId:unknown}}]}})
     await expect(players[0].getByText('Model unavailable',{exact:true})).toBeVisible();await expect(players[0].locator('canvas')).toBeVisible();expect(errors).toEqual([])
   }finally{for(const release of releaseBootstraps)release();for(const context of contexts)await context.close()}
