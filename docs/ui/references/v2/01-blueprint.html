@@ -1,0 +1,143 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="concept.css">
+<style>
+body{height:auto;overflow:visible;padding:36px 40px 40px;background:var(--bg)}
+h1{font-family:var(--serif);font-size:30px;font-weight:600;margin:4px 0 4px}
+h2{font-family:var(--serif);font-size:20px;font-weight:600;margin:0 0 12px}
+.frame{position:relative;width:1000px;height:640px;border:2px solid var(--ink);border-radius:12px;background:#fff;overflow:hidden;flex-shrink:0}
+.z{position:absolute;border:1.5px dashed;border-radius:8px;display:flex;flex-direction:column;justify-content:center;align-items:center;font-size:11.5px;font-weight:600;text-align:center;line-height:1.25;padding:4px}
+.z b{font-family:var(--mono);font-size:11px;background:var(--ink);color:#fff;padding:1px 6px;border-radius:4px;margin-bottom:3px}
+.zA{background:#2b2925;border-color:#2b2925;color:#efe9dd;border-style:solid}
+.zA b{background:#f2c27a;color:var(--ink)}
+.zB{background:#f7f2e8;border-color:#b9ab94;color:var(--ink)}
+.zC{background:#eef3f6;border-color:#6d90a8;color:#2b4a5f}
+.zD{background:rgba(242,194,122,.28);border-color:#c9933d;color:#6b4710}
+.zE{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.legend{flex:1;display:flex;flex-direction:column;gap:14px}
+.lgrp{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.lgrp h3{font-size:13px;font-weight:700;margin-bottom:8px;display:flex;gap:8px;align-items:center}
+.sw{width:14px;height:14px;border-radius:4px;border:1.5px dashed}
+.li{display:grid;grid-template-columns:36px 150px 1fr;gap:8px;font-size:12px;padding:3px 0;border-top:1px solid #f1ece2}
+.li:first-of-type{border-top:none}
+.li code{font-family:var(--mono);font-weight:700;font-size:11px}
+.li span:last-child{color:var(--muted)}
+.menus{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:14px}
+.mc{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.mc .h{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.mc .h b{font-size:13px}
+.mc code{font-family:var(--mono);font-size:10.5px;background:var(--ink);color:#fff;padding:1px 6px;border-radius:4px}
+.mc ul{list-style:none;font-size:12px}
+.mc li{padding:3.5px 0;border-top:1px solid #f3eee5;display:flex;justify-content:space-between;gap:8px}
+.mc li:first-child{border-top:none}
+.mc li.g{font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-weight:700;border-top:none;padding-top:7px}
+.mc li em{font-style:normal;color:var(--muted);font-size:11px}
+.mc li.dg{color:var(--accent)}
+</style></head><body>
+
+<div class="eyebrow">Encounter Ledger · UI concept v2</div>
+<h1>Screen anatomy</h1>
+<p class="sub" style="font-size:13px;margin-bottom:20px">Every feature lives in one named zone. Two fixed rows of chrome (A + B) and then a workspace (C) that fills the remaining height. Canvas overlays (D) use six fixed slots. Transient UI (E) appears only on demand.</p>
+
+<div style="display:flex;gap:24px;align-items:flex-start">
+  <div class="frame">
+    <!-- A -->
+    <div class="z zA" style="left:0;top:0;width:1000px;height:44px;border-radius:0"></div>
+    <div class="z zA" style="left:10px;top:7px;width:120px;height:30px;border-color:#6b665d;border-style:dashed"><span><b>A1</b> Brand</span></div>
+    <div class="z zA" style="left:138px;top:7px;width:120px;height:30px;border-color:#6b665d;border-style:dashed"><span><b>A2</b> Table mode</span></div>
+    <div class="z zA" style="left:266px;top:7px;width:200px;height:30px;border-color:#6b665d;border-style:dashed"><span><b>A3</b> Primary nav</span></div>
+    <div class="z zA" style="left:770px;top:7px;width:220px;height:30px;border-color:#6b665d;border-style:dashed"><span><b>A4</b> Status · help · account</span></div>
+    <!-- B -->
+    <div class="z zB" style="left:0;top:44px;width:1000px;height:52px;border-radius:0;border-style:solid;border-width:0 0 1.5px"></div>
+    <div class="z zB" style="left:10px;top:52px;width:260px;height:36px"><span><b>B1</b> Campaign / Encounter switcher</span></div>
+    <div class="z zB" style="left:278px;top:52px;width:100px;height:36px"><span><b>B2</b> Round</span></div>
+    <div class="z zB" style="left:386px;top:52px;width:220px;height:36px"><span><b>B3</b> View switcher</span></div>
+    <div class="z zB" style="left:614px;top:52px;width:80px;height:36px"><span><b>B4</b> Players</span></div>
+    <div class="z zB" style="left:702px;top:52px;width:86px;height:36px"><span><b>B5</b> Session</span></div>
+    <div class="z zB" style="left:796px;top:52px;width:194px;height:36px"><span><b>B6</b> Primary actions</span></div>
+    <!-- C -->
+    <div class="z zC" style="left:8px;top:104px;width:60px;height:528px"><span><b>C1</b>Roster<br>rail</span></div>
+    <div class="z zC" style="left:76px;top:104px;width:656px;height:528px;justify-content:flex-end;padding-bottom:110px"><span><b>C2</b> Stage<br><span style="font-weight:500">tracker sheet · 3D canvas</span></span></div>
+    <div class="z zC" style="left:740px;top:104px;width:252px;height:528px;justify-content:flex-start;padding-top:18px">
+      <span><b>C3</b> Inspector</span>
+      <div style="width:220px;margin-top:14px;display:flex;flex-direction:column;gap:6px;font-weight:500;font-size:10.5px">
+        <div style="text-align:left;letter-spacing:.14em;color:#6d90a8">HEADER · object + save</div>
+        <div style="background:#fff;border:1px solid #6d90a8;border-radius:6px;height:24px"></div>
+        <div style="text-align:left;letter-spacing:.14em;color:#6d90a8">GROUP</div>
+        <div style="background:#fff;border:1px solid #6d90a8;border-left:3px solid var(--accent);border-radius:6px;height:70px"></div>
+        <div style="background:#fff;border:1px solid #6d90a8;border-radius:6px;height:24px"></div>
+        <div style="text-align:left;letter-spacing:.14em;color:#6d90a8">GROUP</div>
+        <div style="background:#fff;border:1px solid #6d90a8;border-radius:6px;height:24px"></div>
+        <div style="background:#fff;border:1px solid #6d90a8;border-radius:6px;height:24px"></div>
+      </div>
+    </div>
+    <!-- D -->
+    <div class="z zD" style="left:86px;top:114px;width:150px;height:36px"><span><b>D1</b> Level &amp; view</span></div>
+    <div class="z zD" style="left:314px;top:114px;width:180px;height:30px;border-radius:999px"><span><b>D2</b> Hint (one only)</span></div>
+    <div class="z zD" style="left:572px;top:114px;width:150px;height:36px"><span><b>D3</b> Stage actions</span></div>
+    <div class="z zD" style="left:86px;top:250px;width:52px;height:230px"><span><b>D4</b>Tool<br>palette</span></div>
+    <div class="z zD" style="left:86px;top:586px;width:240px;height:36px"><span><b>D5</b> Camera dock</span></div>
+    <div class="z zD" style="left:602px;top:586px;width:120px;height:36px"><span><b>D6</b> Scale</span></div>
+    <!-- E -->
+    <div class="z zE" style="left:400px;top:300px;width:150px;height:62px"><span><b>E1</b> Context popover<br><span style="font-weight:500">anchored to token</span></span></div>
+    <div class="z zE" style="left:330px;top:530px;width:200px;height:30px;border-radius:999px"><span><b>E5</b> Toast</span></div>
+    <div class="z zE" style="left:160px;top:200px;width:120px;height:40px"><span><b>E2</b> Menu / flyout</span></div>
+  </div>
+
+  <div class="legend">
+    <div class="lgrp"><h3><span class="sw" style="background:#2b2925;border-color:#2b2925;border-style:solid"></span>A · App bar <span class="sub" style="font-weight:500">global, never changes per view</span></h3>
+      <div class="li"><code>A1</code><span>Brand</span><span>Logo + name. Links to Table.</span></div>
+      <div class="li"><code>A2</code><span>Table mode</span><span>Multiplayer table ⇄ Local tracker.</span></div>
+      <div class="li"><code>A3</code><span>Primary nav</span><span>Table · Libraries ▾. New libraries go in the menu.</span></div>
+      <div class="li"><code>A4</code><span>Status &amp; account</span><span>Connection, help, account ▾ (sign out).</span></div>
+    </div>
+    <div class="lgrp"><h3><span class="sw" style="background:#f7f2e8;border-color:#b9ab94"></span>B · Session bar <span class="sub" style="font-weight:500">this campaign + encounter</span></h3>
+      <div class="li"><code>B1</code><span>Context switcher</span><span>Campaign ▾ / Encounter ▾ dropdowns.</span></div>
+      <div class="li"><code>B2</code><span>Round &amp; state</span><span>Round number, Live / Paused pill.</span></div>
+      <div class="li"><code>B3</code><span>View switcher</span><span>Tracker · Battle map · Map editor.</span></div>
+      <div class="li"><code>B4</code><span>Players</span><span>Avatar stack → popover: invite, presence, revoke.</span></div>
+      <div class="li"><code>B5</code><span>Session menu</span><span>Every encounter/session-level secondary action.</span></div>
+      <div class="li"><code>B6</code><span>Primary actions</span><span>Max 2: Add combatant ▾ and Next turn.</span></div>
+    </div>
+    <div class="lgrp"><h3><span class="sw" style="background:#eef3f6;border-color:#6d90a8"></span>C · Workspace <span class="sub" style="font-weight:500">fills the rest of the viewport</span></h3>
+      <div class="li"><code>C1</code><span>Roster rail</span><span>Initiative. 56px rail ⇄ 290px list.</span></div>
+      <div class="li"><code>C2</code><span>Stage</span><span>The thing being worked on. Never pushed down.</span></div>
+      <div class="li"><code>C3</code><span>Inspector</span><span>Context-sensitive accordion. Hideable.</span></div>
+    </div>
+    <div class="lgrp"><h3><span class="sw" style="background:rgba(242,194,122,.28);border-color:#c9933d"></span>D · Stage overlays · <span class="sw" style="background:var(--accent-soft);border-color:var(--accent)"></span>E · Transient</h3>
+      <div class="li"><code>D1–6</code><span>Six fixed slots</span><span>One dock per slot. No new floating bars.</span></div>
+      <div class="li"><code>E1–5</code><span>On demand</span><span>Popover, menu, drawer (E3), modal (E4), toast.</span></div>
+    </div>
+  </div>
+</div>
+
+<h2 style="margin-top:30px">Menu contents</h2>
+<p class="sub" style="font-size:13px;margin-top:-6px">Every row of buttons from the old layout is in one of these menus. New features add a row here before they get a button of their own.</p>
+<div class="menus">
+  <div class="mc"><div class="h"><b>Libraries ▾</b><code>A3</code></div><ul>
+    <li>Combatant Library <em>PCs · NPCs · monsters</em></li><li>3D Asset Library <em>models · scenery</em></li><li>Map templates <em>dungeons · images</em></li><li style="color:var(--faint)">＋ future: spells, items, handouts</li></ul></div>
+  <div class="mc"><div class="h"><b>Account ▾</b><code>A4</code></div><ul>
+    <li>Signed in as Ray (DM)</li><li>Preferences <em>units, shortcuts</em></li><li>Keyboard shortcuts <em>?</em></li><li class="dg">Sign out</li></ul></div>
+  <div class="mc"><div class="h"><b>Campaign ▾</b><code>B1</code></div><ul>
+    <li>Switch campaign <em>list</em></li><li>Rename campaign…</li><li>New campaign…</li><li>Campaign setup… <em>opens E3 drawer</em></li></ul></div>
+  <div class="mc"><div class="h"><b>Encounter ▾</b><code>B1</code></div><ul>
+    <li>Switch encounter <em>list</em></li><li>New encounter…</li><li>Import encounter JSON…</li><li>Rename encounter…</li></ul></div>
+  <div class="mc"><div class="h"><b>Players popover</b><code>B4</code></div><ul>
+    <li>Invite link <em>Copy · New</em></li><li>Player rows <em>presence · token</em></li><li>Token ownership &amp; visibility… <em>E3</em></li><li>Revoke / resend <em>per row</em></li></ul></div>
+  <div class="mc"><div class="h"><b>Session ▾</b><code>B5</code></div><ul>
+    <li class="g">Session</li><li>Save checkpoint <em>⌘S</em></li><li>Saved sessions…</li><li>Pause / resume</li>
+    <li class="g">Encounter data</li><li>Import… · Export…</li><li>Save combatants to campaign</li>
+    <li class="g">Danger</li><li class="dg">Clear encounter…</li><li class="dg">End session…</li></ul></div>
+  <div class="mc"><div class="h"><b>Add combatant ▾</b><code>B6</code></div><ul>
+    <li>New blank combatant <em>N</em></li><li>From Combatant Library…</li><li>Paste stat block…</li><li>Import combatant JSON…</li></ul></div>
+  <div class="mc"><div class="h"><b>Combatant ⋯</b><code>C2 / C3 / E1</code></div><ul>
+    <li>Assign 3D miniature…</li><li>Save to Combatant Library</li><li>Edit stat block…</li><li>Duplicate</li><li>Transfer to level…</li><li class="dg">Remove</li></ul></div>
+  <div class="mc"><div class="h"><b>Level ▾</b><code>D1</code></div><ul>
+    <li>Ground floor · 0 ft</li><li>Upper office · 12 ft</li><li>View: single · stacked · all</li><li>Manage levels… <em>C3 section</em></li></ul></div>
+  <div class="mc"><div class="h"><b>Fullscreen ⛶ ▾</b><code>D3</code></div><ul>
+    <li>Expand map <em>hide A + B</em></li><li>Browser fullscreen <em>F11</em></li><li>Player view preview</li><li>Inspector show/hide <em>]</em></li></ul></div>
+  <div class="mc"><div class="h"><b>History ▾</b><code>D3 · editor</code></div><ul>
+    <li>Undo / Redo <em>buttons beside menu</em></li><li>Recent edits list</li><li class="dg">Clear map history…</li></ul></div>
+  <div class="mc"><div class="h"><b>Tool palette</b><code>D4</code></div><ul>
+    <li class="g">Battle map</li><li>Select · Move · Ruler · Template ▸ · Draw · Clear</li>
+    <li class="g">Map editor</li><li>Select · Floor · Wall ▸ (segment, line, room, corridor) · Door · Object · Link · Image · Erase</li></ul></div>
+</div>
+</body></html>

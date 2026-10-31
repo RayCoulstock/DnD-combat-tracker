@@ -1,0 +1,112 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="concept.css"></head><body>
+
+<!-- A. App bar -->
+<div class="appbar">
+  <div class="brand"><div class="logo">⚔</div>Encounter Ledger</div>
+  <div class="modepill">● Multiplayer table <span class="chev">▾</span></div>
+  <div class="nav"><span class="on">▦ Table</span><span class="open">❖ Libraries <span class="chev">▾</span></span></div>
+  <div class="appright">
+    <div class="conn"><span class="dot"></span>Connected · 2 online</div>
+    <div class="ibtn-dark">?</div>
+    <div class="me"><div class="av" style="background:var(--accent)">DM</div>Ray <span class="chev">▾</span></div>
+  </div>
+</div>
+
+<!-- Libraries menu open -->
+<div class="menu" style="left:300px;top:50px;width:330px">
+  <div class="grp">Libraries</div>
+  <div class="it hl"><div class="ic">☺</div><div><div style="font-weight:600">Combatant Library</div><div class="d">PCs, NPCs &amp; monster templates · 42</div></div></div>
+  <div class="it"><div class="ic">◈</div><div><div style="font-weight:600">3D Asset Library</div><div class="d">Miniatures, scenery, walls &amp; doors · 118</div></div></div>
+  <div class="it"><div class="ic">▤</div><div><div style="font-weight:600">Map templates</div><div class="d">Saved dungeons &amp; floor images · 9</div></div></div>
+  <div class="hr"></div>
+  <div class="it" style="color:var(--muted)"><div class="ic" style="background:transparent;border:1px dashed var(--line-strong)">＋</div><div><div>Future libraries slot here</div><div class="d">Spells, items, handouts…</div></div></div>
+</div>
+
+<!-- B. Session bar -->
+<div class="sessionbar">
+  <div class="crumbs">
+    <div class="crumb"><span class="l">Campaign</span><span class="v">When the Mountain Weeps <small>▾</small></span></div>
+    <span class="slash">/</span>
+    <div class="crumb big"><span class="l">Encounter</span><span class="v">Myconid Fey Portal <small>▾</small></span></div>
+  </div>
+  <div class="roundbox"><span class="eyebrow">Round</span><strong>1</strong><span class="pill ok"><span class="dot"></span>Live</span></div>
+  <div class="views"><span>☰ Tracker</span><span class="on">▦ Battle map</span><span>✎ Map editor</span></div>
+  <div class="sessright">
+    <div class="stack"><div class="avs"><i style="background:#3c6e91">K</i><i style="background:#7a5a9e">E</i><i style="background:#b07a2f;opacity:.4">S</i></div><span class="sub">2/3</span><span class="chev">▾</span></div>
+    <span class="btn">Session <span class="chev">▾</span></span>
+    <div class="split"><span class="btn">＋ Add combatant</span><span class="btn"><span class="chev">▾</span></span></div>
+    <span class="btn primary">Next turn ›</span>
+  </div>
+</div>
+
+<!-- C. Workspace -->
+<div class="ws">
+  <div class="rail">
+    <div class="railbtn">»</div><div style="height:2px"></div>
+    <div class="rtok sel active" style="border-color:var(--accent);color:var(--accent)">MS</div>
+    <div class="rtok" style="border-color:var(--accent);color:var(--accent)">MW</div>
+    <div class="rtok" style="border-color:var(--accent);color:var(--accent)">MW</div>
+    <div class="rtok" style="border-color:var(--party);color:var(--party)">FA</div>
+    <div class="rtok" style="border-color:var(--party);color:var(--party)">TB</div>
+    <div class="raillabel">Initiative · Round 1</div>
+  </div>
+
+  <div class="stage">
+    <!-- ruler overlay -->
+    <svg style="position:absolute;inset:0;width:100%;height:100%" viewBox="0 0 1544 880">
+      <line x1="1124" y1="470" x2="790" y2="600" stroke="#f2c27a" stroke-width="3" stroke-dasharray="10 6"/>
+      <circle cx="1124" cy="470" r="6" fill="#f2c27a"/><circle cx="790" cy="600" r="6" fill="#f2c27a"/>
+      <rect x="912" y="510" width="74" height="26" rx="13" fill="#1f1d1a"/><text x="949" y="528" text-anchor="middle" font-family="Inter" font-size="13" font-weight="700" fill="#f2c27a">35 ft</text>
+    </svg>
+
+    <!-- D1 level & view -->
+    <div class="dock" style="left:12px;top:12px">
+      <div class="db on">▤ Ground floor · 0 ft <span class="chev">▾</span></div>
+      <div class="db">Single floor <span class="chev">▾</span></div>
+    </div>
+    <!-- D2 hint -->
+    <div class="dock hint"><b>Ruler</b> click two squares to measure <span class="kbd">Esc</span> clear</div>
+    <!-- D3 stage actions -->
+    <div class="dock" style="right:12px;top:12px">
+      <div class="db" title="Players see">👁 Player view</div>
+      <div class="vsep"></div>
+      <div class="db">⛶ <span class="chev">▾</span></div>
+      <div class="vsep"></div>
+      <div class="db">Inspector ‹</div>
+    </div>
+    <!-- D4 tool palette (play) -->
+    <div class="dock palette">
+      <div class="tool"><span class="k">V</span><span class="i">⌖</span>Select</div>
+      <div class="tool"><span class="k">M</span><span class="i">✥</span>Move</div>
+      <div class="psep"></div>
+      <div class="tool on"><span class="k">R</span><span class="i">↔</span>Ruler</div>
+      <div class="tool"><span class="k">T</span><span class="i">△</span>Template<span class="fly"></span></div>
+      <div class="tool"><span class="k">P</span><span class="i">✎</span>Draw</div>
+      <div class="psep"></div>
+      <div class="tool"><span class="i">⌫</span>Clear</div>
+    </div>
+    <!-- D5 camera dock -->
+    <div class="dock" style="left:12px;bottom:12px">
+      <div class="db">⟲ Reset</div><div class="db">◫ Top-down</div>
+      <div class="vsep"></div>
+      <div class="db">−</div><div class="db dim" style="min-width:40px">100%</div><div class="db">＋</div>
+      <div class="vsep"></div>
+      <div class="db on">▦ Grid</div><div class="db on">Aa Labels</div>
+    </div>
+    <!-- D6 scale chip -->
+    <div class="dock" style="right:12px;bottom:12px;padding:4px 6px"><div class="db">1 sq = <b>5 ft</b> · 30 × 30 <span class="chev">▾</span></div></div>
+
+    <!-- E1 contextual popover -->
+    <div class="popover" style="left:999px;top:258px">
+      <div style="padding:12px 14px 10px">
+        <div style="display:flex;justify-content:space-between;align-items:center"><div style="font-weight:700;font-size:13.5px">Myconid Sovereign</div><span class="pill red">Enemy</span></div>
+        <div style="display:flex;justify-content:space-between;margin:8px 0 5px" class="sub"><span>HP <b style="color:var(--ink)">60 / 60</b></span><span>AC <b style="color:var(--ink)">13</b> · 30 ft</span></div>
+        <div class="hpbar"><i style="width:100%;background:var(--accent)"></i></div>
+      </div>
+      <div style="display:flex;border-top:1px solid var(--line);padding:4px">
+        <div class="db" style="flex:1">✥ Move</div><div class="db" style="flex:1">− / ＋ HP</div><div class="db" style="flex:1">◈ Look</div><div class="db">⋯</div>
+      </div>
+    </div>
+  </div>
+</div>
+</body></html>
