@@ -1,3 +1,4 @@
+import {multiplayerMode,sessionAction,chooseCampaign,openSetup} from './shell-helpers'
 import {exerciseVerticalNavigation} from './vertical-navigation-acceptance'
 import {test,expect,type Page} from '@playwright/test'
 import {randomUUID} from 'node:crypto'
@@ -14,12 +15,12 @@ async function sceneLevels(page:Page){return page.locator('.battlefield-wrap can
 })}
 test('three populated levels retain images, geometry, transforms, tokens, drafts and player visibility through save/reload, transitions and fullscreen',async({page,browser})=>{
  const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message))
- await page.goto('/');await page.getByRole('button',{name:'Multiplayer',exact:true}).click()
- await page.getByLabel('Email',{exact:true}).fill(randomUUID()+'@example.test');await page.getByLabel('Password (12+ characters)',{exact:true}).fill('Multi Level Maps Password 2053!');await page.getByRole('button',{name:'Create account',exact:true}).click()
+ await page.goto('/');await multiplayerMode(page)
+ await page.getByLabel('Email',{exact:true}).fill(randomUUID()+'@example.test');await page.getByLabel('Password (12+ characters)',{exact:true}).fill('Multi Level Maps Password 2053!');await page.getByRole('button',{name:'Create account',exact:true}).click();await openSetup(page)
  await page.getByLabel('New campaign',{exact:true}).fill('Three storeys');await page.getByRole('button',{name:'Create campaign',exact:true}).click();await expect(page.getByLabel('New encounter',{exact:true})).toBeEnabled()
  const campaign=await page.getByRole('combobox',{name:'Campaign',exact:true}).inputValue(),path='/campaigns/'+campaign
  const file={version:1,round:1,combatants:[1,2,3].map(id=>({id,name:`Hero ${id}`,side:'hero',hp:10,maxHp:12,ac:15,initiative:20-id,conditions:[],saves:[],actions:[]}))}
- await api(page,path+'/encounters',{name:'Three levels',file});await page.getByRole('button',{name:'Start multiplayer session',exact:true}).click()
+ await api(page,path+'/encounters',{name:'Three levels',file});await sessionAction(page,'Start multiplayer session')
  const context=await browser.newContext(),player=await context.newPage();player.on('pageerror',error=>errors.push(error.message))
  try{
   const invite=await api(page,path+'/invitations',{});await player.goto(invite.url);await player.getByLabel('Display name').fill('Level player');await player.getByRole('button',{name:'Join campaign',exact:true}).click();await expect(player.locator('.connection')).toHaveText('Connected')
@@ -65,7 +66,7 @@ test('three populated levels retain images, geometry, transforms, tokens, drafts
   await editor.getByRole('button',{name:'Save map',exact:true}).click();await expect(editor.getByRole('status')).toContainText('Map saved');snapshot=await api(page,path+'/snapshot');const document=snapshot.state.dungeonMap
   await editor.getByRole('button',{name:'Undo map edit',exact:true}).click();await editor.getByRole('button',{name:'Redo map edit',exact:true}).click();await expect.poll(async()=>(await api(page,path+'/snapshot')).state.dungeonMap).toEqual(document)
   const exported=await api(page,path+'/export');expect(exported.dungeonMap).toEqual(document)
-  await page.reload();await page.getByRole('button',{name:'Expand setup',exact:true}).click();await page.getByRole('combobox',{name:'Campaign',exact:true}).selectOption(campaign);await expect(page.locator('.connection')).toHaveText('Connected');await page.getByRole('button',{name:'Map editor',exact:true}).click()
+  await page.reload();await chooseCampaign(page,campaign);await expect(page.locator('.connection')).toHaveText('Connected');await page.getByRole('button',{name:'Map editor',exact:true}).click()
   expect((await api(page,path+'/snapshot')).state.dungeonMap).toEqual(document)
   await expandEditor(page)
   for(const name of ['Ground Floor','Tower']){const panel=page.getByRole('region',{name:`Level: ${name}`,exact:true});await panel.getByLabel(`${name} player visibility`,{exact:true}).uncheck();await panel.getByRole('button',{name:'Apply level settings',exact:true}).click()}

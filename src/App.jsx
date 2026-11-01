@@ -1,8 +1,10 @@
 import CombatantLibrary, { CampaignStateSave } from './CombatantLibrary'
 import { parseStatBlock } from '../shared/statBlock.js'
 import Modal from './Modal'
+import {SessionBar} from './ApplicationShell'
+import {Menu} from './ui'
 import { useMemo, useRef, useState } from 'react'
-import { Check, ChevronRight, Copy, Download, FileJson, HeartPulse, ImagePlus, List, Map, Minus, Plus, RotateCcw, Shield, Skull, Sparkles, Swords, Trash2, Upload, UserPlus, X } from 'lucide-react'
+import { Check, Copy, FileJson, HeartPulse, ImagePlus, Minus, Plus, RotateCcw, Shield, Skull, Sparkles, Swords, Trash2, Upload, UserPlus, X } from 'lucide-react'
 import MiniatureSettings from './MiniatureSettings'
 import DungeonBuilder from './DungeonBuilder'
 import { emptyHistory,dungeonLevels,primaryLevelId } from '../shared/dungeon'
@@ -29,8 +31,8 @@ function HealthBar({ value, max }) {
 const uniqueId = () => crypto.randomUUID()
 const maxArtworkSize = 3 * 1024 * 1024
 
-/** @param {{ assetScope?: string, multiplayer?: null | { snapshot: import('../shared/domain').Snapshot, connected: boolean, send: (command: import('../shared/domain').GameCommand) => Promise<void>, library?: import('./DungeonBuilder').MapLibrary, csrf?: string, exportFile: () => Promise<import('../shared/domain').EncounterState> } }} props */
-function App({ multiplayer = null, assetScope = undefined }) {
+/** @param {{ chrome?: import('./ApplicationShell').TableChrome, assetScope?: string, multiplayer?: null | { snapshot: import('../shared/domain').Snapshot, connected: boolean, send: (command: import('../shared/domain').GameCommand) => Promise<void>, library?: import('./DungeonBuilder').MapLibrary, csrf?: string, exportFile: () => Promise<import('../shared/domain').EncounterState> } }} props */
+function App({ multiplayer = null, assetScope = undefined, chrome = undefined }) {
   const [{ encounter: localState, history: localHistory }, setLocal] = useState(() => ({ encounter: readEncounter({ version: 1, round: 3, activeId: 1, combatants: initialCombatants }), history: emptyHistory() }))
   const state = multiplayer?.snapshot.state ?? localState
   const { combatants, activeId, round, usedAbilities, battleMap } = state
@@ -50,6 +52,12 @@ function App({ multiplayer = null, assetScope = undefined }) {
   const [newSide, setNewSide] = useState('enemy')
   const [newQuantity, setNewQuantity] = useState('1')
   const [view, setView] = useState('tracker')
+  // One lazy workspace per table: hiding Tracker's map keeps its scene/drafts.
+  const[lastMapView,setLastMapView]=useState(null)
+  if(view!=='tracker'&&view!==lastMapView)setLastMapView(view)
+  const mapEditing=(view==='tracker'?lastMapView:view)==='editor'
+  const[seenTemplates,setSeenTemplates]=useState(chrome?.templatesRequest??0)
+  if(chrome?.templatesRequest&&chrome.templatesRequest!==seenTemplates){setSeenTemplates(chrome.templatesRequest);setView('editor')}
   const [fileMessage, setFileMessage] = useState(null)
   const encounterInputRef = useRef(null)
   const artworkInputRef = useRef(null)
@@ -100,7 +108,7 @@ function App({ multiplayer = null, assetScope = undefined }) {
     perform({ type: 'combatant.add', floorId:creationFloorId, combatants: [duplicate] }); setSelectedId(duplicate.id)
   }
   const removeCombatant = () => { if (selected) perform({ type: 'combatant.remove', combatantId: selected.id }) }
-  const clearEncounter = () => { if (window.confirm('Remove every combatant from this encounter?')) perform({ type: 'encounter.clear' }) }
+  const clearEncounter = () => { if (window.confirm('Clear this encounter, including all combatants, map, positions and combat state?')) perform({ type: 'encounter.clear' }) }
   const exportEncounter = async () => {
     try {
       const encounter = multiplayer ? await multiplayer.exportFile() : state
@@ -132,30 +140,35 @@ function App({ multiplayer = null, assetScope = undefined }) {
   const moveToken = (combatantId, destination) => perform({ type: 'token.move', combatantId, destination })
   const mapSettings = patch => perform({ type: 'map.settings', showGrid: battleMap.showGrid, showLabels: battleMap.showLabels, ...patch })
 
+  const openLibrary=()=>{setLibraryInitial(undefined);setCombatantLibraryOpen(true)}
+  const entityItems = selected && multiplayer?.library ? [
+    {id:'model',label:'Assign 3D Miniature',onSelect:()=>setMiniatureOpen(true),disabled:!canChange},
+    {id:'library',label:'Save selected combatant to library',onSelect:()=>{setLibraryInitial(selected);setCombatantLibraryOpen(true)},disabled:!canChange},
+    ...(selected.sourceLibraryId&&selected.persistentIdentity?[{id:'campaign',label:'Save to Campaign',onSelect:()=>setCampaignSaveOpen(true),disabled:!canChange}]:[])
+  ] : []
+  const entityMenu = entityItems.length ? <Menu className="ledger-entity-menu" label="Combatant actions" triggerContent={<>···<span className="visually-hidden"> {selected.name}</span></>} items={entityItems}/> : null
   return (
     <main className={`app-shell ${!canChange ? 'game-disconnected' : ''}`}>
-      <header>
-        <div className="brand"><span className="brand-mark"><Swords size={20} /></span><span>ENCOUNTER <b>LEDGER</b></span></div>
-        <div className="encounter-title"><div><span className="eyebrow">CURRENT ENCOUNTER</span><h1>{multiplayer?.snapshot.name ?? 'Goblin Ambush'}</h1></div><div className="round"><span>ROUND</span><strong>{round}</strong></div><div className="view-switcher" aria-label="Choose encounter view"><button className={view === 'tracker' ? 'active' : ''} onClick={() => setView('tracker')}><List size={15} /> Tracker</button><button className={view === 'map' ? 'active' : ''} onClick={() => {setView('map');window.dispatchEvent(new Event('ledger:map-open'))}}><Map size={15} /> 3D Map</button><button className={view === 'editor' ? 'active' : ''} onClick={() => {setView('editor');window.dispatchEvent(new Event('ledger:map-open'))}}>Map editor</button></div></div>
-        <div className="header-actions"><button className="clear-button" onClick={clearEncounter} disabled={!canChange || !combatants.length}><Trash2 size={16} /> Clear</button><div className="file-actions"><button className="ghost icon-button" disabled={!canChange} onClick={() => encounterInputRef.current?.click()} title="Import encounter"><Upload size={16} /><span>Import</span></button><button className="ghost icon-button" onClick={exportEncounter} title="Export encounter"><Download size={16} /><span>Export</span></button></div><button className="ghost" disabled={!canChange} onClick={() => setShowAddCombatant(true)}><Plus size={17} /> Add combatant</button><button className="primary" onClick={nextTurn} disabled={!canChange || !combatants.length}>Next turn <ChevronRight size={18} /></button></div>
-      </header>
+      <SessionBar round={round} state={chrome?.sessionState??(multiplayer?'Inactive':'Local')} view={view} onView={next=>{setView(next);if(next!=='tracker')window.dispatchEvent(new Event('ledger:map-open'))}} players={chrome?.players}
+        items={[...(chrome?.sessionItems??[]).filter(item=>!item.danger),{id:'import',label:'Import encounter',group:'Encounter data',disabled:!canChange,onSelect:()=>encounterInputRef.current?.click()},{id:'export',label:'Export encounter',onSelect:exportEncounter},...(chrome?.sessionItems??[]).filter(item=>item.danger),{id:'clear',label:'Clear encounter',group:'Danger',danger:true,disabled:!canChange||!combatants.length,onSelect:clearEncounter}]}
+        add={()=>setShowAddCombatant(true)} next={nextTurn} canChange={canChange} hasCombatants={combatants.length>0} library={multiplayer?.library?openLibrary:undefined}>
+        {chrome?.context??<strong className="ledger-context-name">{multiplayer?.snapshot.name??'Local encounter'}</strong>}
+      </SessionBar>
 
-      {multiplayer?.library && <><button disabled={!canChange} onClick={()=>{setLibraryInitial(undefined);setCombatantLibraryOpen(true)}}>Combatant Library</button>{selected&&<button disabled={!canChange} onClick={()=>{setLibraryInitial(selected);setCombatantLibraryOpen(true)}}>Save selected combatant to library</button>}{selected?.sourceLibraryId&&selected.persistentIdentity&&<button disabled={!canChange} onClick={()=>setCampaignSaveOpen(true)}>Save to Campaign</button>}</>}
       {campaignSaveOpen&&multiplayer?.library&&selected&&<Modal label="Save to Campaign" onClose={()=>setCampaignSaveOpen(false)}><CampaignStateSave key={selected.id} api={multiplayer.library.api} snapshot={multiplayer.snapshot} combatant={selected} send={send}/></Modal>}
-      {combatantLibraryOpen&&multiplayer?.library&&<CombatantLibrary api={multiplayer.library.api} csrf={multiplayer.csrf??''} snapshot={multiplayer.snapshot} initial={libraryInitial} send={send} onClose={()=>setCombatantLibraryOpen(false)} onAdd={async(entry,useSavedState,allowDuplicate,place)=>{
+      {(combatantLibraryOpen||chrome?.libraryOpen)&&multiplayer?.library&&<CombatantLibrary api={multiplayer.library.api} csrf={multiplayer.csrf??''} snapshot={multiplayer.snapshot} initial={chrome?.libraryOpen?undefined:libraryInitial} send={send} onClose={()=>{setCombatantLibraryOpen(false);chrome?.closeLibrary?.()}} onAdd={async(entry,useSavedState,allowDuplicate,place)=>{
         const command={type:'library.add',entryId:entry.id,instanceId:uniqueId(),useSavedState,allowDuplicate}
         if(place){setPendingLibrary({command,encounterId:multiplayer.snapshot.encounterId,name:entry.name});setView('map');window.dispatchEvent(new Event('ledger:map-open'))}
         else await send({...command,floorId:creationFloorId})
-        setCombatantLibraryOpen(false)
+        setCombatantLibraryOpen(false);chrome?.closeLibrary?.()
       }}/>}
-      {pendingLibrary&&pendingLibrary.encounterId===multiplayer?.snapshot.encounterId&&<p role="status">Click a square on the active floor to place {pendingLibrary.name}. <button onClick={()=>setPendingLibrary(null)}>Cancel placement</button></p>}
-      {multiplayer?.library && selected && <button className="miniature-action" disabled={!canChange} onClick={() => setMiniatureOpen(true)}>Assign 3D Miniature</button>}
+      {pendingLibrary&&pendingLibrary.encounterId===multiplayer?.snapshot.encounterId&&<p className="ledger-pending-placement" role="status">Click a square on the active floor to place {pendingLibrary.name}. <button onClick={()=>setPendingLibrary(null)}>Cancel placement</button></p>}
       {miniatureOpen && multiplayer?.library && selected && <MiniatureSettings key={`${multiplayer.snapshot.encounterId}:${selected.id}`} combatant={selected} api={multiplayer.library.api} csrf={multiplayer.csrf ?? ''} send={send} connected={canChange} onClose={() => setMiniatureOpen(false)} />}
       <input ref={encounterInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={importEncounter} />
       <input ref={artworkInputRef} className="visually-hidden" type="file" accept="image/*" onChange={updateArtwork} />
-      {fileMessage && <div className={`file-message ${fileMessage.tone}`} role="status"><FileJson size={16} /><span>{fileMessage.text}</span><button onClick={() => setFileMessage(null)} aria-label="Dismiss message"><X size={14} /></button></div>}
+      {fileMessage && <div className={`file-message ledger-floating-message ${fileMessage.tone}`} role="status"><FileJson size={16} /><span>{fileMessage.text}</span><button onClick={() => setFileMessage(null)} aria-label="Dismiss message"><X size={14} /></button></div>}
 
-      {view !== 'tracker' ? <DungeonBuilder state={state} editing={view === 'editor'} connected={canChange} send={send} library={multiplayer?.library} battlefield={{ onPlaceSquare:pendingLibrary&&pendingLibrary.encounterId===multiplayer?.snapshot.encounterId?async(destination,floorId)=>{try{await send({...pendingLibrary.command,floorId:floorId??creationFloorId,destination});setSelectedId(pendingLibrary.command.instanceId);setPendingLibrary(null)}catch(error){setFileMessage({tone:'error',text:error.message})}}:undefined, editing:view==='editor',onToggleEditorMode:()=>setView(view==='editor'?'map':'editor'), onActiveLevelChange:setActiveFloorId, tactical: state.tactical ?? [], actor: multiplayer?.snapshot.actor ?? {id:'local',role:'dm'}, onCommand:send, connected:canChange, onAppearance:multiplayer?.library?()=>setMiniatureOpen(true):undefined, assetScope: multiplayer?.snapshot.actor.id ?? assetScope, assetContext: multiplayer ? { campaignId: multiplayer.snapshot.campaignId, encounterId: multiplayer.snapshot.encounterId } : undefined, combatants, round, selectedId: selected?.id ?? null, activeId, onSelectToken: setSelectedId, onMoveToken: moveToken, onToggleGrid: () => mapSettings({ showGrid: !battleMap.showGrid }), onToggleLabels: () => mapSettings({ showLabels: !battleMap.showLabels }), onReturnToTracker: () => setView('tracker'), canMove: canChange }} /> : <div className="workspace">
+      <div className="ledger-retained-map" hidden={view==='tracker'}>{lastMapView!==null&&<DungeonBuilder visible={view!=='tracker'&&chrome?.visible!==false} templatesRequest={chrome?.templatesRequest} state={state} editing={mapEditing} connected={canChange} send={send} library={multiplayer?.library} battlefield={{ keyboardActive:chrome?.visible!==false&&view!=='tracker', combatantActions:entityMenu, onPlaceSquare:pendingLibrary&&pendingLibrary.encounterId===multiplayer?.snapshot.encounterId?async(destination,floorId)=>{try{await send({...pendingLibrary.command,floorId:floorId??creationFloorId,destination});setSelectedId(pendingLibrary.command.instanceId);setPendingLibrary(null)}catch(error){setFileMessage({tone:'error',text:error.message})}}:undefined, editing:mapEditing,onToggleEditorMode:()=>setView(view==='editor'?'map':'editor'), onActiveLevelChange:setActiveFloorId, tactical: state.tactical ?? [], actor: multiplayer?.snapshot.actor ?? {id:'local',role:'dm'}, onCommand:send, connected:canChange, onAppearance:multiplayer?.library?()=>setMiniatureOpen(true):undefined, assetScope: multiplayer?.snapshot.actor.id ?? assetScope, assetContext: multiplayer ? { campaignId: multiplayer.snapshot.campaignId, encounterId: multiplayer.snapshot.encounterId } : undefined, combatants, round, selectedId: selected?.id ?? null, activeId, onSelectToken: setSelectedId, onMoveToken: moveToken, onToggleGrid: () => mapSettings({ showGrid: !battleMap.showGrid }), onToggleLabels: () => mapSettings({ showLabels: !battleMap.showLabels }), onReturnToTracker: () => setView('tracker'), canMove: canChange }} />}</div><div className="workspace" hidden={view!=='tracker'}>
         <aside className="initiative-panel">
           <div className="panel-heading"><div><span className="eyebrow">COMBAT QUEUE</span><h2>Initiative order</h2></div><span className="count">{combatants.length}</span></div>
           <div className="initiative-list">
@@ -178,7 +191,7 @@ function App({ multiplayer = null, assetScope = undefined }) {
               <div className="identity"><span className="eyebrow">{selected.side === 'hero' ? 'PLAYER CHARACTER' : 'HOSTILE CREATURE'}</span><h2>{selected.name}</h2><p>{selected.role}</p></div>
               <div className="quick-stat"><Shield size={17} /><span>ARMOR CLASS<strong>{selected.ac}</strong></span></div>
               <div className="quick-stat"><span>SPD</span><span>SPEED<strong>{selected.speed}</strong></span></div>
-              <div className="combatant-actions"><button disabled={!canChange} onClick={() => artworkInputRef.current?.click()} title="Add or change character art"><ImagePlus size={16} /><span>{selected.artwork ? 'Change art' : 'Add art'}</span></button>{selected.artwork && <button className="remove" disabled={!canChange} onClick={removeArtwork} title="Remove character art"><X size={16} /><span>Remove art</span></button>}<button disabled={!canChange} onClick={duplicateCombatant} title="Duplicate combatant"><Copy size={16} /><span>Duplicate</span></button><button className="remove" disabled={!canChange} onClick={removeCombatant} title="Remove combatant"><Trash2 size={16} /><span>Remove</span></button></div>
+              <div className="combatant-actions">{entityMenu}<button disabled={!canChange} onClick={() => artworkInputRef.current?.click()} title="Add or change character art"><ImagePlus size={16} /><span>{selected.artwork ? 'Change art' : 'Add art'}</span></button>{selected.artwork && <button className="remove" disabled={!canChange} onClick={removeArtwork} title="Remove character art"><X size={16} /><span>Remove art</span></button>}<button disabled={!canChange} onClick={duplicateCombatant} title="Duplicate combatant"><Copy size={16} /><span>Duplicate</span></button><button className="remove" disabled={!canChange} onClick={removeCombatant} title="Remove combatant"><Trash2 size={16} /><span>Remove</span></button></div>
             </div>
 
             <div className="vitals">
@@ -201,7 +214,7 @@ function App({ multiplayer = null, assetScope = undefined }) {
           <section className="roster"><div className="roster-heading"><div><span className="eyebrow">AT A GLANCE</span><h2>Battlefield</h2></div><div className="legend"><span><i className="hero-dot" /> Allies</span><span><i className="enemy-dot" /> Enemies</span></div></div><div className="roster-grid">{combatants.filter((c) => c.id !== selectedId).slice(0, 4).map((item) => <button key={item.id} onClick={() => setSelectedId(item.id)} className="roster-card"><span className={`avatar ${item.side} ${item.artwork ? 'has-artwork' : ''}`}>{item.hp === 0 ? <Skull size={16} /> : item.artwork ? <img src={item.artwork} alt="" /> : item.short}</span><span className="roster-data"><strong>{item.name}<small>AC {item.ac}</small></strong><HealthBar value={item.hp} max={item.maxHp} /><em>{item.hp} / {item.maxHp} HP</em></span></button>)}</div></section>
           </>}
         </section>
-      </div>}
+      </div>
       {showAddCombatant && <Modal className="modal-backdrop" label="Add combatants" onClose={() => setShowAddCombatant(false)}>
         <form className="combatant-modal" onSubmit={addCombatant} onMouseDown={(event) => event.stopPropagation()}>
           <div className="modal-heading"><span className="modal-icon"><Upload size={19} /></span><div><span className="eyebrow">IMPORT CREATURE</span><h2>Add a combatant</h2></div><button type="button" className="close-button" disabled={!canChange} onClick={() => setShowAddCombatant(false)} aria-label="Close"><X size={19} /></button></div>

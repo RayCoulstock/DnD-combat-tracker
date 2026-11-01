@@ -1,0 +1,86 @@
+/* Phase 2 owns A/B only. Existing scene docks and inspector remain Phase 3. */
+.ledger-appbar { box-sizing:border-box; min-height:56px; height:56px; display:flex; align-items:center; gap:12px; padding:0 16px; background:var(--ledger-dark); color:var(--ledger-surface); font-family:var(--ledger-font-ui); }
+.ledger-appbar .ledger-button { background:var(--ledger-dark-well); border-color:var(--ledger-control-line); color:var(--ledger-surface); flex-shrink:0; }
+.ledger-appbar .ledger-button:hover:not(:disabled) { background:var(--ledger-dark-hover); }
+.ledger-appbar .ledger-button:focus-visible { outline-color:var(--ledger-dark-focus); }
+.ledger-appbar nav,.ledger-account { display:flex; gap:8px; align-items:center; min-width:0; }
+.ledger-account { margin-left:auto; }
+.ledger-appbar .ledger-brand { background:transparent; border-color:transparent; font-family:var(--ledger-font-heading); font-size:15px; letter-spacing:.02em; }
+.ledger-connection.connection { display:inline-flex; align-items:center; border:1px solid var(--ledger-control-line); border-radius:999px; padding:5px 10px; color:var(--ledger-surface); font-size:12px; background:transparent; white-space:nowrap; }
+.ledger-online-count { font-size:12px; white-space:nowrap; }
+.ledger-sessionbar { box-sizing:border-box; display:flex; align-items:center; gap:12px; min-height:64px; height:64px; padding:0 16px; background:var(--ledger-surface); border-bottom:1px solid var(--ledger-line); color:var(--ledger-ink); font:13px/1.4 var(--ledger-font-ui); }
+.ledger-context { display:flex; gap:8px; align-items:center; min-width:0; max-width:360px; }
+.ledger-context label { display:grid; gap:1px; margin:0; min-width:0; font-size:10px; color:var(--ledger-muted); }
+.ledger-context select { box-sizing:border-box; min-height:40px; width:150px; max-width:100%; min-width:0; border:1px solid var(--ledger-control-line); border-radius:8px; padding:6px; background:var(--ledger-card); color:var(--ledger-ink); font:500 13px var(--ledger-font-ui); text-overflow:ellipsis; }
+.ledger-context select:focus-visible { outline:3px solid var(--ledger-focus); outline-offset:2px; }
+.ledger-context-name { font:600 17px var(--ledger-font-heading); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:240px; }
+.ledger-round-state { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+.ledger-round { white-space:nowrap; color:var(--ledger-muted); }
+.ledger-round strong { color:var(--ledger-ink); }
+.ledger-views { display:flex; padding:3px; border-radius:10px; background:var(--ledger-well); margin-inline:auto; flex-shrink:0; }
+.ledger-views .ledger-button { border-color:transparent; background:transparent; padding-inline:10px; }
+.ledger-views .ledger-button[aria-pressed=true] { background:var(--ledger-card); color:var(--ledger-accent); border-color:var(--ledger-line); }
+.ledger-session-actions { display:flex; gap:8px; align-items:center; margin-left:auto; flex-shrink:0; }
+.ledger-compact-views,.ledger-add-compact,.ledger-compact-campaign { display:none; }
+.ledger-help-sheet { max-width:660px; margin:auto; padding:24px; color:var(--ledger-ink); }
+.ledger-help-sheet dd { margin:0 0 16px; }
+.ledger-help-sheet dt { font-weight:600; }
+/* B replaces the App header; scene dimensions use the remaining two-row height. */
+.app-shell:has(>.ledger-sessionbar) { min-height:calc(100dvh - 56px); }
+.app-shell:has(>.ledger-sessionbar)>.ledger-retained-map>.dungeon-builder { --workspace-height:calc(100dvh - 128px); margin:4px; }
+.ledger-player-workspace .tabletop-shell { height:calc(100dvh - 128px); min-height:300px; }
+.ledger-floating-message { position:fixed; z-index:50; bottom:16px; left:50%; transform:translateX(-50%); box-sizing:border-box; max-width:calc(100vw - 32px); padding:12px; border:1px solid var(--ledger-line); background:var(--ledger-card); color:var(--ledger-ink); border-radius:10px; box-shadow:var(--ledger-shadow-panel); }
+.ledger-pending-placement { position:fixed; z-index:45; top:128px; left:50%; transform:translateX(-50%); max-width:calc(100vw - 100px); margin:0; padding:8px; border-radius:10px; background:var(--ledger-card); color:var(--ledger-ink); }
+.ledger-entity-menu { margin-left:auto; }
+.ledger-setup-drawer .dm-setup { margin:0; border:0; box-shadow:none; }
+.ledger-setup-drawer .dm-setup-cards { display:flex; flex-direction:column; }
+.ledger-setup-drawer .dm-card { min-width:0; }
+.ledger-setup-drawer .dm-tokens { overflow:auto; }
+.ledger-setup-drawer .dm-table-scroll { overflow:auto; }
+.ledger-setup-drawer .dm-setup-footer { display:none; }
+.ledger-setup-drawer .dm-setup-summary,.ledger-setup-drawer .dm-setup-header { display:none; }
+.ledger-setup-drawer .dm-setup-cards>.dm-card { margin-bottom:12px; }
+.ledger-setup-drawer .dm-setup { padding:0; }
+.ledger-setup-drawer .dm-session-strip { flex-wrap:wrap; }
+.ledger-setup-drawer .dm-large-select { max-width:100%; }
+.ledger-setup-drawer .dm-setup-cards .dm-card { width:auto; }
+.ledger-setup-drawer .dm-table-empty { max-width:100%; }
+@media(max-width:1439px) { .ledger-appbar { gap:8px; } .ledger-sessionbar { gap:8px; padding-inline:10px; } .ledger-context select { width:125px; } .ledger-views .ledger-button { padding-inline:7px; } .ledger-online-count { display:none; } }
+@media(max-width:1099px) { .ledger-brand span { display:none; } .ledger-context .ledger-campaign-select { display:none; } .ledger-compact-campaign { display:block; } .ledger-views .ledger-button span { display:none; } .ledger-add-wide>.ledger-split-button>.ledger-button { font-size:0; width:40px; padding:0; } .ledger-add-wide>.ledger-split-button>.ledger-button::before { content:'+'; font-size:22px; } .ledger-round-state { flex-direction:column; gap:0; } .ledger-session-actions { gap:4px; } }
+@media(max-width:799px) { .ledger-views,.ledger-players { display:none; } .ledger-compact-views { display:block; margin-left:auto; } .ledger-context select { width:115px; } .ledger-sessionbar { gap:5px; } .ledger-appbar .ledger-table-link,.ledger-account-label { display:none; } .ledger-appbar { padding-inline:8px; gap:6px; } }
+@media(max-width:599px) { .ledger-context .ledger-compact-campaign,.ledger-appbar .ledger-help { display:none; } .ledger-add-wide { display:none; } .ledger-add-compact { display:block; } .ledger-next span { display:none; } .ledger-next { width:40px; padding:0!important; } .ledger-sessionbar { padding-inline:4px; gap:4px; } .ledger-context select { width:80px; } .ledger-round-state { font-size:11px; } .ledger-round-state .ledger-status-pill { padding:2px 5px; font-size:10px; } .ledger-session-actions [data-ui-zone=B5]>.ledger-button { width:40px; padding:4px; font-size:10px; } .ledger-appbar nav .ledger-menu-trigger { padding:4px; font-size:11px; } .ledger-appbar .ledger-mode { max-width:100px; font-size:11px; padding:4px; } .ledger-account { gap:4px; } .ledger-connection.connection { font-size:10px; padding:4px; } .ledger-appbar .ledger-brand { padding:4px; width:40px; } .ledger-setup-drawer .dm-invite { display:flex; flex-wrap:wrap; } }
+@media(prefers-reduced-motion:reduce) { .ledger-appbar,.ledger-sessionbar { transition:none; } }
+dialog.ledger-drawer.ledger-setup-drawer { width:min(940px,100%); }
+.ledger-setup-drawer .dm-setup [data-setup-section] { scroll-margin-top:8px; }
+.ledger-setup-drawer .dm-token-header { flex-wrap:wrap; }
+.tabletop-roster .ledger-entity-menu { margin:8px 0; width:40px; padding:4px; }
+.ledger-sessionbar .ledger-context>.ledger-button { flex-shrink:0; }
+@media(min-width:600px) { .ledger-setup-drawer .dm-table-scroll { min-width:0; } }
+
+.ledger-sessionbar .ledger-context { flex-shrink:1; }
+.ledger-setup-drawer button,.ledger-setup-drawer input:not([type=checkbox]),.ledger-setup-drawer select { min-height:40px; }
+
+body.map-viewport-expanded .ledger-pending-placement { top:12px; }
+.app-shell:has(.ledger-pending-placement) .battlefield-help { visibility:hidden; }
+
+.ledger-session-icon { display:none; }
+@media(max-width:799px) { .ledger-player-session .ledger-players { display:block; } }
+@media(max-width:599px) { .ledger-session-label { display:none; } .ledger-session-icon { display:inline; font-size:20px; } .ledger-player-session .ledger-compact-campaign { display:block; } .ledger-player-session .ledger-context-name { font-size:13px; } }
+
+.app-shell>.workspace[hidden] { display:none; }
+/* Player maps have no DM right-hand control panel; remove its legacy empty track. */
+.ledger-player-workspace .tabletop-shell[data-roster-expanded=true] { grid-template-columns:240px minmax(0,1fr); }
+.ledger-player-workspace .tabletop-shell[data-roster-expanded=false] { grid-template-columns:56px minmax(0,1fr); }
+.ledger-player-workspace [data-roster-expanded=false] .tabletop-roster>.eyebrow,.ledger-player-workspace [data-roster-expanded=false] .tabletop-roster>h2,.ledger-player-workspace [data-roster-expanded=false] .map-initiative-list button>span:nth-child(2),.ledger-player-workspace [data-roster-expanded=false] .map-initiative-list em { display:none; }
+.ledger-player-workspace [data-roster-expanded=false] .tabletop-roster { padding:10px 4px; }
+.ledger-player-workspace [data-roster-expanded=false] .map-initiative-list button { padding:8px 4px; grid-template-columns:1fr; }
+@media(max-width:799px) { .ledger-player-workspace .tabletop-shell[data-roster-expanded=true] { grid-template-columns:140px minmax(0,1fr); } .ledger-player-workspace .tabletop-roster { padding:12px 6px; } }
+.ledger-player-workspace .tabletop-shell { position:relative; overflow:hidden; min-width:0; }
+.ledger-player-workspace .battlefield-help { max-width:calc(100% - 16px); white-space:normal; box-sizing:border-box; }
+/* Reserve space for connection/account actions before compacting secondary nav. */
+.ledger-account,.ledger-appbar nav { flex-shrink:0; }
+@media(max-width:599px) {
+ .ledger-appbar .ledger-mode { width:84px; max-width:84px; min-width:40px; flex-shrink:1; white-space:nowrap; overflow:hidden; }
+ .ledger-appbar nav .ledger-menu-trigger { width:40px; padding:0; font-size:0; }
+ .ledger-appbar nav .ledger-menu-trigger::before { content:'▤'; font-size:18px; }
+}
