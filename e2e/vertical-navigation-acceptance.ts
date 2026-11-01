@@ -50,6 +50,9 @@ export async function exerciseVerticalNavigation(page:Page,player:Page,path:stri
  await expect(transitions.getByLabel('source X',{exact:true})).toHaveValue('2');await expect(transitions.getByLabel('source Z',{exact:true})).toHaveValue('2')
  await transitions.getByRole('button',{name:'Pick destination square on map',exact:true}).click();point=await projectBattlefield(page,{x:-9.5,y:2.002,z:-9.5});await page.mouse.click(point.x,point.y)
  await expect(transitions.getByLabel('destination X',{exact:true})).toHaveValue('0');await expect(transitions.getByLabel('destination Z',{exact:true})).toHaveValue('0')
+ const retainedView=await cameraState(page)
+ await page.getByRole('button',{name:'Tracker',exact:true}).click();await page.getByRole('button',{name:'Map editor',exact:true}).click()
+ await expect(page.getByLabel('Active level',{exact:true})).toHaveValue(towerId);await expect(transitions.getByLabel('Transition name',{exact:true})).toHaveValue('Warehouse office stairs');expect(await cameraState(page)).toEqual(retainedView)
  await transitions.getByLabel('Transition DM notes',{exact:true}).fill('Secret office key')
  await transitions.getByRole('button',{name:'Save transition',exact:true}).click();await expect.poll(async()=>(await api(page,path+'/snapshot')).state.dungeonMap.transitions?.length).toBe(1)
  const link=(await api(page,path+'/snapshot')).state.dungeonMap.transitions[0]
@@ -58,7 +61,7 @@ export async function exerciseVerticalNavigation(page:Page,player:Page,path:stri
  // Hide the destination while the DM still inspects it. The player's route disappears.
  const tower=editor.getByRole('region',{name:'Level: Tower',exact:true});await tower.getByLabel('Tower player visibility',{exact:true}).uncheck();await tower.getByRole('button',{name:'Apply level settings',exact:true}).click();await expect(player.locator('[data-transition-marker]')).toHaveCount(0)
  await page.getByLabel('Active level',{exact:true}).selectOption('ground')
- await page.getByRole('button',{name:'3D Map',exact:true}).click();await page.locator('.map-initiative-list button').filter({hasText:'Hero 1'}).click()
+ await page.getByRole('button',{name:'Battle map',exact:true}).click();await page.locator('.map-initiative-list button').filter({hasText:'Hero 1'}).click()
  await page.locator('.transition-travel-tools > summary').click();await page.getByRole('button',{name:'Move through Warehouse office stairs',exact:true}).click()
  const travel=page.getByRole('dialog',{name:'Move through transition',exact:true});await expect(travel).toContainText('Tower');await expect(travel).toContainText('destination is hidden')
  await expect(travel.getByRole('button',{name:'Confirm transfer',exact:true})).toBeDisabled();await travel.getByLabel('Combatant is not on the source square. Allow this transfer.',{exact:true}).check();await travel.getByLabel('Destination is occupied. Allow tokens to stack.',{exact:true}).check()

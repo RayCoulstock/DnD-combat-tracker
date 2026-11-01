@@ -1,9 +1,12 @@
 import {useEffect,useRef,useState,type RefObject} from 'react'
 // Expand the owning workspace in place; the Canvas, inspector and drafts stay mounted.
-export function useMapViewport(shell:RefObject<HTMLElement|null>){
+export function useMapViewport(shell:RefObject<HTMLElement|null>,active=true){
  const[inspector,setInspector]=useState(false)
  const[expanded,setExpanded]=useState(false),[native,setNative]=useState(false),[error,setError]=useState('')
  const nativeOwned=useRef(false)
+ const[wasActive,setWasActive]=useState(active)
+ if(active!==wasActive){setWasActive(active);if(!active){setExpanded(false);setError('')}}
+ useEffect(()=>{if(!active&&nativeOwned.current&&document.fullscreenElement===document.documentElement)void document.exitFullscreen().catch(()=>{})},[active])
  useEffect(()=>{
   const changed=()=>{const active=nativeOwned.current&&document.fullscreenElement===document.documentElement;setNative(active);if(!document.fullscreenElement)nativeOwned.current=false}
   document.addEventListener('fullscreenchange',changed)

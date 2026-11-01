@@ -1,6 +1,6 @@
 # UI/UX migration plan — proposed after Phase 0
 
-**Baseline:** `0a2aedf`. **Prepared:** 31 October 2026. **Status:** Phase 0 complete; **Phase 1A/1B implemented following the user’s explicit approval**, with evidence in [Phase 1 foundations](phase-1-foundations.md). Later phases remain planned. No deployment is requested.
+**Baseline:** `0a2aedf`. **Prepared:** 31 October 2026. **Status:** Phase 0 complete; **Phase 1A/1B implemented following the user’s explicit approval**, with evidence in [Phase 1 foundations](phase-1-foundations.md). Phase 2A–2C is implemented following the 1 November 2026 request; see [Phase 2 application shell](phase-2-application-shell.md). Phase 3 and later remain planned. No deployment is requested.
 
 The goal is the proposal's visual hierarchy with every existing feature, data boundary, role and scene contract preserved. Use the [feature matrix](feature-zone-matrix.md) as a checklist and the [audit](ui-audit.md) as evidence. The [guideline addendum](ui-design-guidelines-v2.1.md#12-repository-backed-phase-0-corrections-proposed-for-review) resolves planning conflicts; it does not introduce APIs or domain features.
 
@@ -121,4 +121,4 @@ Rollback is a normal code revert of the affected presentation PR. No UI phase sh
 
 A PR description should list the matrix IDs moved, screenshots for relevant sizes/roles, data/state/permission invariants verified, automated commands and manual checks actually run, limitations and rollback. Do not mark a prototype as accessible or multiplayer-safe just because its desktop screenshot matches the concept.
 
-**Review stop:** Phase 0 ends here. Approve or revise the proposed decisions and the first foundation PR's scope before beginning Phase 1. No redesign code, schema, dependency or deployment change is included in the Phase 0 deliverables.
+**Historical Phase 0 review stop (subsequently satisfied):** Phase 0 ended here. Approve or revise the proposed decisions and the first foundation PR's scope before beginning Phase 1. No redesign code, schema, dependency or deployment change is included in the Phase 0 deliverables.

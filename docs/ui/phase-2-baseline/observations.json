@@ -1,0 +1,227 @@
+{
+  "date": "2026-11-01",
+  "mode": "local + synthetic DM/player; real renderer; external fonts blocked; reduced motion; disposable development database only",
+  "observations": [
+    {
+      "file": "local-tracker-1440.png",
+      "width": 1440,
+      "height": 1000,
+      "documentWidth": 1440,
+      "viewportWidth": 1440,
+      "bars": [
+        {
+          "zone": "A",
+          "height": 56
+        },
+        {
+          "zone": "B",
+          "height": 64
+        }
+      ]
+    },
+    {
+      "file": "local-map-1280.png",
+      "width": 1280,
+      "height": 1000,
+      "documentWidth": 1280,
+      "viewportWidth": 1280,
+      "bars": [
+        {
+          "zone": "A",
+          "height": 56
+        },
+        {
+          "zone": "B",
+          "height": 64
+        }
+      ]
+    },
+    {
+      "file": "local-map-768.png",
+      "width": 768,
+      "height": 1000,
+      "documentWidth": 768,
+      "viewportWidth": 768,
+      "bars": [
+        {
+          "zone": "A",
+          "height": 56
+        },
+        {
+          "zone": "B",
+          "height": 64
+        }
+      ]
+    },
+    {
+      "file": "local-map-390.png",
+      "width": 390,
+      "height": 844,
+      "documentWidth": 390,
+      "viewportWidth": 390,
+      "bars": [
+        {
+          "zone": "A",
+          "height": 56
+        },
+        {
+          "zone": "B",
+          "height": 64
+        }
+      ]
+    },
+    {
+      "file": "local-map-320.png",
+      "width": 320,
+      "height": 844,
+      "documentWidth": 320,
+      "viewportWidth": 320,
+      "bars": [
+        {
+          "zone": "A",
+          "height": 56
+        },
+        {
+          "zone": "B",
+          "height": 64
+        }
+      ]
+    },
+    {
+      "file": "dm-map-1440.png",
+      "width": 1440,
+      "height": 1000,
+      "documentWidth": 1440,
+      "viewportWidth": 1440,
+      "bars": [
+        {
+          "zone": "A",
+          "height": 56
+        },
+        {
+          "zone": "B",
+          "height": 64
+        }
+      ]
+    },
+    {
+      "file": "dm-map-1280.png",
+      "width": 1280,
+      "height": 1000,
+      "documentWidth": 1280,
+      "viewportWidth": 1280,
+      "bars": [
+        {
+          "zone": "A",
+          "height": 56
+        },
+        {
+          "zone": "B",
+          "height": 64
+        }
+      ]
+    },
+    {
+      "file": "dm-map-768.png",
+      "width": 768,
+      "height": 1000,
+      "documentWidth": 768,
+      "viewportWidth": 768,
+      "bars": [
+        {
+          "zone": "A",
+          "height": 56
+        },
+        {
+          "zone": "B",
+          "height": 64
+        }
+      ]
+    },
+    {
+      "file": "dm-map-390.png",
+      "width": 390,
+      "height": 844,
+      "documentWidth": 390,
+      "viewportWidth": 390,
+      "bars": [
+        {
+          "zone": "A",
+          "height": 56
+        },
+        {
+          "zone": "B",
+          "height": 64
+        }
+      ]
+    },
+    {
+      "file": "dm-setup-1280.png",
+      "width": 1280,
+      "height": 900,
+      "documentWidth": 1280,
+      "viewportWidth": 1280,
+      "bars": [
+        {
+          "zone": "A",
+          "height": 56
+        },
+        {
+          "zone": "B",
+          "height": 64
+        }
+      ]
+    },
+    {
+      "file": "player-map-1440.png",
+      "width": 1440,
+      "height": 1000,
+      "documentWidth": 1440,
+      "viewportWidth": 1440,
+      "bars": [
+        {
+          "zone": "A",
+          "height": 56
+        },
+        {
+          "zone": "B",
+          "height": 64
+        }
+      ]
+    },
+    {
+      "file": "player-map-390.png",
+      "width": 390,
+      "height": 844,
+      "documentWidth": 390,
+      "viewportWidth": 390,
+      "bars": [
+        {
+          "zone": "A",
+          "height": 56
+        },
+        {
+          "zone": "B",
+          "height": 64
+        }
+      ]
+    },
+    {
+      "file": "player-map-320.png",
+      "width": 320,
+      "height": 844,
+      "documentWidth": 320,
+      "viewportWidth": 320,
+      "bars": [
+        {
+          "zone": "A",
+          "height": 56
+        },
+        {
+          "zone": "B",
+          "height": 64
+        }
+      ]
+    }
+  ]
+}

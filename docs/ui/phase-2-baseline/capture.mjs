@@ -1,0 +1,29 @@
+/* global document, innerWidth, fetch, performance, requestAnimationFrame */
+import {chromium} from 'playwright'
+import {writeFile} from 'node:fs/promises'
+import {URL} from 'node:url'
+import process from 'node:process'
+import {randomUUID} from 'node:crypto'
+const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH??'/usr/bin/chromium',args:['--no-sandbox','--enable-unsafe-swiftshader']})
+const origin=process.env.APP_ORIGIN??'http://localhost:5173',observations=[]
+async function context(){const c=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'});await c.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//,route=>route.abort());return c}
+async function api(page,path,body){return page.evaluate(async({path,body})=>{const{csrf}=await(await fetch('/api/session')).json();const r=await fetch('/api'+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:body===undefined?undefined:JSON.stringify(body)});if(!r.ok)throw Error(await r.text());return r.json()},{path,body})}
+async function ready(page){await page.waitForFunction(async()=>{const canvas=[...document.querySelectorAll('.battlefield-wrap canvas')].find(n=>n.getClientRects().length);if(!canvas)return false;for(const r of performance.getEntriesByType('resource').filter(r=>r.name.includes('/@react-three_fiber.js')).reverse()){const m=await import(r.name),state=m._roots.get(canvas)?.store.getState();if(state?.internal.active&&state.controls)return true}return false})}
+async function session(page,label){await page.getByRole('button',{name:'Session',exact:true}).click();await page.getByRole('menuitem',{name:label,exact:true}).click()}
+async function capture(page,name,width,height){await page.bringToFront();await page.setViewportSize({width,height});await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>resolve())));if(!name.includes('setup')){const account=await page.getByRole('button',{name:'Account',exact:true}).boundingBox();if(!account||account.x<0||account.x+account.width>width)throw Error(`${name}-${width}: Account is outside the viewport`);await page.getByRole('button',{name:'Account',exact:true}).click({trial:true,timeout:5000});}const file=`${name}-${width}.png`;const metrics=await page.evaluate(()=>({documentWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth,bars:[...document.querySelectorAll('[data-ui-zone=A],[data-ui-zone=B]')].filter(n=>n.getClientRects().length).map(n=>({zone:n.getAttribute('data-ui-zone'),height:n.getBoundingClientRect().height}))}));if(metrics.documentWidth>width){await page.screenshot({path:'/tmp/shell-overflow.png'});const overflow=await page.evaluate(()=>[...document.querySelectorAll('body *')].filter(n=>n.getBoundingClientRect().right>innerWidth).slice(0,12).map(n=>({tag:n.tagName,cls:String(n.className),right:n.getBoundingClientRect().right})));throw Error(`${file}: page overflow ${metrics.documentWidth}/${width}: ${JSON.stringify(overflow)}`)}await page.screenshot({path:new URL(file,import.meta.url).pathname});observations.push({file,width,height,...metrics})}
+try{
+ const local=await context(),page=await local.newPage();await page.goto(origin)
+ await capture(page,'local-tracker',1440,1000);await page.getByRole('button',{name:'Battle map',exact:true}).click();await ready(page)
+ for(const width of[1280,768,390,320])await capture(page,'local-map',width,width<500?844:1000)
+ await local.close()
+ const dmContext=await context(),dm=await dmContext.newPage();await dm.goto(origin);await dm.getByRole('button',{name:'Table mode',exact:true}).click();await dm.getByRole('menuitem',{name:'Multiplayer',exact:true}).click();await dm.getByLabel('Email',{exact:true}).fill(`shell-capture-${randomUUID()}@example.test`);await dm.getByLabel('Password (12+ characters)',{exact:true}).fill('Shell Capture Synthetic Password 2026!');await dm.getByRole('button',{name:'Create account',exact:true}).click()
+ await session(dm,'Campaign and encounter setup');await dm.getByLabel('New campaign',{exact:true}).fill('The Sunken Crown · Campaign');await dm.getByRole('button',{name:'Create campaign',exact:true}).click();await dm.waitForFunction(()=>document.querySelector('input[aria-label="New encounter"]')?.disabled===false);const campaign=await dm.getByRole('combobox',{name:'Campaign',exact:true}).inputValue(),path=`/campaigns/${campaign}`
+ await api(dm,path+'/encounters',{name:'The Sunken Crown · Watchtower approach',file:{version:1,round:2,combatants:[{id:1,name:'Fenra Ashwood',short:'FA',side:'hero',initiative:18,hp:37,maxHp:45,ac:15,conditions:[],saves:[],actions:[]}]}})
+ await dm.getByRole('button',{name:'Close Campaign setup',exact:true}).click();await dm.locator('.app-shell:visible').waitFor();await session(dm,'Start multiplayer session');await dm.getByRole('button',{name:'Battle map',exact:true}).click();await ready(dm)
+ const invite=await api(dm,path+'/invitations',{}),pc=await context(),player=await pc.newPage();await player.goto(invite.url);await player.getByLabel('Display name').fill('Table player');await player.getByRole('button',{name:'Join campaign',exact:true}).click();await ready(player)
+ for(const width of[1440,1280,768,390])await capture(dm,'dm-map',width,width<500?844:1000)
+ await dm.setViewportSize({width:1280,height:900});await session(dm,'Campaign and encounter setup');await capture(dm,'dm-setup',1280,900);await dm.getByRole('button',{name:'Close Campaign setup',exact:true}).click()
+ for(const width of[1440,390,320])await capture(player,'player-map',width,width<500?844:1000)
+ await pc.close();await dmContext.close()
+ await writeFile(new URL('observations.json',import.meta.url),JSON.stringify({date:'2026-11-01',mode:'local + synthetic DM/player; real renderer; external fonts blocked; reduced motion; disposable development database only',observations},null,2)+'\n')
+}finally{await browser.close()}
