@@ -1,3 +1,4 @@
+import {multiplayerMode,sessionAction,openSetup,closeSetup} from './shell-helpers'
 import {expandEditor} from './workspace-helpers'
 import { test, expect, type Page, type Locator } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
@@ -45,19 +46,19 @@ test('local ledger, DM and two browsers, camera isolation and offline camera', a
   const errors: string[] = []
   page.on('pageerror', e => errors.push(e.message))
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Goblin Ambush' })).toBeVisible()
+  await expect(page.getByText('Local encounter',{exact:true})).toBeVisible()
   await page.getByRole('button', { name: 'Damage', exact: true }).click() // empty amount does not change HP
   await page.getByLabel('Hit point amount').fill('2')
   await page.getByRole('button', { name: 'Damage', exact: true }).click()
   await expect(page.locator('.vitals-label')).toContainText('35')
-  await page.getByRole('button', { name: '3D Map', exact: true }).click()
+  await page.getByRole('button', { name: 'Battle map', exact: true }).click()
   await expect(page.locator('canvas')).toBeVisible()
   await page.getByRole('button', { name: 'Reset camera', exact: true }).click()
-  await page.getByRole('button', { name: 'Multiplayer', exact: true }).click()
+  await multiplayerMode(page)
   await page.getByLabel('Email', { exact: true }).fill(`dm-${randomUUID()}@example.test`)
   await page.getByLabel('Password (12+ characters)', { exact: true }).fill('Browser Test Password 2049!')
   await expect(page.getByRole('button', { name: 'Create account', exact: true })).toBeEnabled()
-  await page.getByRole('button', { name: 'Create account', exact: true }).click()
+  await page.getByRole('button', { name: 'Create account', exact: true }).click();await openSetup(page)
   await page.getByLabel('New campaign', { exact: true }).fill('Browser campaign')
   await page.getByRole('button', { name: 'Create campaign', exact: true }).click()
   await expect(page.getByLabel('New encounter', { exact: true })).toBeEnabled()
@@ -68,8 +69,8 @@ test('local ledger, DM and two browsers, camera isolation and offline camera', a
   await page.getByLabel('New encounter', { exact: true }).fill('Browser encounter')
   await page.getByLabel('Optional encounter JSON').setInputFiles({ name: 'encounter.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(fixture)) })
   await page.getByRole('button', { name: 'Create / import encounter', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Browser encounter', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Start multiplayer session', exact: true }).click()
+  await expect(page.getByRole('combobox',{name:'Encounter',exact:true}).locator('option:checked')).toHaveText('Browser encounter')
+  await sessionAction(page,'Start multiplayer session')
   await expect(page.locator('.connection')).toHaveText('Connected')
   const campaignId = await page.getByRole('combobox', { name: 'Campaign', exact: true }).inputValue()
   const contexts = [await browser.newContext(), await browser.newContext()]
@@ -89,8 +90,8 @@ test('local ledger, DM and two browsers, camera isolation and offline camera', a
       await expect(player.getByRole('button', { name: 'Next turn' })).toHaveCount(0)
       await expect(player.getByRole('button', { name: 'Invite player' })).toHaveCount(0)
     }
-    await page.getByRole('combobox', { name: /^Controlled by / }).first().selectOption({ label: 'Player 1' })
-    await expect(players[0].locator('.online-card').filter({ hasText: '10/10 HP · AC 15' })).toBeVisible()
+    await openSetup(page);await page.getByRole('combobox', { name: /^Controlled by / }).first().selectOption({ label: 'Player 1' })
+    await closeSetup(page);await expect(players[0].locator('.online-card').filter({ hasText: '10/10 HP · AC 15' })).toBeVisible()
     // A real floor click moves the assigned token, and all authorised views receive it.
     const canvas = players[0].locator('canvas')
     const box = await canvas.boundingBox(); expect(box).not.toBeNull()
@@ -116,10 +117,10 @@ test('local ledger, DM and two browsers, camera isolation and offline camera', a
 
 test('waiting players see first activation and restart without refresh or camera reset', async ({ browser, page }) => {
   await page.goto('/')
-  await page.getByRole('button', { name: 'Multiplayer', exact: true }).click()
+  await multiplayerMode(page)
   await page.getByLabel('Email', { exact: true }).fill(`waiting-dm-${randomUUID()}@example.test`)
   await page.getByLabel('Password (12+ characters)', { exact: true }).fill('Waiting Room Password 2049!')
-  await page.getByRole('button', { name: 'Create account', exact: true }).click()
+  await page.getByRole('button', { name: 'Create account', exact: true }).click();await openSetup(page)
   await page.getByLabel('New campaign', { exact: true }).fill('Waiting campaign')
   await page.getByRole('button', { name: 'Create campaign', exact: true }).click()
   await expect(page.getByLabel('New encounter', { exact: true })).toBeEnabled()
@@ -152,7 +153,7 @@ test('waiting players see first activation and restart without refresh or camera
       player.on('request', req => { if (new URL(req.url()).pathname.startsWith('/api/')) apiRequests++ })
       player.on('framenavigated', frame => { if (frame === player.mainFrame()) navigations++ })
     }
-    await page.getByRole('button', { name: 'Start multiplayer session', exact: true }).click()
+    await sessionAction(page,'Start multiplayer session')
     for (const player of [early, waiting]) {
       await expect(player.locator('canvas')).toBeVisible({ timeout: 5000 })
       await expect(player.getByText('Hidden waiting monster', { exact: true })).toHaveCount(0)
@@ -169,12 +170,12 @@ test('waiting players see first activation and restart without refresh or camera
     // Wait for local OrbitControls damping to finish before comparing camera views.
     const cameraView = await settledView(early, canvas)
     expect(await imageDifference(early, defaultView, cameraView)).toBeGreaterThan(3)
-    await page.getByRole('button', { name: 'End session', exact: true }).click()
+    await sessionAction(page,'End session')
     await expect(canvas).toBeHidden({ timeout: 5000 })
     await expect(early.getByText('Waiting for the DM to open and start an encounter.')).toBeVisible()
     expect(await element!.evaluate(el => el.isConnected)).toBe(true)
     await expect(early.locator('.connection')).toHaveText('Connected')
-    await page.getByRole('button', { name: 'Start multiplayer session', exact: true }).click()
+    await sessionAction(page,'Start multiplayer session')
     await expect(canvas).toBeVisible({ timeout: 5000 })
     expect(await element!.evaluate(el => el.isConnected)).toBe(true)
     // ResizeObserver and the demand renderer settle after the hidden canvas becomes visible.
@@ -193,10 +194,10 @@ test('DM paints and generates a reusable dungeon while two players see live read
   const errors: string[] = []
   page.on('pageerror', e => errors.push(e.message))
   await page.goto('/')
-  await page.getByRole('button', { name: 'Multiplayer', exact: true }).click()
+  await multiplayerMode(page)
   await page.getByLabel('Email', { exact: true }).fill(`builder-${randomUUID()}@example.test`)
   await page.getByLabel('Password (12+ characters)', { exact: true }).fill('Dungeon Builder Password 2049!')
-  await page.getByRole('button', { name: 'Create account', exact: true }).click()
+  await page.getByRole('button', { name: 'Create account', exact: true }).click();await openSetup(page)
   await page.getByLabel('New campaign', { exact: true }).fill('Builder campaign')
   await page.getByRole('button', { name: 'Create campaign', exact: true }).click()
   await expect(page.getByLabel('New encounter', { exact: true })).toBeEnabled()
@@ -205,7 +206,7 @@ test('DM paints and generates a reusable dungeon while two players see live read
   const encounter = await api(page, `${path}/encounters`, { name: 'Builder encounter', file: { version: 1, round: 4, combatants: [
     { id: 1, name: 'Builder hero', side: 'hero', hp: 9, maxHp: 10, ac: 15, initiative: 15, conditions: [], saves: [], actions: [] },
   ] } })
-  await page.getByRole('button', { name: 'Start multiplayer session', exact: true }).click()
+  await sessionAction(page,'Start multiplayer session')
   const contexts = [await browser.newContext(), await browser.newContext()]
   const players: Page[] = []
   try {
@@ -305,7 +306,7 @@ test('local map editing, template recovery and encounter JSON stay compatible', 
   await expect(tools.getByRole('status')).toContainText('Map saved')
   // Local export must retain the generated document and token placement.
   const downloadPromise = page.waitForEvent('download')
-  await page.getByRole('button', { name: 'Export', exact: true }).click()
+  await sessionAction(page,'Export encounter')
   const download = await downloadPromise
   const stream = await download.createReadStream(), chunks: Buffer[] = []
   for await (const chunk of stream) chunks.push(Buffer.from(chunk))

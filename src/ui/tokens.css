@@ -1,5 +1,9 @@
 /* Namespaced values only: importing foundations does not reset the existing app. */
 :root {
+  --ledger-dark: #23211e;
+  --ledger-dark-well: #33302b;
+  --ledger-dark-hover: #494339;
+  --ledger-dark-focus: #a9d1ff;
   --ledger-bg: #f4f0e8;
   --ledger-surface: #fbf9f4;
   --ledger-well: #ece6da;

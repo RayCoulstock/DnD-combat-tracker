@@ -1,15 +1,15 @@
 import { isModalOpen } from './modalState'
-import {useEffect,useState} from 'react'
+import {useEffect,useState,type RefObject} from 'react'
 import type {Actor,GameCommand} from '../shared/domain'
 import {templateSchema,tacticalObjectSchema,type TacticalObject,type TacticalRecord,measurementRules,measurementDistance} from '../shared/tactical'
 import type {TacticalInteraction} from './TacticalScene'
-export function useTacticalTools({records,actor,send,connected,width,height,feet,editorTool}:{records:TacticalRecord[];actor:Actor;send?:(command:GameCommand)=>Promise<void>;connected:boolean;width:number;height:number;feet:number;editorTool?:string}){
+export function useTacticalTools({records,actor,send,connected,width,height,feet,editorTool,active=true,container}:{container?:RefObject<HTMLElement|null>;active?:boolean;records:TacticalRecord[];actor:Actor;send?:(command:GameCommand)=>Promise<void>;connected:boolean;width:number;height:number;feet:number;editorTool?:string}){
  const[mode,setMode]=useState<TacticalInteraction['mode']>('navigate'),[draft,setRawDraft]=useState<TacticalObject|null>(null),[draftBase,setDraftBase]=useState<string|null>(null),[selectedId,setSelectedId]=useState<string|null>(null),[rule,setRule]=useState<typeof measurementRules[number]>('euclidean'),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[source,setSource]=useState(editorTool)
  if(source!==editorTool){setSource(editorTool);setMode('navigate');setRawDraft(null);setDraftBase(null);setSelectedId(null)}
  const selected=records.find(r=>r.id===selectedId),current=draft??selected,canEdit=!selected||selected.ownerId===actor.id||actor.role==='dm'
  const setDraft=(value:TacticalObject|null)=>{if(value&&selectedId&&!draft)setDraftBase(JSON.stringify(selected));if(!value)setDraftBase(null);setRawDraft(value)}
  const cancel=()=>{setMode('navigate');setDraft(null);setSelectedId(null)}
- useEffect(()=>{const key=(e:KeyboardEvent)=>{if(!isModalOpen()&&e.key==='Escape'){setMode('navigate');setRawDraft(null);setDraftBase(null);setSelectedId(null)}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key)},[])
+ useEffect(()=>{if(!active)return;const key=(e:KeyboardEvent)=>{if((!container||container.current?.getClientRects().length)&&!isModalOpen()&&e.key==='Escape'){setMode('navigate');setRawDraft(null);setDraftBase(null);setSelectedId(null)}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key)},[active,container])
  const run=async(command:GameCommand)=>{if(!send||!connected||busy)return false;setBusy(true);setMessage('');try{await send(command);return true}catch(e){setMessage((e as Error).message);return false}finally{setBusy(false)}}
  const startTemplate=(shape:'sphere'|'cone'|'cube'|'line',length=15)=>{setSelectedId(null);setDraft(templateSchema.parse({kind:'template',shape,position:{x:width/2,z:height/2},radius:20,length,width:5,side:15,angle:90,rotation:0,elevation:0,color:'#53bce5',opacity:.2}));setMode('template')}
  const share=async()=>{if(!current||!canEdit)return;if(selectedId&&(!selected||(draftBase&&draftBase!==JSON.stringify(selected)))){setMessage('This overlay changed or was removed. Cancel and select its latest state before applying changes.');return}try{const object=tacticalObjectSchema.parse(strip(current)),id=selected?.id??crypto.randomUUID();if(await run(selected?{type:'tactical.update',id,object}:{type:'tactical.create',id,object})){setDraft(null);setSelectedId(id);setMode('navigate')}}catch{setMessage('Check overlay dimensions, coordinates and appearance settings before sharing.')}}

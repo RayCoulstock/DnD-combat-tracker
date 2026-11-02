@@ -1,10 +1,32 @@
 # Feature-to-zone preservation matrix — Phase 0
 
-**Baseline:** `0a2aedf`, reviewed 31 October 2026. **Status:** proposed destinations, not implemented UI. Each existing control family below must remain discoverable before its old entry point is removed. Repeated rows of characters, floors, assets or invitations are represented by a family; every named field/variant within a family must survive. Read this with the [audit](ui-audit.md) and [migration plan](ui-migration-plan.md).
+**Baseline:** `0a2aedf`, reviewed 31 October 2026. **Status:** proposed destinations except the implemented Phase 1/2 locations recorded below. Each existing control family below must remain discoverable before its old entry point is removed. Repeated rows of characters, floors, assets or invitations are represented by a family; every named field/variant within a family must survive. Read this with the [audit](ui-audit.md) and [migration plan](ui-migration-plan.md).
 
 ## Phase 1 adoption
 
 A13–A15 retain their existing E4 entry points and behaviour, now using scoped foundation styles, shared Button and a text assignment pill. X01 gains nested cancel isolation and explicit modal Tab wrapping; X03 retains existing permission/busy gating; X07 gains a text-only model/placeholder cue. Foundation menus/popovers also join the existing keyboard-overlay guard. No other matrix destinations were relocated. See [Phase 1 contracts and tests](phase-1-foundations.md).
+
+## Phase 2 actual locations
+
+Phase 2 implements the following shell destinations; untargeted C/D refinements remain proposals. See [implementation report](phase-2-application-shell.md) for role/lifetime constraints and acceptance evidence.
+
+| Existing matrix IDs | Actual location and owner |
+| --- | --- |
+| S01–S02 | A1 brand/Table and A2 Table mode in `ApplicationShell.AppBar`; player public mode access in A4 Account. |
+| S03–S06 | Sign-in/invite entry remains C2; A4 Account owns sign-in/sign-out entry points. Registration capability stays server-driven. |
+| S07–S09 | A4 text connection/count and Account rejoin; B2 truthful session state plus existing C2 waiting/revocation handling. |
+| S10, S14 | B1 campaign/encounter selectors in `Multiplayer`; compact Campaigns menu when required. |
+| S11–S13, S15–S16 | B5 campaign/encounter setup → retained E3 `DMSetupPanel`; B1 carries current context/count summaries. |
+| S17–S19 | B5 Start/End, Save session/checkpoint and Saved sessions → E3; existing restore confirmation retained. |
+| S20 | Old inline summary/collapse header replaced by explicit E3 open/close. Legacy collapse storage is not deleted. |
+| S21–S30 | B4 Players popover and B5 management → E3 existing presence/invitation/token/visibility/edit forms; player popover is read-only. |
+| T01–T03 | B3 view switch and B2 round; B6 Next turn uses existing callbacks. Player Tracker exposes only the existing permitted sheet. |
+| T04–T07 | B5 Danger Clear (full-scope confirmation), Import/Export; existing hidden file input and command adapters remain in App. Persistent messages overlay instead of pushing the stage. |
+| T08–T11, C12–C15 | B6 Add/split menu → existing stat-block or Combatant Library form; pending placement hint remains visible above expanded map. |
+| C01, A01 | A3 Libraries → existing library management; retained table underneath. Available before an encounter for an authorized DM. |
+| C10–C11, C16, A13–A15 | C2 tracker/C1 map selected Combatant actions → existing E4 library/model/campaign-state forms. No bulk campaign save. |
+| M17, M22–M24 | A3 current-table Map templates opens the existing editor template section, with existing local/campaign persistence. Other editor entries are retained; no global map-template service. |
+| X01, X03–X04, X07 | Phase 1 semantics reused for shell menus/forms, textual status, connection/busy guards and explicit errors. |
 
 ## Legend and rules
 

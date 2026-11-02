@@ -1,20 +1,21 @@
+import {multiplayerMode,library,chooseCampaign,openSetup,closeSetup} from './shell-helpers'
 import { test, expect } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { makeTexturedGlb } from '../test-fixtures/glb'
 test('DM asset upload, metadata search, isolated preview, errors and deletion', async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', e => errors.push(e.message))
-  await page.goto('/'); await page.getByRole('button', { name: 'Multiplayer', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Asset Library', exact: true })).toHaveCount(0)
+  await page.goto('/'); await multiplayerMode(page)
+  await expect(page.getByRole('button', { name: 'Libraries', exact: true })).toHaveCount(0)
   await page.getByLabel('Email', { exact: true }).fill(`asset-${randomUUID()}@example.test`)
   await page.getByLabel('Password (12+ characters)', { exact: true }).fill('Browser Asset Password 2049!')
-  await page.getByRole('button', { name: 'Create account', exact: true }).click()
+  await page.getByRole('button', { name: 'Create account', exact: true }).click();await openSetup(page)
   await page.getByLabel('New campaign', { exact: true }).fill('Asset preview campaign')
   await page.getByRole('button', { name: 'Create campaign', exact: true }).click()
   await page.getByLabel('New encounter', { exact: true }).fill('Keep this battlefield')
-  await page.getByRole('button', { name: 'Create / import encounter', exact: true }).click()
-  await page.getByRole('button', { name: '3D Map', exact: true }).click()
+  await page.getByRole('button', { name: 'Create / import encounter', exact: true }).click();await closeSetup(page)
+  await page.getByRole('button', { name: 'Battle map', exact: true }).click()
   const encounterCanvas = page.locator('canvas:visible'), encounterElement = await encounterCanvas.elementHandle()
-  await page.getByRole('button', { name: 'Asset Library', exact: true }).click()
+  await library(page,'3D Asset Library')
   await expect(page.getByText('No assets yet. Upload your first GLB model.')).toBeVisible()
   await page.getByLabel('GLB file', { exact: false }).setInputFiles({ name: 'meshy-chair.glb', mimeType: 'model/gltf-binary', buffer: await makeTexturedGlb() })
   await page.getByLabel('Upload asset name', { exact: true }).fill('Meshy oak chair')
@@ -63,8 +64,8 @@ test('DM asset upload, metadata search, isolated preview, errors and deletion', 
   await page.getByRole('button', { name: 'Return to encounter', exact: true }).click()
   await expect(encounterCanvas).toBeVisible()
   expect(await encounterElement!.evaluate(el => el.isConnected)).toBe(true)
-  await page.getByRole('button', { name: 'Asset Library', exact: true }).click()
-  await page.reload(); await page.getByRole('button', { name: 'Asset Library', exact: true }).click()
+  await library(page,'3D Asset Library')
+  await page.reload(); await library(page,'3D Asset Library')
   // Merely browsing the grid must not download every model.
   let modelRequests = 0
   page.on('request', req => { if (/\/api\/assets\/[^/]+\/file$/.test(req.url())) modelRequests++ })
@@ -77,9 +78,9 @@ test('DM asset upload, metadata search, isolated preview, errors and deletion', 
   await page.unroute('**/api/assets/*/file')
   await page.getByRole('button', { name: 'Return to encounter', exact: true }).click()
   // DM campaign choice is intentionally local state and is reset by a full page reload.
-  await page.getByRole('button',{name:'Expand setup',exact:true}).click();await page.getByRole('combobox', { name: 'Campaign', exact: true }).selectOption({ label: 'Asset preview campaign' })
-  await expect(page.getByRole('heading', { name: 'Keep this battlefield', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Asset Library', exact: true }).click()
+  await chooseCampaign(page,{ label: 'Asset preview campaign' })
+  await expect(page.getByRole('combobox',{name:'Encounter',exact:true}).locator('option:checked')).toHaveText('Keep this battlefield')
+  await library(page,'3D Asset Library')
   await page.locator('.asset-card').click(); await expect(preview.locator('canvas')).toBeVisible()
   page.once('dialog', dialog => dialog.accept())
   await page.getByRole('button', { name: 'Delete asset', exact: true }).click()

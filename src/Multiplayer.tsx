@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { io, type Socket } from 'socket.io-client'
 import App from './App.jsx'
 import AssetLibrary from './AssetLibrary'
+import {AppBar,SessionBar,Presence} from './ApplicationShell'
+import {Button,Drawer,Menu,type MenuEntry} from './ui'
 import DMSetupPanel, {type Campaign,type CampaignDetails as Details} from './DMSetupPanel'
 import BattleMap3D from './BattleMap3D'
 import { acceptsSessionState, mergeMapSnapshot } from '../shared/domain'
@@ -11,7 +13,10 @@ import {createSessionBootstrap} from './sessionBootstrap'
 import './multiplayer.css'
 
 export default function Multiplayer() {
+  const[setupOpen,setSetupOpen]=useState(false),[setupSection,setSetupSection]=useState('campaign')
+  const openSetup=(section='campaign')=>{setSetupSection(section);setSetupOpen(true)}
   const [combatantLibraryOpen,setCombatantLibraryOpen]=useState(false)
+  const[templateRequests,setTemplateRequests]=useState({local:0,online:0})
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [mode, setMode] = useState<'local' | 'online'>(() => location.hash.startsWith('#invite=') || localStorage.getItem('ledger.playMode') === 'online' ? 'online' : 'local')
   useEffect(() => { localStorage.setItem('ledger.playMode', mode) }, [mode])
@@ -29,6 +34,7 @@ export default function Multiplayer() {
   const [error, setError] = useState('')
   const [inviteURL, setInviteURL] = useState('')
   const [members, setMembers] = useState<Member[]>([])
+  const[playerView,setPlayerView]=useState('map')
   const [selected, setSelected] = useState<string | number | null>(null)
   const [busy, setBusy] = useState(false)
   const [reload, setReload] = useState(0)
@@ -145,14 +151,32 @@ export default function Multiplayer() {
   const online = status === 'Connected'
   const selectedCombatant = snapshot?.state.combatants.find(c => c.id === selected) ?? snapshot?.state.combatants[0]
   const player = actor?.role === 'player'
+  const refresh=()=>void run(async()=>{socketRef.current?.disconnect().connect()})
+  const signOut=()=>void run(async()=>{await api('/auth/logout',{});setActor(null);chooseCampaign('');setCampaigns([]);setLibraryOpen(false);setCombatantLibraryOpen(false);setSetupOpen(false);socketRef.current?.disconnect()})
+  const goTable=()=>{setLibraryOpen(false);setCombatantLibraryOpen(false)}
+  const context=<>
+    <label className="ledger-campaign-select">Campaign<select aria-label="Campaign" title={details?.name} value={campaignId} disabled={busy||!actor} onChange={e=>chooseCampaign(e.target.value)}><option value="">Select campaign</option>{campaigns.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+    <div className="ledger-compact-campaign"><Menu label="Campaigns" triggerContent={<>◈<span className="visually-hidden">Campaigns</span></>} items={[...campaigns.map(c=>({id:c.id,label:c.name,onSelect:()=>chooseCampaign(c.id)})),...(!player?[{id:'setup',label:'Campaign setup',onSelect:()=>openSetup()}]:[])]}/></div>
+    {!player?<label>Encounter<select aria-label="Encounter" title={snapshot?.name} value={details?.activeEncounterId??''} disabled={!details||busy} onChange={e=>void run(()=>api(`/campaigns/${campaignId}/open`,{encounterId:e.target.value}))}><option value="" disabled>Select encounter</option>{details?.encounters.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select></label>:<strong className="ledger-context-name">{snapshot?.name??details?.name??'Waiting for DM'}</strong>}
+  </>
+  const sessionItems:MenuEntry[]=actor?.role==='dm'?[
+    {id:'setup',label:'Campaign and encounter setup',onSelect:()=>openSetup()},
+    {id:'players',label:'Invitations & token visibility',onSelect:()=>openSetup('players')},
+    {id:'checkpoint',label:'Save session',onSelect:()=>void run(()=>api(`/campaigns/${campaignId}/checkpoints`,{})),disabled:!details?.activeEncounterId||busy,group:'Session'},
+    {id:'saves',label:'Saved sessions',onSelect:()=>openSetup('saves')},
+    {id:'session',label:details?.sessionActive?'End session':'Start multiplayer session',onSelect:()=>{if(!details?.sessionActive||confirm('End this multiplayer session? Players will wait until you start it again.'))void run(()=>api(`/campaigns/${campaignId}/session`,{active:!details?.sessionActive}))},disabled:!details?.activeEncounterId||busy,danger:Boolean(details?.sessionActive),group:details?.sessionActive?'Danger':'Session'}
+  ]:[]
+  const presence=<Presence members={members} onManage={!player?()=>openSetup('players'):undefined}/>
+  const chrome={visible:mode==='online'&&!libraryOpen,templatesRequest:templateRequests.online,context,players:presence,sessionItems,sessionState:details?.sessionActive?'Live':'Inactive',libraryOpen:combatantLibraryOpen,closeLibrary:()=>setCombatantLibraryOpen(false)}
   return <>
-    <nav className="multiplayer-nav" aria-label="Play mode"><strong>Encounter Ledger</strong><button onClick={() => setMode('local')} aria-pressed={mode === 'local'}>Local tracker</button><button onClick={() => setMode('online')} aria-pressed={mode === 'online'}>Multiplayer</button>{mode === 'online' && actor?.role === 'dm' && <button onClick={() => setLibraryOpen(value => !value)} aria-pressed={libraryOpen}>Asset Library</button>}{mode==='online'&&actor?.role==='dm'&&!snapshot&&<button onClick={()=>setCombatantLibraryOpen(true)}>Combatant Library</button>}{mode === 'online' && <div className="multiplayer-connection"><span role="status" className={`connection ${status.toLowerCase()}`}>{status}</span>{actor?.role === 'dm' && online && <small>{members.filter(m=>m.connected).length} players online</small>}</div>}</nav>
-    <div hidden={mode !== 'local'}><App assetScope={actor?.id} /></div>
+    <AppBar mode={mode} player={player} signedIn={Boolean(actor)} status={status} count={members.filter(m=>m.connected).length} onMode={setMode} onTable={goTable} onAssets={mode==='online'&&actor?.role==='dm'?()=>{setSetupOpen(false);setLibraryOpen(true)}:undefined} onCombatants={mode==='online'&&actor?.role==='dm'?()=>{setSetupOpen(false);setLibraryOpen(false);setCombatantLibraryOpen(true)}:undefined} onTemplates={mode==='local'||actor?.role==='dm'&&snapshot?()=>{setLibraryOpen(false);setTemplateRequests(previous=>({...previous,[mode]:previous[mode]+1}))}:undefined} onRejoin={refresh} onSignOut={signOut}/>
+    <div hidden={mode !== 'local'}><App assetScope={actor?.id} chrome={{visible:mode==='local',templatesRequest:templateRequests.local}} /></div>
     {mode === 'online' && <>
-      {combatantLibraryOpen&&actor?.role==='dm'&&<CombatantLibrary api={api} csrf={csrf} snapshot={null} onClose={()=>setCombatantLibraryOpen(false)} onAdd={async()=>{throw new Error('Open an encounter first.')}} send={send}/>}
-      {libraryOpen && actor?.role === 'dm' && <AssetLibrary key={actor.id} api={api} csrf={csrf} onClose={() => setLibraryOpen(false)} />}
+      {combatantLibraryOpen&&actor?.role==='dm'&&!snapshot&&<CombatantLibrary api={api} csrf={csrf} snapshot={null} onClose={()=>setCombatantLibraryOpen(false)} onAdd={async()=>{throw new Error('Open an encounter first.')}} send={send}/>}
+      {libraryOpen && actor?.role === 'dm' && <><SessionBar state={details?.sessionActive?'Live':'Inactive'}><strong className="ledger-context-name">3D Asset Library</strong><Button onClick={goTable}>Return to Table</Button></SessionBar><AssetLibrary key={actor.id} api={api} csrf={csrf} onClose={() => setLibraryOpen(false)} /></>}
       <div hidden={libraryOpen && actor?.role === 'dm'}>
-      {error && <p className="online-message" role="alert">{error}</p>}
+      {error && <p className="online-message ledger-floating-message" role="alert">{error}</p>}
+      {!actor&&<SessionBar state="Sign in"><strong className="ledger-context-name">{inviteToken?'Join a campaign':'Multiplayer table'}</strong></SessionBar>}
       {!actor ? <section className="online-card"><h1>{inviteToken ? 'Join a campaign' : 'Dungeon Master account'}</h1>
         {inviteToken ? <form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); void run(async () => { const data = await api('/invitations/redeem', { token: inviteToken, displayName: form.get('displayName') }); setActor(data.actor); chooseCampaign(data.campaignId); setInviteToken(''); history.replaceState(null, '', location.pathname) }) }}>
           <label>Display name<input name="displayName" required maxLength={80} autoComplete="nickname" /></label><button disabled={!csrf || busy}>Join campaign</button><p>Invitation links expire after 30 minutes and work once. This browser keeps your player session for up to seven days.</p>
@@ -162,13 +186,14 @@ export default function Multiplayer() {
           {allowDMRegistration === false && <p>DM registration is closed for the private beta. Existing DMs can sign in; players can join using an invitation.</p>}
         </form>}
       </section> : <>
-        {!player ? <DMSetupPanel key={campaignId} campaigns={campaigns} campaignId={campaignId} details={details} members={members} snapshot={snapshot} online={online} busy={busy} inviteURL={inviteURL} checkpoints={checkpoints} chooseCampaign={chooseCampaign} api={api} run={run} send={send} setInviteURL={setInviteURL}
-          refresh={()=>void run(async()=>{socketRef.current?.disconnect().connect()})} signOut={()=>void run(async()=>{await api('/auth/logout',{});setActor(null);chooseCampaign('');setCampaigns([]);socketRef.current?.disconnect()})}/>
-          : <section className="online-controls player-session"><div className="online-row"><strong>Player</strong><label>Campaign<select value={campaignId} onChange={e=>chooseCampaign(e.target.value)}><option value="">Select campaign</option>{campaigns.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label><button disabled={busy} onClick={()=>void run(async()=>{socketRef.current?.disconnect().connect()})}>Refresh / rejoin</button><button onClick={()=>void run(async()=>{await api('/auth/logout',{});setActor(null);chooseCampaign('');setCampaigns([]);socketRef.current?.disconnect()})}>Sign out</button></div>{details&&<div className="online-row" aria-label="Campaign players">{members.map(m=><span key={m.id}>{m.displayName} · {m.connected?'Connected':'Offline'}</span>)}</div>}</section>}
-        {snapshot && !player && <App multiplayer={{ csrf, snapshot, connected: online, send, library: { api, campaignId, encounterId: snapshot.encounterId, revision: snapshot.revision }, exportFile: () => api(`/campaigns/${campaignId}/export`) }} />}
-        {snapshot && player && <div hidden={!sessionState?.sessionActive}><BattleMap3D levelsHidden={snapshot.state.levelsHidden} tactical={snapshot.state.tactical??[]} actor={actor} onCommand={send} connected={online} assetScope={sessionState?.sessionActive ? actor.id : undefined} assetContext={{ campaignId, encounterId: snapshot.encounterId }} dungeonMap={snapshot.state.dungeonMap} combatants={snapshot.state.combatants} map={snapshot.state.battleMap} round={snapshot.state.round} selectedId={selectedCombatant?.id ?? null} activeId={snapshot.state.activeId} onSelectToken={setSelected}
+        {(!snapshot||player)&&<SessionBar round={snapshot?.state.round} state={details?.sessionActive?'Live':'Inactive'} players={presence} view={playerView} onView={player&&snapshot?setPlayerView:undefined} editorAllowed={false} player={player} items={!player?sessionItems:undefined}>{context}{!player&&<Button onClick={()=>openSetup()}>Campaign setup</Button>}</SessionBar>}
+        {!player&&<Drawer open={setupOpen} title="Campaign setup" className="ledger-setup-drawer" onClose={()=>setSetupOpen(false)}>
+          <DMSetupPanel key={campaignId} campaigns={campaigns} campaignId={campaignId} details={details} members={members} snapshot={snapshot} online={online} busy={busy} inviteURL={inviteURL} checkpoints={checkpoints} chooseCampaign={chooseCampaign} api={api} run={run} send={send} setInviteURL={setInviteURL} section={setupSection} open={setupOpen}/>
+        </Drawer>}
+        {snapshot && !player && <App chrome={chrome} multiplayer={{ csrf, snapshot, connected: online, send, library: { api, campaignId, encounterId: snapshot.encounterId, revision: snapshot.revision }, exportFile: () => api(`/campaigns/${campaignId}/export`) }} />}
+        {snapshot && player && <div className="ledger-player-workspace" hidden={!sessionState?.sessionActive}><div hidden={playerView!=='map'}><BattleMap3D keyboardActive={playerView==='map'&&Boolean(sessionState?.sessionActive)} levelsHidden={snapshot.state.levelsHidden} tactical={snapshot.state.tactical??[]} actor={actor} onCommand={send} connected={online} assetScope={sessionState?.sessionActive ? actor.id : undefined} assetContext={{ campaignId, encounterId: snapshot.encounterId }} dungeonMap={snapshot.state.dungeonMap} combatants={snapshot.state.combatants} map={snapshot.state.battleMap} round={snapshot.state.round} selectedId={selectedCombatant?.id ?? null} activeId={snapshot.state.activeId} onSelectToken={setSelected}
           onMoveToken={(combatantId, destination) => { if (online && sessionState?.sessionActive && snapshot.state.combatants.find(c => c.id === combatantId)?.ownerId === actor.id) void send({ type: 'token.move', combatantId, destination }).catch(e => setError(e.message)) }}
-          canMove={online && Boolean(sessionState?.sessionActive) && selectedCombatant?.ownerId === actor.id} showSharedControls={false} playerId={actor.id} onToggleGrid={() => {}} onToggleLabels={() => {}} onReturnToTracker={() => {}} />
+          canMove={online && Boolean(sessionState?.sessionActive) && selectedCombatant?.ownerId === actor.id} showSharedControls={false} playerId={actor.id} onToggleGrid={() => {}} onToggleLabels={() => {}} onReturnToTracker={() => setPlayerView('tracker')} /></div>
           {selectedCombatant && <article className="online-card"><h2>{selectedCombatant.name}</h2>{selectedCombatant.ownerId === actor.id ? <><p>{selectedCombatant.hp}/{selectedCombatant.maxHp} HP · AC {selectedCombatant.ac} · {selectedCombatant.speed}</p>{selectedCombatant.artwork && <img className="player-artwork" src={selectedCombatant.artwork} alt={`${selectedCombatant.name} artwork`} />}{selectedCombatant.actions.map(a => <p key={a.name}><strong>{a.name}</strong> {a.text}</p>)}</> : <p>{selectedCombatant.hpShown ? `${selectedCombatant.hp}/${selectedCombatant.maxHp} HP · ` : ''}Visible on the battlefield. Other statistics are private.</p>}</article>}
         </div>}
         {(!snapshot || (player && !sessionState?.sessionActive)) && details && <p className="online-card">{player ? 'Waiting for the DM to open and start an encounter.' : 'Create or open an encounter to begin.'}</p>}

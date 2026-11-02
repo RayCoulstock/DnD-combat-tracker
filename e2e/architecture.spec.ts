@@ -1,3 +1,4 @@
+import {multiplayerMode,sessionAction,chooseCampaign,openSetup} from './shell-helpers'
 import {expandEditor} from './workspace-helpers'
 import {test,expect,type Page} from '@playwright/test'
 import {randomUUID} from 'node:crypto'
@@ -7,14 +8,14 @@ async function api(page:Page,path:string,body?:unknown){return page.evaluate(asy
 async function point(page:Page,x:number,z:number,click=true,y=.002){const canvas=page.locator('.battlefield-wrap canvas:visible');await canvas.scrollIntoViewIfNeeded();const b=(await canvas.boundingBox())!,camera=new PerspectiveCamera(42,b.width/b.height,.1,300);camera.position.set(12,14,12);camera.lookAt(0,0,0);camera.updateMatrixWorld();const p=new Vector3(x-10,y,z-10).project(camera);await page.mouse.move(b.x+(p.x+1)*b.width/2,b.y+(1-p.y)*b.height/2);if(click)await page.mouse.click(b.x+(p.x+1)*b.width/2,b.y+(1-p.y)*b.height/2)}
 test('unified objects and calibrated logical wall/door visuals update two player browsers',async({page,browser})=>{
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message))
-  await page.goto('/');await page.getByRole('button',{name:'Multiplayer',exact:true}).click();await page.getByLabel('Email',{exact:true}).fill(randomUUID()+'@example.test');await page.getByLabel('Password (12+ characters)',{exact:true}).fill('Architecture Browser Password 2049!');await page.getByRole('button',{name:'Create account',exact:true}).click();await page.getByLabel('New campaign',{exact:true}).fill('Architecture');await page.getByRole('button',{name:'Create campaign',exact:true}).click();await expect(page.getByLabel('New encounter',{exact:true})).toBeEnabled()
+  await page.goto('/');await multiplayerMode(page);await page.getByLabel('Email',{exact:true}).fill(randomUUID()+'@example.test');await page.getByLabel('Password (12+ characters)',{exact:true}).fill('Architecture Browser Password 2049!');await page.getByRole('button',{name:'Create account',exact:true}).click();await openSetup(page);await page.getByLabel('New campaign',{exact:true}).fill('Architecture');await page.getByRole('button',{name:'Create campaign',exact:true}).click();await expect(page.getByLabel('New encounter',{exact:true})).toBeEnabled()
   const campaign=await page.getByRole('combobox',{name:'Campaign',exact:true}).inputValue(),path='/campaigns/'+campaign
   const assets=[]
   for(const role of['wall','door']){
     const document=triangleDocument();document.asset.generator=role
     assets.push(await page.evaluate(async({bytes,role})=>{const{csrf}=await(await fetch('/api/session')).json();const d=new FormData();d.set('metadata',JSON.stringify({name:'Meshy '+role,category:'architecture',presentation:{architecture:{role}}}));d.set('file',new Blob([new Uint8Array(bytes)]),role+'.glb');const r=await fetch('/api/assets',{method:'POST',headers:{'X-CSRF-Token':csrf},body:d});if(!r.ok)throw new Error(await r.text());return r.json()},{bytes:Array.from(makeGlb(document)),role}))
   }
-  await api(page,path+'/encounters',{name:'Architecture',file:{version:1,round:1,combatants:[]}});await page.getByRole('button',{name:'Start multiplayer session',exact:true}).click()
+  await api(page,path+'/encounters',{name:'Architecture',file:{version:1,round:1,combatants:[]}});await sessionAction(page,'Start multiplayer session')
   const contexts=[await browser.newContext(),await browser.newContext()],players:Page[]=[]
   try{
     for(const context of contexts){const invite=await api(page,path+'/invitations',{}),player=await context.newPage();players.push(player);player.on('pageerror',e=>errors.push(e.message));await player.goto(invite.url);await player.getByLabel('Display name').fill('Architectural player');await player.getByRole('button',{name:'Join campaign',exact:true}).click();await expect(player.locator('.connection')).toHaveText('Connected');await expect(player.getByRole('button',{name:'Add Object',exact:true})).toHaveCount(0)}
@@ -33,7 +34,7 @@ test('unified objects and calibrated logical wall/door visuals update two player
     for(const state of['open','locked','closed']){await tools.getByRole('group',{name:'Selected door state',exact:true}).getByRole('button',{name:state,exact:true}).click();await expect(players[1].locator(`[data-door-state=${state}]`)).toHaveCount(1)}
     await tools.getByLabel('Map name',{exact:true}).fill('Reusable architecture');await tools.getByRole('button',{name:'Save map',exact:true}).click();await expect(tools.getByRole('status')).toContainText('Map saved')
     await contexts[0].setOffline(true);await expect(players[0].locator('.connection')).toHaveText('Reconnecting');await contexts[0].setOffline(false);await expect(players[0].locator('.connection')).toHaveText('Connected');await expect(players[0].locator('[data-door-state=ready]')).toHaveCount(1)
-    await page.reload();await page.getByRole('button',{name:'Expand setup',exact:true}).click();await page.getByRole('combobox',{name:'Campaign',exact:true}).selectOption(campaign);await expect(page.locator('.connection')).toHaveText('Connected');await page.getByRole('button',{name:'3D Map',exact:true}).click();await expect(page.locator('main:visible [data-wall-state=ready]')).toHaveCount(3);await page.screenshot({path:'/tmp/architectural-assets.png',fullPage:true})
+    await page.reload();await chooseCampaign(page,campaign);await expect(page.locator('.connection')).toHaveText('Connected');await page.getByRole('button',{name:'Battle map',exact:true}).click();await expect(page.locator('main:visible [data-wall-state=ready]')).toHaveCount(3);await page.screenshot({path:'/tmp/architectural-assets.png',fullPage:true})
     // Unresolved imported architectural references keep logical geometry and game state usable.
     const current=await api(page,path+'/snapshot');current.state.dungeonMap.doors[0].visual.assetId=randomUUID();await api(page,path+'/encounters',{name:'Missing door visual',file:current.state});await expect(players[0].getByText('Model unavailable',{exact:true})).toBeVisible();await expect(players[0].locator('[data-door-state=closed]')).toHaveCount(1)
     expect(errors).toEqual([])

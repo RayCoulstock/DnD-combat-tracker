@@ -1,3 +1,4 @@
+import {sessionAction} from './shell-helpers'
 import { test, expect } from '@playwright/test'
 import { projectBattlefield } from './workspace-helpers'
 
@@ -29,7 +30,7 @@ test('placed chairs and tables can be selected and rotated', async ({ page }) =>
   }
   // Verify rotation changes domain state, rather than merely displaying controls.
   const downloadPromise = page.waitForEvent('download')
-  await page.getByRole('button', { name: 'Export', exact: true }).click()
+  await sessionAction(page,'Export encounter')
   const stream = await (await downloadPromise).createReadStream(), chunks: Buffer[] = []
   for await (const chunk of stream) chunks.push(Buffer.from(chunk))
   const exported = JSON.parse(Buffer.concat(chunks).toString())

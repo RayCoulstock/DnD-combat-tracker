@@ -1,3 +1,4 @@
+import {multiplayerMode,sessionAction,closeSetup,openSetup,chooseCampaign} from './shell-helpers'
 import {test,expect,type Page} from '@playwright/test'
 import {randomUUID} from 'node:crypto'
 import {makeFloorImage} from '../test-fixtures/floor-image'
@@ -10,18 +11,18 @@ async function api(page:Page,path:string,body?:unknown){return page.evaluate(asy
 async function clickFloor(page:Page,x:number,z:number,width=20,height=10){await clickBattlefield(page,{x:x-width/2,y:.002,z:z-height/2})}
 test('DM uploads and calibrates an image under walls, a GLB and a combatant; players, saved maps and history restore it',async({page,browser})=>{
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message))
-  await page.goto('/');await page.getByRole('button',{name:'Multiplayer',exact:true}).click()
-  await page.getByLabel('Email',{exact:true}).fill(randomUUID()+'@example.test');await page.getByLabel('Password (12+ characters)',{exact:true}).fill('Battle Map Images Password 2052!');await page.getByRole('button',{name:'Create account',exact:true}).click()
+  await page.goto('/');await multiplayerMode(page)
+  await page.getByLabel('Email',{exact:true}).fill(randomUUID()+'@example.test');await page.getByLabel('Password (12+ characters)',{exact:true}).fill('Battle Map Images Password 2052!');await page.getByRole('button',{name:'Create account',exact:true}).click();await openSetup(page)
   await page.getByLabel('New campaign',{exact:true}).fill('Image campaign');await page.getByRole('button',{name:'Create campaign',exact:true}).click();await expect(page.getByLabel('New encounter',{exact:true})).toBeEnabled()
   const campaign=await page.getByRole('combobox',{name:'Campaign',exact:true}).inputValue(),path='/campaigns/'+campaign
   const file={version:1,round:1,combatants:[{id:1,name:'Image hero',side:'hero',hp:10,maxHp:10,ac:15,initiative:10,conditions:[],saves:[],actions:[]}],battleMap:{version:1,width:20,height:20,gridSizeFeet:5,showGrid:true,showLabels:true,tokens:{'1':{x:9,z:4}}}}
-  await api(page,path+'/encounters',{name:'Image encounter',file});await page.getByRole('button',{name:'Start multiplayer session',exact:true}).click()
+  await api(page,path+'/encounters',{name:'Image encounter',file});await sessionAction(page,'Start multiplayer session')
   const context=await browser.newContext(),player=await context.newPage();let imageRequests=0;player.on('request',request=>{if(new URL(request.url()).pathname.includes('/api/floor-images/')&&new URL(request.url()).pathname.endsWith('/file'))imageRequests++});player.on('pageerror',error=>errors.push(error.message))
   let resumeUpload=()=>{}
   try{
     const invite=await api(page,path+'/invitations',{});await player.goto(invite.url);await player.getByLabel('Display name').fill('Image player');await player.getByRole('button',{name:'Join campaign',exact:true}).click();await expect(player.locator('.connection')).toHaveText('Connected')
-    await page.getByRole('combobox',{name:'Controlled by Image hero',exact:true}).selectOption({label:'Image player'})
-    await page.getByRole('button',{name:'Map editor',exact:true}).click();await expandEditor(page)
+    await openSetup(page);await page.getByRole('combobox',{name:'Controlled by Image hero',exact:true}).selectOption({label:'Image player'})
+    await closeSetup(page);await page.getByRole('button',{name:'Map editor',exact:true}).click();await expandEditor(page)
     const editor=page.locator('.dungeon-builder:visible');await editor.getByLabel('Map name',{exact:true}).fill('Imported battle map');await editor.getByLabel('Map height',{exact:true}).fill('10');await editor.getByRole('button',{name:'Create blank map',exact:true}).click()
     await editor.locator('summary').filter({hasText:'Floor Image'}).click()
     const settings=editor.getByRole('region',{name:'Floor image settings'})
@@ -88,8 +89,8 @@ test('DM uploads and calibrates an image under walls, a GLB and a combatant; pla
     await editor.getByLabel('Saved maps',{exact:true}).selectOption({label:'Imported battle map · v1'})
     page.once('dialog',dialog=>dialog.accept());await editor.getByRole('button',{name:'Open saved map',exact:true}).click();await expect(page.locator('[data-floor-image-state=ready]')).toHaveCount(1)
     await page.reload();
-    const expand=page.getByRole('button',{name:'Expand setup',exact:true});await expect(expand).toBeVisible();await expand.click()
-    await page.getByRole('combobox',{name:'Campaign',exact:true}).selectOption(campaign);await expect(page.locator('.connection')).toHaveText('Connected')
+    await closeSetup(page)
+    await chooseCampaign(page,campaign);await expect(page.locator('.connection')).toHaveText('Connected')
     await page.getByRole('button',{name:'Map editor',exact:true}).click();await expect(page.locator('[data-floor-image-state=ready]')).toHaveCount(1)
     snapshot=await api(page,path+'/snapshot');expect(snapshot.state.dungeonMap.floorImage).toEqual(image);expect(snapshot.state.dungeonMap.walls[0]).toEqual(wall);expect(snapshot.state.dungeonMap.props[0]).toEqual(prop);expect(snapshot.state.battleMap.tokens['1']).toEqual({x:9,z:4})
     await editor.locator('summary').filter({hasText:'Floor Image'}).click()

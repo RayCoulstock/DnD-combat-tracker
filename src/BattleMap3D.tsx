@@ -45,6 +45,7 @@ interface Combatant {
 }
 
 export interface BattleMap3DProps {
+  keyboardActive?:boolean
   onPlaceSquare?:(destination:GridPosition,floorId?:string)=>void
   onSelectTransition?:(id:string)=>void
   onToggleEditorMode?:()=>void
@@ -56,6 +57,7 @@ export interface BattleMap3DProps {
   onActiveLevelChange?:(id:string)=>void
   levelsHidden?:boolean
   levelView?:LevelView
+  combatantActions?:React.ReactNode
   canvasTools?:React.ReactNode
   tactical?:TacticalRecord[]
   actor?:Actor
@@ -186,7 +188,7 @@ function BattlefieldScene(props:Parameters<typeof LevelScene>[0]){
 }
 
 export default function BattleMap3D(input: BattleMap3DProps) {
-  const shellRef=useRef<HTMLElement>(null),viewport=useMapViewport(shellRef)
+  const shellRef=useRef<HTMLElement>(null),viewport=useMapViewport(shellRef,input.keyboardActive!==false)
   const [travelId,setTravelId]=useState<string|null>(null)
   const [chosen,setChosen]=useState<string>(''),[mode,setMode]=useState<LevelView['mode']>('single'),[hidden,setHidden]=useState<string[]>([])
   const levels=input.dungeonMap?dungeonLevels(input.dungeonMap):[]
@@ -200,9 +202,9 @@ export default function BattleMap3D(input: BattleMap3DProps) {
   const levelSend=input.onCommand?async(command:GameCommand)=>input.onCommand!((command.type==='tactical.create'||command.type==='tactical.update'||command.type==='map.floorImage.set')?(command.type==='map.floorImage.set'?{...command,levelId:activeId}:{...command,floorId:activeId}) as GameCommand:command):undefined
 
   const tacticalDrawerRef=useRef<HTMLDetailsElement>(null)
-  const tools=useTacticalTools({records:props.tactical?.filter(r=>(r.floorId??primaryLevelId(props.dungeonMap))===activeId)??[],actor:props.actor??{id:'local',role:'dm'},send:levelSend,connected:props.connected??true,width:activeLevel?.width??props.map.width,height:activeLevel?.height??props.map.height,feet:props.map.gridSizeFeet,editorTool:`${props.assetContext?.encounterId??'local'}:${props.editor?.tool??'encounter'}:${props.editor?.activation??0}:${activeId}`})
+  const tools=useTacticalTools({container:shellRef,active:input.keyboardActive!==false,records:props.tactical?.filter(r=>(r.floorId??primaryLevelId(props.dungeonMap))===activeId)??[],actor:props.actor??{id:'local',role:'dm'},send:levelSend,connected:props.connected??true,width:activeLevel?.width??props.map.width,height:activeLevel?.height??props.map.height,feet:props.map.gridSizeFeet,editorTool:`${props.assetContext?.encounterId??'local'}:${props.editor?.tool??'encounter'}:${props.editor?.activation??0}:${activeId}`})
   const toolbarRef=useRef<HTMLDivElement>(null),[dismissed,setDismissed]=useState<string|number|null>(null),[mapError,setMapError]=useState('')
-  useEffect(()=>{const cancel=(e:KeyboardEvent)=>{if(!isModalOpen()&&e.key==='Escape')setDismissed(props.selectedId)};window.addEventListener('keydown',cancel);return()=>window.removeEventListener('keydown',cancel)},[props.selectedId])
+  useEffect(()=>{const cancel=(e:KeyboardEvent)=>{if(shellRef.current?.getClientRects().length&&props.keyboardActive!==false&&!isModalOpen()&&e.key==='Escape')setDismissed(props.selectedId)};window.addEventListener('keydown',cancel);return()=>window.removeEventListener('keydown',cancel)},[props.selectedId,props.keyboardActive])
   let toolbar:ObjectToolbarContext|undefined
   if(tools.current&&tools.mode==='navigate'){
     const item=tools.current,anchor=item.kind==='measurement'?item.end:item.position
@@ -237,6 +239,7 @@ export default function BattleMap3D(input: BattleMap3DProps) {
     <aside className="tabletop-panel tabletop-roster">
       <button className="roster-expand" aria-label={rosterExpanded?'Collapse roster':'Expand roster'} aria-expanded={rosterExpanded} onClick={()=>setRosterExpanded(v=>!v)}>{rosterExpanded?'«':'»'}</button><span className="eyebrow">INITIATIVE</span><h2>Round {props.round}</h2>
       <div className="map-initiative-list">{[...(activeVisible?activeCombatants:[])].sort((a,b)=>b.initiative-a.initiative).map((combatant) => <button key={combatant.id} title={`${combatant.name} · Initiative ${combatant.initiative}`} aria-label={combatant.name} aria-pressed={combatant.id === props.selectedId} aria-current={combatant.id === props.activeId ? 'step' : undefined} className={`${combatant.id === props.selectedId ? 'selected' : ''} ${combatant.id === props.activeId ? 'active' : ''}`} onClick={() => selectToken(combatant.id)}><span className={`map-token-dot ${combatant.side}`}>{combatant.short==='?'?combatant.name.split(/\s+/).slice(0,2).map(w=>w[0]).join(''):combatant.short}</span><span><strong>{combatant.name}</strong>{combatant.id === props.selectedId && <small>◇ Selected</small>}{combatant.id === props.activeId && <small>▶ Active turn</small>}{combatant.conditions?.length ? <small>{combatant.conditions.join(', ')}</small> : null}<small>Initiative {combatant.initiative}</small></span>{(!props.playerId || combatant.ownerId === props.playerId || combatant.hpShown === true) && <em>{combatant.hp}/{combatant.maxHp} HP</em>}</button>)}</div>
+      {props.combatantActions}
       {!props.combatants.length && <p className="map-empty">Add combatants in the tracker to place tokens.</p>}
       {input.actor?.role!=='player'&&levels.length>1&&input.onCommand&&<form className="combatant-transfer" onSubmit={e=>{e.preventDefault();const data=new FormData(e.currentTarget);setMapError('');void input.onCommand!({type:'combatant.floor.transfer',combatantId:String(data.get('combatant')),floorId:String(data.get('floor')),destination:{x:Number(data.get('x')),z:Number(data.get('z'))}}).catch(error=>setMapError(error.message))}}>
        <label>Transfer combatant<select aria-label="Transfer combatant" name="combatant">{input.combatants.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
@@ -273,7 +276,7 @@ export default function BattleMap3D(input: BattleMap3DProps) {
       <div className="camera-toolbar" onPointerDown={e=>e.stopPropagation()} onPointerUp={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()} aria-label="Camera controls">      <button onClick={resetCamera}><RotateCcw size={16} /> Reset camera</button>
       {props.showSharedControls !== false && <><button disabled={props.connected === false} onClick={toggleGrid}>{showGrid ? <EyeOff size={16} /> : <Eye size={16} />} {showGrid ? 'Hide grid' : 'Show grid'}</button>
       <button disabled={props.connected === false} onClick={props.onToggleLabels}>{props.map.showLabels ? <EyeOff size={16} /> : <Eye size={16} />} {props.map.showLabels ? 'Hide labels' : 'Show labels'}</button></>}
-<button onClick={()=>{const c=controlsRef.current;if(c){c.object.position.set(c.target.x,1.5*Math.max(props.map.width,props.map.height),c.target.z+.001);c.update()}}}>Top-down</button><button aria-label="Zoom out" onClick={()=>{const c=controlsRef.current;if(c){c.object.position.sub(c.target).multiplyScalar(1.2).add(c.target);c.update()}}}>−</button><button aria-label="Zoom in" onClick={()=>{const c=controlsRef.current;if(c){c.object.position.sub(c.target).multiplyScalar(.8).add(c.target);c.update()}}}>+</button>{props.showSharedControls!==false&&<button onClick={props.onReturnToTracker}><ChevronLeft size={14}/>Encounter tracker</button>}</div>
+<button onClick={()=>{const c=controlsRef.current;if(c){c.object.position.set(c.target.x,1.5*Math.max(props.map.width,props.map.height),c.target.z+.001);c.update()}}}>Top-down</button><button aria-label="Zoom out" onClick={()=>{const c=controlsRef.current;if(c){c.object.position.sub(c.target).multiplyScalar(1.2).add(c.target);c.update()}}}>−</button><button aria-label="Zoom in" onClick={()=>{const c=controlsRef.current;if(c){c.object.position.sub(c.target).multiplyScalar(.8).add(c.target);c.update()}}}>+</button>{props.showSharedControls!==false&&<button onClick={()=>{viewport.restore();props.onReturnToTracker()}}><ChevronLeft size={14}/>Encounter tracker</button>}</div>
       <div className="map-scale-readout" onPointerDown={e=>e.stopPropagation()} onPointerUp={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()}><details><summary>1 sq = {props.map.gridSizeFeet} ft · {props.map.width} × {props.map.height} squares · Scale ▾</summary>      {props.actor?.role!=='player'&&props.onCommand&&<form className="grid-scale-control" onSubmit={e=>{e.preventDefault();const gridSizeFeet=Number(new FormData(e.currentTarget).get('feet'));setMapError('');void props.onCommand?.({type:'map.settings',showGrid:props.map.showGrid,showLabels:props.map.showLabels,gridSizeFeet}).catch(error=>setMapError(error.message))}}><label>Feet per square<input aria-label="Feet per square" name="feet" type="number" min={1} max={100} key={props.map.gridSizeFeet} defaultValue={props.map.gridSizeFeet} required disabled={props.connected===false}/></label><button disabled={props.connected===false}>Apply scale</button>{mapError&&<p role="alert">{mapError}</p>}</form>}
 </details></div>
       <details ref={tacticalDrawerRef} className="tactical-drawer" onPointerDown={e=>e.stopPropagation()} onPointerUp={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()}><summary>Ruler &amp; tactical templates</summary>{tools.controls}</details>

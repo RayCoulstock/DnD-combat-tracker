@@ -35,3 +35,14 @@ export async function clickBattlefield(page:Page,point:{x:number;y:number;z:numb
  const position=await projectBattlefield(page,point),canvas=page.locator('.battlefield-wrap canvas:visible'),box=(await canvas.boundingBox())!
  await canvas.click({position:{x:position.x-box.x,y:position.y-box.y}})
 }
+
+export async function battlefieldView(page:Page){
+ await projectBattlefield(page,{x:0,y:0,z:0})
+ return page.locator('.battlefield-wrap canvas:visible').evaluate(async node=>{
+  for(const resource of performance.getEntriesByType('resource').filter(e=>e.name.includes('/@react-three_fiber.js')).reverse()){
+   const module=await import(resource.name),state=module._roots.get(node)?.store.getState()
+   if(state?.controls)return{camera:state.camera.uuid,scene:state.scene.uuid,position:state.camera.position.toArray(),target:state.controls.target.toArray(),zoom:state.camera.zoom}
+  }
+  throw Error('No mounted battlefield camera')
+ })
+}
