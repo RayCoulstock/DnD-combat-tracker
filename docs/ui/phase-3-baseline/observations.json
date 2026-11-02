@@ -1,0 +1,447 @@
+{
+  "date": "2026-11-02",
+  "mode": "Local only; actual Three.js scene; deterministic procedural dungeon; external fonts blocked; reduced motion",
+  "observations": [
+    {
+      "file": "editor-1600.png",
+      "width": 1600,
+      "documentWidth": 1600,
+      "docks": [
+        {
+          "zone": "D1",
+          "x": 73,
+          "y": 137,
+          "width": 297.96875,
+          "height": 50
+        },
+        {
+          "zone": "D2",
+          "x": 515.359375,
+          "y": 195,
+          "width": 295.28125,
+          "height": 31.390625
+        },
+        {
+          "zone": "D3",
+          "x": 918.25,
+          "y": 137,
+          "width": 334.75,
+          "height": 50
+        },
+        {
+          "zone": "D4",
+          "x": 73,
+          "y": 339,
+          "width": 58,
+          "height": 432
+        },
+        {
+          "zone": "D5",
+          "x": 73,
+          "y": 923,
+          "width": 453.6875,
+          "height": 50
+        },
+        {
+          "zone": "D6",
+          "x": 1098,
+          "y": 925,
+          "width": 155,
+          "height": 48
+        }
+      ]
+    },
+    {
+      "file": "editor-1280.png",
+      "width": 1280,
+      "documentWidth": 1280,
+      "docks": [
+        {
+          "zone": "D1",
+          "x": 73,
+          "y": 137,
+          "width": 297.96875,
+          "height": 50
+        },
+        {
+          "zone": "D2",
+          "x": 355.359375,
+          "y": 195,
+          "width": 295.28125,
+          "height": 31.390625
+        },
+        {
+          "zone": "D3",
+          "x": 590.25,
+          "y": 137,
+          "width": 334.75,
+          "height": 50
+        },
+        {
+          "zone": "D4",
+          "x": 73,
+          "y": 339,
+          "width": 58,
+          "height": 432
+        },
+        {
+          "zone": "D5",
+          "x": 73,
+          "y": 923,
+          "width": 453.6875,
+          "height": 50
+        },
+        {
+          "zone": "D6",
+          "x": 770,
+          "y": 925,
+          "width": 155,
+          "height": 48
+        }
+      ]
+    },
+    {
+      "file": "editor-768.png",
+      "width": 768,
+      "documentWidth": 768,
+      "docks": [
+        {
+          "zone": "D1",
+          "x": 17,
+          "y": 137,
+          "width": 332.96875,
+          "height": 50
+        },
+        {
+          "zone": "D2",
+          "x": 95,
+          "y": 250,
+          "width": 295.28125,
+          "height": 31.390625
+        },
+        {
+          "zone": "D3",
+          "x": 277,
+          "y": 197,
+          "width": 136,
+          "height": 50
+        },
+        {
+          "zone": "D4",
+          "x": 17,
+          "y": 339,
+          "width": 58,
+          "height": 432
+        },
+        {
+          "zone": "D5",
+          "x": 17,
+          "y": 923,
+          "width": 265,
+          "height": 50
+        },
+        {
+          "zone": "D6",
+          "x": 258,
+          "y": 871,
+          "width": 155,
+          "height": 48
+        }
+      ]
+    },
+    {
+      "file": "wall-flyout-1600.png",
+      "width": 1600,
+      "documentWidth": 1600,
+      "docks": [
+        {
+          "zone": "D1",
+          "x": 73,
+          "y": 137,
+          "width": 297.96875,
+          "height": 50
+        },
+        {
+          "zone": "D2",
+          "x": 515.359375,
+          "y": 195,
+          "width": 295.28125,
+          "height": 31.390625
+        },
+        {
+          "zone": "D3",
+          "x": 918.25,
+          "y": 137,
+          "width": 334.75,
+          "height": 50
+        },
+        {
+          "zone": "D4",
+          "x": 73,
+          "y": 339,
+          "width": 58,
+          "height": 432
+        },
+        {
+          "zone": "D5",
+          "x": 73,
+          "y": 923,
+          "width": 453.6875,
+          "height": 50
+        },
+        {
+          "zone": "D6",
+          "x": 1098,
+          "y": 925,
+          "width": 155,
+          "height": 48
+        }
+      ]
+    },
+    {
+      "file": "battle-map-1600.png",
+      "width": 1600,
+      "documentWidth": 1600,
+      "docks": [
+        {
+          "zone": "D1",
+          "x": 73,
+          "y": 137,
+          "width": 297.96875,
+          "height": 50
+        },
+        {
+          "zone": "D2",
+          "x": 712.1328125,
+          "y": 195,
+          "width": 231.734375,
+          "height": 31.390625
+        },
+        {
+          "zone": "D3",
+          "x": 1490,
+          "y": 137,
+          "width": 93,
+          "height": 50
+        },
+        {
+          "zone": "D4",
+          "x": 73,
+          "y": 449.5,
+          "width": 58,
+          "height": 211
+        },
+        {
+          "zone": "D5",
+          "x": 73,
+          "y": 923,
+          "width": 453.6875,
+          "height": 50
+        },
+        {
+          "zone": "D6",
+          "x": 1428,
+          "y": 925,
+          "width": 155,
+          "height": 48
+        }
+      ]
+    },
+    {
+      "file": "battle-map-1280.png",
+      "width": 1280,
+      "documentWidth": 1280,
+      "docks": [
+        {
+          "zone": "D1",
+          "x": 73,
+          "y": 137,
+          "width": 297.96875,
+          "height": 50
+        },
+        {
+          "zone": "D2",
+          "x": 552.1328125,
+          "y": 195,
+          "width": 231.734375,
+          "height": 31.390625
+        },
+        {
+          "zone": "D3",
+          "x": 1170,
+          "y": 137,
+          "width": 93,
+          "height": 50
+        },
+        {
+          "zone": "D4",
+          "x": 73,
+          "y": 449.5,
+          "width": 58,
+          "height": 211
+        },
+        {
+          "zone": "D5",
+          "x": 73,
+          "y": 923,
+          "width": 453.6875,
+          "height": 50
+        },
+        {
+          "zone": "D6",
+          "x": 1108,
+          "y": 925,
+          "width": 155,
+          "height": 48
+        }
+      ]
+    },
+    {
+      "file": "battle-map-768.png",
+      "width": 768,
+      "documentWidth": 768,
+      "docks": [
+        {
+          "zone": "D1",
+          "x": 17,
+          "y": 137,
+          "width": 332.96875,
+          "height": 50
+        },
+        {
+          "zone": "D2",
+          "x": 268.1328125,
+          "y": 195,
+          "width": 231.734375,
+          "height": 31.390625
+        },
+        {
+          "zone": "D3",
+          "x": 658,
+          "y": 137,
+          "width": 93,
+          "height": 50
+        },
+        {
+          "zone": "D4",
+          "x": 17,
+          "y": 449.5,
+          "width": 58,
+          "height": 211
+        },
+        {
+          "zone": "D5",
+          "x": 17,
+          "y": 923,
+          "width": 265,
+          "height": 50
+        },
+        {
+          "zone": "D6",
+          "x": 596,
+          "y": 925,
+          "width": 155,
+          "height": 48
+        }
+      ]
+    },
+    {
+      "file": "battle-map-390.png",
+      "width": 390,
+      "documentWidth": 390,
+      "docks": [
+        {
+          "zone": "D1",
+          "x": 11,
+          "y": 131,
+          "width": 235.59375,
+          "height": 90
+        },
+        {
+          "zone": "D2",
+          "x": 83,
+          "y": 235,
+          "width": 212.671875,
+          "height": 30
+        },
+        {
+          "zone": "D3",
+          "x": 290,
+          "y": 131,
+          "width": 89,
+          "height": 46
+        },
+        {
+          "zone": "D4",
+          "x": 11,
+          "y": 449.5,
+          "width": 58,
+          "height": 211
+        },
+        {
+          "zone": "D5",
+          "x": 11,
+          "y": 929,
+          "width": 265,
+          "height": 50
+        },
+        {
+          "zone": "D6",
+          "x": 224,
+          "y": 881,
+          "width": 155,
+          "height": 42
+        }
+      ]
+    },
+    {
+      "file": "combatant-inspector-1600.png",
+      "width": 1600,
+      "documentWidth": 1600,
+      "docks": [
+        {
+          "zone": "D1",
+          "x": 73,
+          "y": 137,
+          "width": 297.96875,
+          "height": 50
+        },
+        {
+          "zone": "D2",
+          "x": 547.1328125,
+          "y": 195,
+          "width": 231.734375,
+          "height": 31.390625
+        },
+        {
+          "zone": "D3",
+          "x": 1160,
+          "y": 137,
+          "width": 93,
+          "height": 50
+        },
+        {
+          "zone": "D4",
+          "x": 73,
+          "y": 449.5,
+          "width": 58,
+          "height": 211
+        },
+        {
+          "zone": "D5",
+          "x": 73,
+          "y": 923,
+          "width": 453.6875,
+          "height": 50
+        },
+        {
+          "zone": "D6",
+          "x": 1098,
+          "y": 925,
+          "width": 155,
+          "height": 48
+        }
+      ]
+    }
+  ]
+}

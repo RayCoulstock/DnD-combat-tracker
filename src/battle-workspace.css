@@ -1,0 +1,117 @@
+/* C1–C3: change sizes in place; no scene keys or alternative Canvas roots. */
+.dungeon-builder[data-editing],.dungeon-builder[data-map-expanded=true][data-editing]{display:block!important;grid-template-columns:none!important}
+.dungeon-builder .tabletop-shell,.ledger-player-workspace .tabletop-shell,.tabletop-shell[data-inspector-open]{display:grid;grid-template-columns:56px minmax(0,1fr);height:100%;min-height:0;overflow:hidden;isolation:isolate}
+.dungeon-builder .tabletop-shell[data-roster-expanded=true],.ledger-player-workspace .tabletop-shell[data-roster-expanded=true]{grid-template-columns:240px minmax(0,1fr)}
+.tabletop-shell>.battlefield-wrap{grid-column:2;grid-row:1;position:relative;min-width:0;min-height:0;height:100%;overflow:hidden;isolation:isolate}
+.tabletop-shell>.tabletop-roster{grid-column:1;grid-row:1;min-width:0;overflow:auto;background:var(--ledger-surface,#fbf9f4);z-index:8}
+.tabletop-shell>.workspace-inspector{grid-column:3;grid-row:1;width:330px;min-width:0;min-height:0;overflow:auto;background:var(--ledger-well,#ece6da);color:var(--ledger-ink,#1f1d1a);border-left:1px solid var(--ledger-line-strong,#d6ccba);z-index:10;padding:8px}
+.tabletop-shell>.workspace-inspector[hidden]{display:none}
+.tabletop-shell .workspace-inspector>.inspector{display:flex;position:static!important;width:auto!important;max-width:100%!important;border:0;background:transparent;overflow:visible;padding:0}
+.tabletop-shell .workspace-inspector>.inspector[hidden]{display:none}
+.context-inspector-header{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:4px 2px 10px}
+.context-inspector-header strong{font-family:Georgia,serif}
+.tabletop-shell .workspace-inspector .inspector-header{padding:10px!important;background:white;border-radius:10px}
+.tabletop-shell .workspace-inspector .inspector-scroll{overflow:visible;padding:8px 0}
+.inspector-group-label{display:flex;align-items:center;gap:6px;text-transform:uppercase;letter-spacing:.15em;font-size:10px;color:#645c51;margin:16px 2px 8px}
+.inspector-group-label::after{content:'';height:1px;background:var(--ledger-line-strong,#d6ccba);flex:1}
+.workspace-inspector details{background:white;border:1px solid var(--ledger-line-strong,#d6ccba);border-radius:10px;margin-bottom:7px;box-shadow:0 1px 2px #0001}
+.workspace-inspector details[open]{border-left:3px solid var(--ledger-accent,#9e2b20)}
+.workspace-inspector summary{min-height:44px;box-sizing:border-box;padding:12px 10px;cursor:pointer;font-weight:600;font-size:12px}
+.workspace-inspector details[open]>summary{background:#fbf6ee;border-bottom:1px solid #e4ddd0}
+.workspace-inspector .tactical-tools{margin:0;border:0;padding:8px;background:transparent;color:inherit}
+.workspace-inspector button,.workspace-inspector input:not([type=checkbox]),.workspace-inspector select{min-height:40px;max-width:100%;box-sizing:border-box}
+.workspace-inspector .hp-controls,.workspace-inspector .chips{display:flex;flex-wrap:wrap;gap:5px}
+.workspace-inspector .amount{display:flex;max-width:100%}.workspace-inspector .amount input{width:70px}
+/* Six dock owners, laid out by a grid over the existing canvas. Their transient
+   menus use the shared top-layer surface rather than another floating toolbar. */
+.tabletop-shell .ledger-canvas-dock{position:absolute;z-index:5;background:rgba(251,249,244,.96);color:#1f1d1a;border:1px solid #e4ddd0;border-radius:12px;box-shadow:0 6px 20px #0005;padding:4px;display:flex;align-items:center;gap:3px;box-sizing:border-box;font-size:11px;max-width:calc(100% - 16px);margin:0;backdrop-filter:blur(8px)}
+.tabletop-shell .ledger-canvas-dock button,.tabletop-shell .ledger-canvas-dock select{min-height:40px;min-width:40px;font-size:11px;border-radius:8px;cursor:pointer;color:inherit}
+.tabletop-shell .ledger-canvas-dock button{background:transparent;border:0;padding:6px;display:inline-flex;gap:4px;align-items:center;justify-content:center}
+.tabletop-shell .ledger-canvas-dock button:disabled{opacity:.45;cursor:default}
+.tabletop-shell .ledger-canvas-dock button[aria-pressed=true]{background:#9e2b20;color:white}
+.tabletop-shell .ledger-canvas-dock button:focus-visible,.workspace-inspector summary:focus-visible{outline:2px solid #9e2b20;outline-offset:2px}
+.tabletop-shell .dock-1{left:12px;top:12px;right:auto;flex-wrap:wrap;max-width:48%;align-items:center}
+.dock-1 label{font-size:0;display:flex;min-width:0}.dock-1 select{max-width:140px;width:100%;min-width:70px}.dock-1 small{display:none}
+.dock-1 .transition-travel-tools{position:static!important;max-height:200px!important;max-width:220px!important;padding:0!important;margin:0;font-size:11px}
+.dock-1 .transition-travel-tools[open]{position:absolute!important;top:100%;left:0;background:#fbf9f4;border:1px solid #d6ccba;padding:8px!important;overflow:auto}
+.tabletop-shell .dock-2.battlefield-help{left:50%;transform:translateX(-50%);top:70px;right:auto;max-width:calc(100% - 130px);font-size:11px;line-height:1.4;padding:7px 10px;white-space:normal;pointer-events:none;text-align:center}
+.tabletop-shell .dock-3{right:12px;top:12px;left:auto;max-width:48%;flex-wrap:wrap;justify-content:flex-end}
+.editor-history-controls{display:flex;align-items:center;gap:2px}
+.tabletop-shell .dock-4{left:12px;top:120px;bottom:75px;width:58px;overflow:auto;flex-direction:column;align-items:stretch;max-height:calc(100% - 200px);height:max-content}
+.tabletop-shell .dock-4 .editor-palette{position:static;margin:0;padding:0;border:0;display:flex;flex-direction:column;gap:2px;width:auto;background:transparent;box-shadow:none;overflow:visible;max-height:none}
+.tabletop-shell .dock-4 button{width:48px;min-height:45px;flex-direction:column;font-size:18px;line-height:1;gap:3px;flex-shrink:0}
+.tabletop-shell .dock-4 button span{font-size:9px;line-height:12px}
+.tabletop-shell .dock-5.camera-toolbar{left:12px;bottom:12px;top:auto;right:auto;flex-wrap:nowrap;max-width:calc(100% - 180px)}
+.tabletop-shell .dock-5 button{font-size:0}.dock-5 button svg{width:17px;height:17px;flex-shrink:0}
+.dock-5 button[aria-label='Zoom in'],.dock-5 button[aria-label='Zoom out']{font-size:20px!important}
+.dock-5 button[aria-label='Top-down']::before{content:'◫';font-size:20px}
+.tabletop-shell .dock-6.map-scale-readout{right:12px;bottom:12px;top:auto;left:auto;font-size:10px;min-height:48px;max-width:155px}
+.dock-6 summary{cursor:pointer;padding:4px;min-height:32px;display:flex;align-items:center}
+.dock-6 details[open]{position:absolute;right:0;bottom:0;background:#fbf9f4;padding:6px;border-radius:10px;box-shadow:0 6px 20px #0005;min-width:170px}
+.dock-6 form{max-width:200px}.dock-6 input{width:80px}
+.narrow-roster-toggle{display:none!important}
+.tabletop-shell .roster-expand{min-height:40px;min-width:40px;margin:0 2px 8px}
+/* Inspector overlays at laptop/tablet widths without shrinking the canvas.
+   Nonmodal: users can still place objects/pick endpoints with the panel open. */
+@media(min-width:1440px){
+ .dungeon-builder .tabletop-shell[data-inspector-open=true],.ledger-player-workspace .tabletop-shell[data-inspector-open=true]{grid-template-columns:56px minmax(0,1fr) 330px}
+ .dungeon-builder .tabletop-shell[data-inspector-open=true][data-roster-expanded=true],.ledger-player-workspace .tabletop-shell[data-inspector-open=true][data-roster-expanded=true]{grid-template-columns:240px minmax(0,1fr) 330px}
+}
+@media(max-width:1439px){.tabletop-shell>.workspace-inspector{position:absolute;right:0;top:0;bottom:0;width:min(330px,calc(100% - 80px));box-shadow:-6px 0 20px #0004}.tabletop-shell[data-inspector-open=true] .dock-3{right:min(350px,calc(100vw - 100px));max-width:120px}.tabletop-shell[data-inspector-open=true] .dock-3 .editor-history-controls{display:flex}}
+@media(max-width:1099px){
+ .dungeon-builder .tabletop-shell[data-roster-expanded],.ledger-player-workspace .tabletop-shell[data-roster-expanded]{grid-template-columns:minmax(0,1fr)}
+ .tabletop-shell>.battlefield-wrap{grid-column:1}
+ .tabletop-shell>.tabletop-roster{display:none!important}
+ .tabletop-shell[data-roster-expanded=true]>.tabletop-roster{display:block!important;position:absolute;left:0;top:70px;bottom:75px;width:220px;box-shadow:5px 0 20px #0004}
+ .narrow-roster-toggle{display:inline-flex!important}
+ .tabletop-shell .dock-1{max-width:55%}.dock-1 select{max-width:110px}.dock-1 .ledger-button{font-size:10px!important}
+ .tabletop-shell .dock-3{max-width:42%}.editor-history-controls>button{font-size:0!important}.editor-history-controls>button::first-letter{font-size:14px}
+}
+@media(max-width:599px){
+ .tabletop-shell .dock-1{left:6px;top:6px;max-width:62%;gap:0}.dock-1 label{max-width:95px}.dock-1 select{max-width:95px}.dock-1>small,.dock-1>.ledger-button:not(.narrow-roster-toggle){display:none!important}
+ .tabletop-shell .dock-3{top:6px;right:6px;max-width:34%;padding:2px}.dock-3 .editor-history-controls{display:flex}.tabletop-shell .dock-3 button{padding:2px;min-width:40px}.tabletop-shell .dock-3>.ledger-button:has(+span){display:none}
+ .tabletop-shell .dock-2.battlefield-help{top:110px;left:78px;transform:none;max-width:calc(100% - 90px);font-size:10px}
+ .tabletop-shell .dock-4{left:6px;top:110px;bottom:120px;max-height:calc(100% - 240px)}
+ .tabletop-shell .dock-5.camera-toolbar{left:6px;bottom:6px;max-width:calc(100% - 12px)}
+ .tabletop-shell .dock-6.map-scale-readout{right:6px;bottom:62px;min-height:40px}
+ .tabletop-shell[data-inspector-open=true] .dock-3{right:6px;z-index:11;top:55px}.tabletop-shell>.workspace-inspector{padding-top:110px;width:min(330px,calc(100% - 70px))}
+}
+@media(prefers-reduced-motion:reduce){.ledger-canvas-dock,.workspace-inspector{scroll-behavior:auto;transition:none;animation:none}}
+.tabletop-shell .workspace-inspector .context-inspector-header{display:flex;position:static;min-height:40px;height:auto;padding:2px 0 8px;grid-template-columns:none;box-shadow:none;background:transparent}
+.tabletop-shell .workspace-inspector .ledger-inspector-body{padding:8px}
+.tabletop-shell .workspace-inspector .tactical-tools h3{display:none}
+.dock-5 button[title='Toggle grid']::before{content:'▦';font-size:18px}.dock-5 button[title='Toggle labels']::before{content:'Aa';font-size:14px}.dock-5 button[title='Toggle grid'] svg,.dock-5 button[title='Toggle labels'] svg{display:none}
+.tabletop-shell>.workspace-inspector{box-sizing:border-box}
+@media(max-width:1439px){.tabletop-shell>.workspace-inspector{grid-column:auto;grid-row:auto}.tabletop-shell[data-inspector-open=true] .dock-3{max-width:48%}.tabletop-shell[data-inspector-open=true] .dock-3 .editor-history-controls{display:flex}}
+@media(min-width:600px) and (max-width:1099px){.tabletop-shell[data-inspector-open=true] .dock-3{top:72px;right:350px;max-width:calc(100% - 365px)}.tabletop-shell[data-inspector-open=true] .dock-2{top:125px;max-width:calc(100% - 430px);left:90px;transform:none}}
+@media(max-width:1099px){.tabletop-shell .dock-3 .editor-history-controls>button:not(.ledger-menu-trigger){display:none}}
+@media(max-width:599px){.tabletop-shell[data-inspector-open=true] .dock-3 .editor-history-controls{display:flex}}
+.tabletop-shell .dock-2 button{pointer-events:auto}
+/* Overlay inspectors reduce the usable stage, not its retained renderer bounds. */
+@media(min-width:600px) and (max-width:1439px){.tabletop-shell[data-inspector-open=true] .dock-6{right:350px}}
+@media(min-width:600px) and (max-width:899px){.tabletop-shell[data-inspector-open=true] .dock-6{bottom:66px}}
+@media(min-width:1100px) and (max-width:1439px){.tabletop-shell[data-inspector-open=true] .dock-2.battlefield-help{left:calc(50% - 165px);max-width:calc(100% - 450px)}}
+/* The only viewport status from the no-level state is persistent, unlike hints. */
+.tabletop-shell .dock-1 [role=status]{font-size:11px}
+/* Direct player maps do not have DungeonBuilder's explicitly sized parent. */
+.ledger-player-workspace .tabletop-shell[data-inspector-open]{height:calc(100dvh - 128px);min-height:300px}
+/* Context controls share the canvas stacking context; fixed docks win overlap. */
+.tabletop-shell .battlefield-wrap>.floating-object-toolbar{z-index:4}
+
+/* Depth labels remain inside the renderer host, below docks and E1. */
+.tabletop-shell .battlefield-wrap>div:has(canvas){isolation:isolate;z-index:0}
+/* D4 occupies the documented left-centre slot; short stages scroll its tools. */
+.tabletop-shell .ledger-canvas-dock.dock-4{top:50%;bottom:auto;transform:translateY(-50%)}
+@media(min-width:1100px){.tabletop-shell .dock-5.camera-toolbar button{font-size:11px}}
+/* Explicit workspace tracks outrank the retained Phase 2 player/editor rules,
+   independent of CSS bundling or development injection order. */
+.dungeon-builder .tabletop-shell[data-inspector-open][data-roster-expanded=false],.ledger-player-workspace .tabletop-shell[data-inspector-open][data-roster-expanded=false]{grid-template-columns:56px minmax(0,1fr)}
+.dungeon-builder .tabletop-shell[data-inspector-open][data-roster-expanded=true],.ledger-player-workspace .tabletop-shell[data-inspector-open][data-roster-expanded=true]{grid-template-columns:240px minmax(0,1fr)}
+@media(min-width:1440px){
+ .dungeon-builder .tabletop-shell[data-inspector-open=true][data-roster-expanded=false],.ledger-player-workspace .tabletop-shell[data-inspector-open=true][data-roster-expanded=false]{grid-template-columns:56px minmax(0,1fr) 330px}
+ .dungeon-builder .tabletop-shell[data-inspector-open=true][data-roster-expanded=true],.ledger-player-workspace .tabletop-shell[data-inspector-open=true][data-roster-expanded=true]{grid-template-columns:240px minmax(0,1fr) 330px}
+}
+@media(max-width:1099px){
+ .dungeon-builder .tabletop-shell[data-inspector-open][data-roster-expanded],.ledger-player-workspace .tabletop-shell[data-inspector-open][data-roster-expanded]{grid-template-columns:minmax(0,1fr)}
+ .ledger-player-workspace .tabletop-shell[data-inspector-open]>.battlefield-wrap{grid-column:1}
+}

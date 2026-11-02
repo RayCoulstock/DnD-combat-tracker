@@ -48,7 +48,7 @@ test('local ledger, DM and two browsers, camera isolation and offline camera', a
   await page.goto('/')
   await expect(page.getByText('Local encounter',{exact:true})).toBeVisible()
   await page.getByRole('button', { name: 'Damage', exact: true }).click() // empty amount does not change HP
-  await page.getByLabel('Hit point amount').fill('2')
+  await page.getByLabel('Hit point amount',{exact:true}).fill('2')
   await page.getByRole('button', { name: 'Damage', exact: true }).click()
   await expect(page.locator('.vitals-label')).toContainText('35')
   await page.getByRole('button', { name: 'Battle map', exact: true }).click()
@@ -182,9 +182,9 @@ test('waiting players see first activation and restart without refresh or camera
     await expect.poll(async () => imageDifference(early, cameraView, await canvas.screenshot())).toBeLessThan(2)
     // Rapid switches can lower the encounter revision, but never the campaign revision.
     await api(page, `/campaigns/${campaignId}/encounters`, { name: 'Temporary', file: { ...file, round: 2 } })
-    await expect(early.getByRole('heading', { name: 'Round 2', exact: true })).toBeVisible({ timeout: 5000 })
+    await expect(early.locator('[data-ui-zone=B2]:visible .ledger-round')).toHaveText('Round 2', { timeout: 5000 })
     await api(page, `/campaigns/${campaignId}/open`, { encounterId: encounter.id })
-    await expect(early.getByRole('heading', { name: 'Round 1', exact: true })).toBeVisible({ timeout: 5000 })
+    await expect(early.locator('[data-ui-zone=B2]:visible .ledger-round')).toHaveText('Round 1', { timeout: 5000 })
     expect(navigations).toBe(0)
     expect(apiRequests).toBe(0)
   } finally { for (const context of contexts) await context.close() }
@@ -255,7 +255,7 @@ test('DM paints and generates a reusable dungeon while two players see live read
     await expect(players[1].getByRole('region', { name: 'Dungeon map: mining-outpost: browser-generator', exact: true })).toBeVisible()
     await tools.getByLabel('Map name', { exact: true }).fill('Shared dungeon template')
     await tools.getByRole('button', { name: 'Save map', exact: true }).click()
-    await expect(tools.getByRole('status')).toContainText('Map saved')
+    await expect(tools.getByRole('status').filter({hasText:'Map saved'})).toContainText('Map saved')
     await tools.getByLabel('Saved maps', { exact: true }).selectOption({ label: 'Shared dungeon template · v1' })
     page.once('dialog', dialog => dialog.accept())
     await tools.getByRole('button', { name: 'Open saved map', exact: true }).click()
@@ -266,7 +266,7 @@ test('DM paints and generates a reusable dungeon while two players see live read
     const view = await settledView(players[0], playerCanvas)
     // A combat-only server update must not rebuild/reset the map camera.
     await page.getByRole('button', { name: 'Tracker', exact: true }).click()
-    await page.locator('main:visible').getByLabel('Hit point amount').fill('1'); await page.locator('main:visible').getByRole('button', { name: 'Damage', exact: true }).click()
+    await page.locator('main:visible').getByLabel('Hit point amount',{exact:true}).fill('1'); await page.locator('main:visible').getByRole('button', { name: 'Damage', exact: true }).click()
     await expect.poll(async () => (await api(page, `${path}/snapshot`)).state.combatants[0].hp).toBe(8)
     expect(await imageDifference(players[0], view, await settledView(players[0], playerCanvas))).toBeLessThan(2)
     // Replacing the instance with the same template forces a full map snapshot;
@@ -303,7 +303,7 @@ test('local map editing, template recovery and encounter JSON stay compatible', 
   await expect(page.getByRole('region', { name: 'Dungeon map: stone-dungeon: my-dungeon', exact: true })).toBeVisible()
   await tools.getByLabel('Map name', { exact: true }).fill('Local reusable room')
   await tools.getByRole('button', { name: 'Save map', exact: true }).click()
-  await expect(tools.getByRole('status')).toContainText('Map saved')
+  await expect(tools.getByRole('status').filter({hasText:'Map saved'})).toContainText('Map saved')
   // Local export must retain the generated document and token placement.
   const downloadPromise = page.waitForEvent('download')
   await sessionAction(page,'Export encounter')

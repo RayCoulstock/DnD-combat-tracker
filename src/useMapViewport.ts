@@ -1,7 +1,6 @@
 import {useEffect,useRef,useState,type RefObject} from 'react'
 // Expand the owning workspace in place; the Canvas, inspector and drafts stay mounted.
 export function useMapViewport(shell:RefObject<HTMLElement|null>,active=true){
- const[inspector,setInspector]=useState(false)
  const[expanded,setExpanded]=useState(false),[native,setNative]=useState(false),[error,setError]=useState('')
  const nativeOwned=useRef(false)
  const[wasActive,setWasActive]=useState(active)
@@ -22,14 +21,6 @@ export function useMapViewport(shell:RefObject<HTMLElement|null>,active=true){
   element.setAttribute('data-map-expanded','true');document.body.classList.add('map-viewport-expanded')
   return()=>{if(original===null)element.removeAttribute('data-map-expanded');else element.setAttribute('data-map-expanded',original);document.body.classList.remove('map-viewport-expanded');for(const sibling of inert)sibling.inert=false;window.scrollTo(scroll.x,scroll.y)}
  },[expanded,shell])
- useEffect(()=>{
-  if(!expanded||!shell.current)return
-  const root=shell.current.closest<HTMLElement>('.dungeon-builder')
-  if(!root)return
-  const panel=root.querySelector<HTMLElement>('.inspector'),wasInert=panel?.inert??false
-  root.setAttribute('data-expanded-inspector',String(inspector));if(panel)panel.inert=!inspector
-  return()=>{root.removeAttribute('data-expanded-inspector');if(panel)panel.inert=wasInert}
- },[expanded,inspector,shell])
  const restore=()=>{setExpanded(false);setError('');if(nativeOwned.current&&document.fullscreenElement===document.documentElement)void document.exitFullscreen().catch(()=>setError('Could not exit browser fullscreen. Use the browser controls.'))}
  const toggleNative=async()=>{
   setError('');setExpanded(true)
@@ -37,5 +28,5 @@ export function useMapViewport(shell:RefObject<HTMLElement|null>,active=true){
   if(!document.documentElement.requestFullscreen){setError('Browser fullscreen is unavailable. Expanded view remains active.');return}
   try{await document.documentElement.requestFullscreen();nativeOwned.current=true;setNative(document.fullscreenElement===document.documentElement)}catch{nativeOwned.current=false;setNative(false);setError('Browser fullscreen was not permitted. Expanded view remains active.')}
  }
- return {expanded,native,error,inspector,toggleInspector:()=>setInspector(value=>!value),expand:()=>setExpanded(true),restore,toggleNative}
+ return {expanded,native,error,expand:()=>setExpanded(true),restore,toggleNative}
 }

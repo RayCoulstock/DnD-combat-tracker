@@ -28,6 +28,26 @@ Phase 2 implements the following shell destinations; untargeted C/D refinements 
 | M17, M22–M24 | A3 current-table Map templates opens the existing editor template section, with existing local/campaign persistence. Other editor entries are retained; no global map-template service. |
 | X01, X03–X04, X07 | Phase 1 semantics reused for shell menus/forms, textual status, connection/busy guards and explicit errors. |
 
+## Phase 3 actual locations
+
+The detailed inventory below remains the preservation checklist. This table records the implemented workspace addresses (2 November 2026); mockup-only controls remain reservations.
+
+| Inventory family | Actual Phase 3 location |
+| --- | --- |
+| T02, T12, X07 | C1 `BattleMap3D` roster: initiative, active/selected/down/condition/HP disclosure; remembered collapsed rail, D1 toggle below 1100px. |
+| T14, T18–T19, T24 | C3 selected-combatant inspector, permitted HP/conditions; DM/local HP and condition handlers remain in App. Player full detail stays in its existing permitted Tracker sheet. |
+| T16–T17, C10–C11, C16, A13–A15 | Existing tracker duplicate/remove retained; model, Save to Library and explicit campaign save menus now reachable from C3 combatant actions. E1 Properties opens C3; Appearance reuses the same model modal. |
+| V01–V17, F01–F08, F22–F24 | C2 existing scene; D1 level/single/stacked/local visibility and Floor transitions; C3 Levels owns level creation/editing/duplication/deletion and shared visibility; D3 expanded/native fullscreen/inspector; D5 camera/grid/labels; D6 active dimensions/scale. Existing travel confirmation remains E4. |
+| M01–M16 | D4 editor Select/Floor/Wall flyout/Door/Object/Erase; existing scene hit, paint, batch-draw and object command callbacks. Tool settings and selection transforms in C3 Editing. |
+| M19–M20, X02 | D3 Undo/Redo/History, including explicit Clear map history confirmation; no invented timeline. |
+| M17–M18, M21–M29 | C3 Map file/templates, generation and New blank map; A3 still opens the current-table template section. Explicit template save status remains separate from encounter command persistence. |
+| F09–F21, A12 | C3 This level: Levels, Floor Image, Scenery, Transitions. D4 Image and Link open existing forms, Object opens the existing built-in/GLB picker. |
+| O01–O12 | D4 play palette or editor Tactics flyout; D2 one active hint; C3 tactical settings/list/share/conflict/recovery; E1 selected overlay actions. Clear shared overlays remains DM-only and keeps its explicit scope. |
+| C14–C15 | Pending library placement/cancel now lives in D2; existing encounter-scoped command, current grid/floor and tracker-only semantics remain. |
+| X01, X03–X06 | Existing modal top layer and role/connection gates; P1 Menu/Popover/InspectorSection/Button/StatusPill plus CanvasDock. Optional collapse preferences do not replace local templates or server state. |
+
+See [Phase 3 report](phase-3-battle-workspace.md) for exceptions, testing and acceptance steps. Inventory IDs above group families rather than redefining the detailed rows.
+
 ## Legend and rules
 
 - **L** = standalone local mode; **D** = authenticated DM in owned context; **P** = permitted player. **P-own** means ownership/visible-floor restrictions still apply. Anonymous entry is **A**. Role availability does not override connection, busy, preview or resource constraints.

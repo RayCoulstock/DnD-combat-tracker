@@ -179,3 +179,9 @@ Phase 0 changes only `docs/ui/`. The test/capture record below is updated after 
 - `npx playwright test --list` discovers **19 browser tests in 15 files**, including the renderer-readiness regression; discovery is not execution.
 - No fresh authenticated multiplayer/integration suite or cross-browser/assistive-technology run was performed for this documentation-only change. Existing test sources were inspected; earlier session results are historical context, not new Phase 0 execution results. The latest helper regression and live-camera readiness contract must remain regression gates for implementation.
 - Reference byte hashes, Markdown/source links, matrix IDs, allowed changed paths and `git diff --check` are checked before handover. Phase 1 remains unstarted.
+
+## Phase 3 follow-through — 2 November 2026
+
+The original findings above remain the Phase 0 evidence. Phase 3 implements C1–C3 and D1–D6 around the retained scene and command owners; see [Battle Map workspace](phase-3-battle-workspace.md) and [visual review](phase-3-baseline/README.md). Roster collapse, contextual combatant controls, grouped retained inspector forms and a single hint owner address U03/U10. Optional UI preferences are isolated from template data. Expanded mode now retains inspector visibility explicitly instead of using a second fullscreen-only inspector flag.
+
+Laptop overlays exposed a concrete risk missed by fixed mockups: the canvas can remain full-width while an inspector covers its right edge. Right-side docks and object-toolbar bounds therefore use the available visible area, with browser click-actionability checks in addition to rectangle assertions. The remaining manual cross-browser/touch/screen-reader/zoom checks are listed in the implementation report. No authorization, schema, asset pipeline or multiplayer protocol change is required.

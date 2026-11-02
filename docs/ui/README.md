@@ -33,3 +33,7 @@ The source ZIP was extracted by an explicit filename allowlist. All extracted fi
 [Current baseline captures and reproduction notes](current-baseline/README.md) and [capture metadata](current-baseline/observations.json) record the unchanged **local demo** at several widths. They are not screenshots of the proposal. Authentication, DM online preparation, player permissions and libraries were inspected in source and their existing tests; these local captures do not demonstrate those roles. See the audit's verification limits and the migration plan's role/device acceptance gates.
 
 Phase 0 changed documentation only. Phase 1 adds scoped shared controls and adopts them in Miniature settings; no dependency, command schema, database migration, encounter/map data, permission or deployment changes are included. Phase 2 composes the shell around those controls; see its report and role captures before Phase 3.
+
+Phase 3 visual review: [captures and reproduction](phase-3-baseline/README.md).
+
+Phase 3 implementation and manual acceptance: [Battle Map workspace](phase-3-battle-workspace.md).

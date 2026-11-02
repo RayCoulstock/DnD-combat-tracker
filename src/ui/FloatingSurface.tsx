@@ -4,7 +4,7 @@ const layers:string[]=[]
 // Internal implementation shared by the action-only menu and form popover.
 // Native popovers join the browser top layer; the scoped portal is a fallback
 // for browsers without that API and keeps nested controls inside native dialogs.
-export default function FloatingSurface({id,open,label,role,trigger,children,onClose,focusLast=false}:{id:string;open:boolean;label:string;role:'menu'|'dialog';trigger:RefObject<HTMLButtonElement|null>;children:ReactNode;onClose:()=>void;focusLast?:boolean}){
+export default function FloatingSurface({id,open,label,role,trigger,children,onClose,focusLast=false,side='bottom'}:{id:string;open:boolean;label:string;role:'menu'|'dialog';trigger:RefObject<HTMLButtonElement|null>;children:ReactNode;onClose:()=>void;focusLast?:boolean;side?:'bottom'|'right'}){
  const ref=useRef<HTMLDivElement>(null),close=useRef(onClose),search=useRef({text:'',at:0})
  useLayoutEffect(()=>{close.current=onClose},[onClose])
  useLayoutEffect(()=>{
@@ -14,9 +14,10 @@ export default function FloatingSurface({id,open,label,role,trigger,children,onC
   layers.push(id)
   const position=()=>{
    if(!anchor)return
+   if(!anchor.getClientRects().length){close.current();return}
    const box=anchor.getBoundingClientRect(),size=panel.getBoundingClientRect(),gap=6,pad=8
-   panel.style.left=`${Math.max(pad,Math.min(box.left,window.innerWidth-size.width-pad))}px`
-   const below=box.bottom+gap
+   panel.style.left=`${Math.max(pad,Math.min(side==='right'?box.right+gap:box.left,window.innerWidth-size.width-pad))}px`
+   const below=side==='right'?box.top:box.bottom+gap
    panel.style.top=`${Math.max(pad,Math.min(below+size.height<=window.innerHeight-pad?below:box.top-size.height-gap,window.innerHeight-size.height-pad))}px`
   }
   position()
@@ -53,7 +54,7 @@ export default function FloatingSurface({id,open,label,role,trigger,children,onC
    if(typeof panel.hidePopover==='function'&&panel.matches(':popover-open'))panel.hidePopover()
    if(restore&&anchor?.isConnected)anchor.focus({preventScroll:true})
   }
- },[open,id,trigger,role,focusLast])
+ },[open,id,trigger,role,focusLast,side])
  const keyboard=(event:KeyboardEvent<HTMLDivElement>)=>{
   event.stopPropagation()
   if(role!=='menu'||event.nativeEvent.isComposing)return

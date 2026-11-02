@@ -1,3 +1,4 @@
+import {mapAction,openInspectorSection} from './workspace-helpers'
 import {multiplayerMode,sessionAction,chooseCampaign,openSetup} from './shell-helpers'
 import {exerciseVerticalNavigation} from './vertical-navigation-acceptance'
 import {test,expect,type Page} from '@playwright/test'
@@ -26,9 +27,9 @@ test('three populated levels retain images, geometry, transforms, tokens, drafts
   const invite=await api(page,path+'/invitations',{});await player.goto(invite.url);await player.getByLabel('Display name').fill('Level player');await player.getByRole('button',{name:'Join campaign',exact:true}).click();await expect(player.locator('.connection')).toHaveText('Connected')
   await page.getByRole('button',{name:'Map editor',exact:true}).click();await expandEditor(page);const editor=page.locator('.dungeon-builder:visible')
   await editor.getByLabel('Map name',{exact:true}).fill('Three level keep');await editor.getByRole('button',{name:'Create blank map',exact:true}).click()
-  const settings=editor.getByRole('region',{name:'Floor image settings'});await editor.locator('summary').filter({hasText:/^Floor Image/}).click()
+  const settings=editor.getByRole('region',{name:'Floor image settings'});await openInspectorSection(page,'Floor Image')
   await settings.getByLabel('Floor image file',{exact:true}).setInputFiles({name:'map.png',mimeType:'image/png',buffer:await makeFloorImage()});await expect(settings.getByText('Image uploaded.',{exact:false})).toBeVisible();await settings.getByRole('button',{name:'Apply floor image',exact:true}).click();await expect(page.locator('[data-floor-image-state=ready]')).toHaveCount(1)
-  await editor.getByRole('button',{name:'Draw wall',exact:true}).click();await clickCell(page,4.5,4.02)
+  await mapAction(page,'Draw wall');await clickCell(page,4.5,4.02)
   await expect.poll(async()=>(await api(page,path+'/snapshot')).state.dungeonMap.walls.length).toBe(1)
   await editor.getByRole('button',{name:'Place door',exact:true}).click();await clickCell(page,4.5,4.02)
   await expect.poll(async()=>(await api(page,path+'/snapshot')).state.dungeonMap.doors.length).toBe(1)
@@ -46,7 +47,7 @@ test('three populated levels retain images, geometry, transforms, tokens, drafts
   expect(levels).toHaveLength(2);expect(cellar.floorImage).toEqual(snapshot.state.dungeonMap.floorImage);expect(cellar.props[0].id).not.toBe(tower.props[0].id);expect(cellar.props[0].assetId).toBe(asset.id)
   // Uncommitted image calibration survives switching floors, and switching is local.
   const active=page.getByLabel('Active level',{exact:true});await active.selectOption(tower.id)
-  const towerSettings=editor.getByRole('region',{name:'Floor image settings'}).filter({visible:true});await editor.locator('div:not([hidden]) > details > summary').filter({hasText:/^Floor Image/}).click()
+  const towerSettings=editor.getByRole('region',{name:'Floor image settings'}).filter({visible:true});await openInspectorSection(page,'Floor Image')
   await towerSettings.getByLabel('Horizontal image offset',{exact:true}).fill('1.25')
   const revision=(await api(page,path+'/snapshot')).revision;await active.selectOption(cellar.id);await active.selectOption(tower.id)
   await expect(towerSettings.getByLabel('Horizontal image offset',{exact:true})).toHaveValue('1.25');expect((await api(page,path+'/snapshot')).revision).toBe(revision)
@@ -54,7 +55,7 @@ test('three populated levels retain images, geometry, transforms, tokens, drafts
   await page.getByLabel('Battlefield level view',{exact:true}).selectOption('stacked');await expect(page.locator('[data-floor-image-state=ready]')).toHaveCount(3);await expect(page.locator('[data-scenery-state=ready]')).toHaveCount(3)
   expect((await sceneLevels(page)).map(l=>l.y).sort()).toEqual([-2,0,2]);expect((await sceneLevels(page)).filter(l=>l.interactive).map(l=>l.id)).toEqual([tower.id]);for(const level of await sceneLevels(page)){expect(level.transforms).toHaveLength(1);expect(level.transforms[0].y).toBeCloseTo(level.y+1.25);expect(level.transforms[0].scale).toBe(2);expect(level.transforms[0].rotation).toBeCloseTo(Math.PI/4)}
   // Click through the display-only upper floor to edit a lower active level.
-  await active.selectOption(cellar.id);await editor.getByRole('button',{name:'Draw wall',exact:true}).click();await clickCell(page,8.5,8.02,-2)
+  await active.selectOption(cellar.id);await mapAction(page,'Draw wall');await clickCell(page,8.5,8.02,-2)
   await expect.poll(async()=>(await api(page,path+'/snapshot')).state.dungeonMap.levels.find((l:{id:string})=>l.id===cellar.id).walls.length).toBe(2)
   expect((await api(page,path+'/snapshot')).state.dungeonMap.levels.find((l:{id:string})=>l.id===tower.id).walls).toHaveLength(1)
   const transfer=page.locator('.combatant-transfer');await page.getByRole('button',{name:'Expand roster',exact:true}).click()
@@ -63,7 +64,7 @@ test('three populated levels retain images, geometry, transforms, tokens, drafts
   await expect(player.getByLabel('Active level',{exact:true}).locator('option')).toHaveCount(1);await expect(player.locator('.map-initiative-list button')).toHaveCount(1)
   const towerPanel=editor.getByRole('region',{name:'Level: Tower',exact:true});await towerPanel.getByLabel('Tower player visibility',{exact:true}).check();await towerPanel.getByRole('button',{name:'Apply level settings',exact:true}).click()
   await expect(player.getByLabel('Active level',{exact:true}).locator('option')).toHaveCount(2);await player.getByLabel('Active level',{exact:true}).selectOption(tower.id);await expect(player.locator('.map-initiative-list button')).toHaveCount(1);await expect(player.locator('.map-initiative-list button')).toContainText('Hero 3')
-  await editor.getByRole('button',{name:'Save map',exact:true}).click();await expect(editor.getByRole('status')).toContainText('Map saved');snapshot=await api(page,path+'/snapshot');const document=snapshot.state.dungeonMap
+  await editor.getByRole('button',{name:'Save map',exact:true}).click();await expect(editor.getByRole('status').filter({hasText:'Map saved'})).toContainText('Map saved');snapshot=await api(page,path+'/snapshot');const document=snapshot.state.dungeonMap
   await editor.getByRole('button',{name:'Undo map edit',exact:true}).click();await editor.getByRole('button',{name:'Redo map edit',exact:true}).click();await expect.poll(async()=>(await api(page,path+'/snapshot')).state.dungeonMap).toEqual(document)
   const exported=await api(page,path+'/export');expect(exported.dungeonMap).toEqual(document)
   await page.reload();await chooseCampaign(page,campaign);await expect(page.locator('.connection')).toHaveText('Connected');await page.getByRole('button',{name:'Map editor',exact:true}).click()
