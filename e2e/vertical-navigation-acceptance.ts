@@ -1,3 +1,4 @@
+import {mapAction} from './workspace-helpers'
 import {expect,type Page} from '@playwright/test'
 import {projectBattlefield} from './workspace-helpers'
 async function api(page:Page,path:string){return page.evaluate(async path=>{const r=await fetch('/api'+path);if(!r.ok)throw Error(await r.text());return r.json()},path)}
@@ -13,24 +14,24 @@ export async function exerciseVerticalNavigation(page:Page,player:Page,path:stri
  const summary=editor.locator('div:not([hidden]) > details > summary').filter({hasText:/^Floor Image/});if(!await summary.locator('..').evaluate(node=>(node as HTMLDetailsElement).open))await summary.click()
  const image=editor.getByRole('region',{name:'Floor image settings'}).filter({visible:true});await image.getByLabel('Lock image transformations',{exact:true}).uncheck();await image.getByLabel('Horizontal image offset',{exact:true}).fill('2.75')
  const before=await cameraState(page),revision=(await api(page,path+'/snapshot')).revision,normal=await page.locator('.battlefield-wrap canvas:visible').boundingBox()
- await page.getByRole('button',{name:'Expand Map',exact:true}).click();await expect(editor).toHaveAttribute('data-map-expanded','true');await expect(editor.locator('.inspector')).toBeHidden()
+ await mapAction(page,'Expand Map');await expect(editor).toHaveAttribute('data-map-expanded','true');await expect(editor.locator('.inspector')).toBeVisible()
  expect(await canvas!.evaluate(node=>node.isConnected&&node===document.querySelector('.battlefield-wrap canvas'))).toBe(true)
  await expect.poll(async()=>Math.round((await editor.boundingBox())!.height)).toBe(page.viewportSize()!.height)
- expect((await page.locator('.battlefield-wrap canvas:visible').boundingBox())!.width).toBeGreaterThan(normal!.width)
+ expect((await page.locator('.battlefield-wrap canvas:visible').boundingBox())!.width).toBeGreaterThanOrEqual(normal!.width)
  expect(await cameraState(page)).toEqual(before)
- await page.getByRole('button',{name:'Show map inspector',exact:true}).click();await expect(image.getByLabel('Horizontal image offset',{exact:true})).toHaveValue('2.75')
+ await expect(image.getByLabel('Horizontal image offset',{exact:true})).toHaveValue('2.75')
  await page.getByRole('button',{name:'Restore View',exact:true}).click();expect(await cameraState(page)).toEqual(before)
  expect((await api(page,path+'/snapshot')).revision).toBe(revision)
  await page.evaluate(()=>{const target=document.documentElement as HTMLElement&{savedRequest?:()=>Promise<void>};target.savedRequest=target.requestFullscreen;target.requestFullscreen=()=>Promise.reject(new Error('Test denied'))})
- await page.getByRole('button',{name:'Browser fullscreen',exact:true}).click();await expect(page.getByRole('status').filter({hasText:'Browser fullscreen was not permitted'})).toBeVisible();await expect(editor).toHaveAttribute('data-map-expanded','true')
+ await mapAction(page,'Browser fullscreen');await expect(page.getByRole('alert').filter({hasText:'Browser fullscreen was not permitted'})).toBeVisible();await expect(editor).toHaveAttribute('data-map-expanded','true')
  await page.evaluate(()=>{const target=document.documentElement as HTMLElement&{savedRequest?:()=>Promise<void>};target.requestFullscreen=target.savedRequest!;delete target.savedRequest})
  await page.getByRole('button',{name:'Restore View',exact:true}).click()
- await page.getByRole('button',{name:'Browser fullscreen',exact:true}).click();await expect(page.getByRole('button',{name:'Exit browser fullscreen',exact:true})).toBeVisible()
- await page.evaluate(()=>document.exitFullscreen());await expect(page.getByRole('button',{name:'Browser fullscreen',exact:true})).toBeVisible();await expect(editor).toHaveAttribute('data-map-expanded','true')
+ await mapAction(page,'Browser fullscreen');await page.getByRole('button',{name:'Map view',exact:true}).click();await expect(page.getByRole('menuitem',{name:'Exit browser fullscreen',exact:true})).toBeVisible();await page.keyboard.press('Escape')
+ await page.evaluate(()=>document.exitFullscreen());await page.getByRole('button',{name:'Map view',exact:true}).click();await expect(page.getByRole('menuitem',{name:'Browser fullscreen',exact:true})).toBeVisible();await page.keyboard.press('Escape');await expect(editor).toHaveAttribute('data-map-expanded','true')
  // Inspector state and DOM survive; native dialogs remain in the browser top layer.
- if(await page.getByRole('button',{name:'Show map inspector',exact:true}).isVisible())await page.getByRole('button',{name:'Show map inspector',exact:true}).click()
- await page.getByRole('button',{name:'Map mode',exact:true}).click();expect(await cameraState(page)).toEqual(before);await page.getByRole('button',{name:'Editor mode',exact:true}).click();await expect(image.getByLabel('Horizontal image offset',{exact:true})).toHaveValue('2.75')
- await editor.getByRole('button',{name:'Draw wall',exact:true}).click();await page.keyboard.press('Escape');await expect(editor.getByRole('button',{name:'Select',exact:true})).toHaveAttribute('aria-pressed','true')
+ if(await page.getByRole('button',{name:'Show inspector «',exact:true}).isVisible())await page.getByRole('button',{name:'Show inspector «',exact:true}).click()
+ await page.getByRole('button',{name:'Map view',exact:true}).click();await page.getByRole('menuitem',{name:'Map mode',exact:true}).click();expect(await cameraState(page)).toEqual(before);await page.getByRole('button',{name:'Map view',exact:true}).click();await page.getByRole('menuitem',{name:'Editor mode',exact:true}).click();await expect(image.getByLabel('Horizontal image offset',{exact:true})).toHaveValue('2.75')
+ await mapAction(page,'Draw wall');await page.keyboard.press('Escape');await expect(editor.getByRole('button',{name:'Select',exact:true})).toHaveAttribute('aria-pressed','true')
  await editor.getByRole('button',{name:'Add Object',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Add Object',exact:true});await expect(dialog).toBeVisible();expect(await dialog.evaluate(node=>node.matches(':modal'))).toBe(true)
  await page.keyboard.press('w');await expect(editor.getByRole('button',{name:'Select',exact:true})).toHaveAttribute('aria-pressed','true');await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0)
  // Select the actual GLB through the resized canvas, using a triangle interior.
@@ -72,7 +73,7 @@ export async function exerciseVerticalNavigation(page:Page,player:Page,path:stri
  // Reveal remains a separate DM decision through level settings.
  await page.getByRole('button',{name:'Map editor',exact:true}).click();const towerPanel=editor.getByRole('region',{name:'Level: Tower',exact:true});await towerPanel.getByLabel('Tower player visibility',{exact:true}).check();await towerPanel.getByRole('button',{name:'Apply level settings',exact:true}).click()
  await player.getByLabel('Active level',{exact:true}).selectOption(towerId);await expect(player.locator('.map-initiative-list button')).toHaveCount(2)
- const playerCamera=await cameraState(player),playerRevision=(await api(page,path+'/snapshot')).revision;await player.getByRole('button',{name:'Expand Map',exact:true}).click();await expect(player.getByRole('button',{name:'Restore View',exact:true})).toBeVisible();expect(await cameraState(player)).toEqual(playerCamera)
+ const playerCamera=await cameraState(player),playerRevision=(await api(page,path+'/snapshot')).revision;await mapAction(player,'Expand Map');await expect(player.getByRole('button',{name:'Restore View',exact:true})).toBeVisible();expect(await cameraState(player)).toEqual(playerCamera)
  await expect(player.getByRole('button',{name:'Editor mode',exact:true})).toHaveCount(0);await expect(player.getByRole('button',{name:/Move through Warehouse/})).toHaveCount(0);expect(await editor.getAttribute('data-map-expanded')).toBeNull()
  await player.setViewportSize({width:768,height:1024});expect(await player.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
  await player.getByRole('button',{name:'Restore View',exact:true}).click();await expect(player.getByLabel('Active level',{exact:true})).toHaveValue(towerId);expect((await api(page,path+'/snapshot')).revision).toBe(playerRevision)

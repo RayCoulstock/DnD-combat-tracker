@@ -1,9 +1,10 @@
+import {InspectorSection} from './ui'
 import {dungeonLevels,primaryLevelId,type DungeonMap} from '../shared/dungeon'
 import type {GameCommand} from '../shared/domain'
 export interface LevelView {activeId:string;mode:'single'|'stacked';hiddenIds:string[];select:(id:string)=>void;setMode:(mode:'single'|'stacked')=>void;toggle:(id:string)=>void}
 export default function DungeonLevelsPanel({map,view,send,disabled}:{map:DungeonMap;view:LevelView;send:(command:GameCommand)=>Promise<void>;disabled:boolean}){
  const levels=[...dungeonLevels(map)].sort((a,b)=>a.elevationFeet-b.elevationFeet||a.name.localeCompare(b.name))
- return <details open className="dungeon-levels"><summary>Dungeon Levels <small>{levels.length} · editing {levels.find(l=>l.id===view.activeId)?.name}</small></summary>
+ return <InspectorSection title="Dungeon Levels" description={`${levels.length} · editing ${levels.find(l=>l.id===view.activeId)?.name}`} className="dungeon-levels" persistenceKey="dungeon-levels" defaultOpen>
  <label>Map view<select aria-label="Level view" value={view.mode} onChange={e=>view.setMode(e.target.value as LevelView['mode'])}><option value="single">Single floor</option><option value="stacked">Stacked floors</option></select></label>
  <p>Selection and local visibility affect your view only. Player visibility is shared.</p>
  {levels.map(level=><section key={level.id} data-level-id={level.id} aria-label={`Level: ${level.name}`}>
@@ -27,5 +28,5 @@ export default function DungeonLevelsPanel({map,view,send,disabled}:{map:Dungeon
   <button disabled={disabled||levels.length>=12}>Add level</button>
  </form>
  <small>Primary level: {levels.find(l=>l.id===primaryLevelId(map))?.name}. 1 square = 5 feet; elevation is absolute.</small>
- </details>
+ </InspectorSection>
 }

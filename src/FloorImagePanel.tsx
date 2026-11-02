@@ -1,3 +1,4 @@
+import {InspectorSection} from './ui'
 import { useEffect, useRef, useState, type DragEvent } from 'react'
 import { floorImageSchema, type FloorImage, type FloorImageAsset } from '../shared/floor-image'
 import { readDungeon, type DungeonMap } from '../shared/dungeon'
@@ -57,7 +58,7 @@ export default function FloorImagePanel({levelId,document,api,disabled,send,onPr
       if(!stopped.current){onPreview(null);setMessage('Floor image settings saved.')}
     }catch(error){if(!stopped.current)setMessage((error as Error).message)}
   }
-  return <details><summary>Floor Image <small>{document?.floorImage?'Configured':'Procedural'}</small></summary>
+  return <InspectorSection title="Floor Image" description={document?.floorImage?"Configured":"Procedural"} className="" persistenceKey="floor-image">
     <section className="floor-image-panel" aria-label="Floor image settings">
       {!document&&<p>Create or load a dungeon map first.</p>}
       {!api&&<p>Sign in to a multiplayer DM encounter to upload persistent floor images.</p>}
@@ -92,5 +93,5 @@ export default function FloorImagePanel({levelId,document,api,disabled,send,onPr
       {progress!==null&&<div role="status"><progress max={100} value={progress}/>{progress<100?`Uploading ${progress}%`:'Processing image…'}<button type="button" onClick={()=>xhr.current?.abort()}>Cancel image upload</button></div>}
       {message&&<p role="status">{message}</p>}
     </section>
-  </details>
+  </InspectorSection>
 }

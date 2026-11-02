@@ -1,3 +1,4 @@
+import {mapAction,openInspectorSection} from './workspace-helpers'
 import {multiplayerMode,sessionAction,closeSetup,openSetup,chooseCampaign} from './shell-helpers'
 import {test,expect,type Page} from '@playwright/test'
 import {randomUUID} from 'node:crypto'
@@ -24,7 +25,7 @@ test('DM uploads and calibrates an image under walls, a GLB and a combatant; pla
     await openSetup(page);await page.getByRole('combobox',{name:'Controlled by Image hero',exact:true}).selectOption({label:'Image player'})
     await closeSetup(page);await page.getByRole('button',{name:'Map editor',exact:true}).click();await expandEditor(page)
     const editor=page.locator('.dungeon-builder:visible');await editor.getByLabel('Map name',{exact:true}).fill('Imported battle map');await editor.getByLabel('Map height',{exact:true}).fill('10');await editor.getByRole('button',{name:'Create blank map',exact:true}).click()
-    await editor.locator('summary').filter({hasText:'Floor Image'}).click()
+    await openInspectorSection(page,'Floor Image')
     const settings=editor.getByRole('region',{name:'Floor image settings'})
     let started!:()=>void
     const uploadStarted=new Promise<void>(resolve=>{started=resolve}),uploadResumed=new Promise<void>(resolve=>{resumeUpload=resolve})
@@ -68,7 +69,7 @@ test('DM uploads and calibrates an image under walls, a GLB and a combatant; pla
     expect(colors[1][1]).toBeGreaterThan(150);expect(colors[1][0]).toBeLessThan(80)
     expect(colors[2][2]).toBeGreaterThan(150);expect(colors[2][0]).toBeLessThan(80)
     expect(colors[3][0]).toBeGreaterThan(150);expect(colors[3][1]).toBeGreaterThan(150)
-    await editor.getByRole('button',{name:'Draw wall',exact:true}).click();await clickFloor(page,5.5,3.02)
+    await mapAction(page,'Draw wall');await clickFloor(page,5.5,3.02)
     await expect.poll(async()=>(await api(page,path+'/snapshot')).state.dungeonMap.walls.length).toBe(1)
     const asset=await page.evaluate(async bytes=>{const{csrf}=await(await fetch('/api/session')).json(),data=new FormData();data.set('metadata',JSON.stringify({name:'Image barrel',category:'furniture'}));data.set('file',new Blob([new Uint8Array(bytes)]),'barrel.glb');const result=await fetch('/api/assets',{method:'POST',headers:{'X-CSRF-Token':csrf},body:data});if(!result.ok)throw Error(await result.text());return result.json()},Array.from(await makeTexturedGlb()))
     await editor.getByRole('button',{name:'Add Object',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Add Object',exact:true});await dialog.locator('.asset-card').filter({hasText:'Image barrel'}).click();await dialog.getByRole('button',{name:'Use this model',exact:true}).click()
@@ -84,7 +85,7 @@ test('DM uploads and calibrates an image under walls, a GLB and a combatant; pla
     snapshot=await api(page,path+'/snapshot');expect(snapshot.state.dungeonMap.props[0].assetId).toBe(asset.id);expect(snapshot.state.dungeonMap.floorImage).toEqual(image)
     expect(imageRequests).toBe(1) // Walls/scenery and unrelated state never reload the texture.
     const wall=snapshot.state.dungeonMap.walls[0],prop=snapshot.state.dungeonMap.props[0]
-    await editor.getByRole('button',{name:'Save map',exact:true}).click();await expect(editor.getByRole('status')).toContainText('Map saved')
+    await editor.getByRole('button',{name:'Save map',exact:true}).click();await expect(editor.getByRole('status').filter({hasText:'Map saved'})).toContainText('Map saved')
     await expect(editor.getByLabel('Saved maps',{exact:true}).locator('option')).toHaveCount(2)
     await editor.getByLabel('Saved maps',{exact:true}).selectOption({label:'Imported battle map · v1'})
     page.once('dialog',dialog=>dialog.accept());await editor.getByRole('button',{name:'Open saved map',exact:true}).click();await expect(page.locator('[data-floor-image-state=ready]')).toHaveCount(1)
@@ -93,7 +94,7 @@ test('DM uploads and calibrates an image under walls, a GLB and a combatant; pla
     await chooseCampaign(page,campaign);await expect(page.locator('.connection')).toHaveText('Connected')
     await page.getByRole('button',{name:'Map editor',exact:true}).click();await expect(page.locator('[data-floor-image-state=ready]')).toHaveCount(1)
     snapshot=await api(page,path+'/snapshot');expect(snapshot.state.dungeonMap.floorImage).toEqual(image);expect(snapshot.state.dungeonMap.walls[0]).toEqual(wall);expect(snapshot.state.dungeonMap.props[0]).toEqual(prop);expect(snapshot.state.battleMap.tokens['1']).toEqual({x:9,z:4})
-    await editor.locator('summary').filter({hasText:'Floor Image'}).click()
+    await openInspectorSection(page,'Floor Image')
     await expect(settings.getByLabel('Horizontal image offset',{exact:true})).toBeDisabled()
     // Replace by drag-and-drop. A player-side download failure must keep the
     // floor, GLB and tokens usable, and recover through the existing retry UI.
@@ -106,12 +107,12 @@ test('DM uploads and calibrates an image under walls, a GLB and a combatant; pla
     await expect(player.locator('canvas')).toBeVisible();await expect(player.locator('[data-scenery-state=ready]')).toHaveCount(1)
     await player.unroute('**/api/floor-images/*/file?**');await player.getByRole('button',{name:'Retry floor image',exact:true}).click();await expect(player.locator('[data-floor-image-state=ready]')).toHaveCount(1)
     await editor.getByRole('button',{name:'Undo map edit',exact:true}).click();await expect.poll(async()=>(await api(page,path+'/snapshot')).state.dungeonMap.floorImage).toEqual(image)
-    await editor.locator('summary').filter({hasText:'Floor Image'}).click()
+    await openInspectorSection(page,'Floor Image')
     await settings.getByRole('button',{name:'Remove floor image / restore procedural floor',exact:true}).click();await expect(player.locator('[data-floor-image-state=ready]')).toHaveCount(0)
     await editor.getByRole('button',{name:'Undo map edit',exact:true}).click();await expect(player.locator('[data-floor-image-state=ready]')).toHaveCount(1)
     await editor.getByRole('button',{name:'Redo map edit',exact:true}).click();await expect(player.locator('[data-floor-image-state=ready]')).toHaveCount(0)
     await page.setViewportSize({width:768,height:1024})
-    await editor.locator('summary').filter({hasText:'Floor Image'}).click()
+    await openInspectorSection(page,'Floor Image')
     expect(await settings.evaluate(node=>node.scrollWidth<=node.clientWidth+1)).toBe(true)
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
     expect(errors).toEqual([])

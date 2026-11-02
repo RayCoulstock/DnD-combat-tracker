@@ -1,3 +1,4 @@
+import {InspectorSection} from './ui'
 import {useState} from 'react'
 import {dungeonLevels,type DungeonMap} from '../shared/dungeon'
 import {transitionTypes,movementCosts,type FloorTransition} from '../shared/transitions'
@@ -7,7 +8,7 @@ export default function TransitionsPanel({map,draft,onDraft,onNew,onPick,onSelec
  const [error,setError]=useState(''),[busy,setBusy]=useState(false)
  const commit=async(command:GameCommand)=>{setError('');setBusy(true);try{await send(command)}catch(error){setError(error instanceof Error?error.message:'Transition edit failed.')}finally{setBusy(false)}}
  const edit=<K extends keyof FloorTransition>(key:K,value:FloorTransition[K])=>{if(draft)onDraft({...draft,[key]:value})}
- return <details open className="transitions-panel"><summary>Transitions <small>{map.transitions?.length??0}</small></summary><section aria-label="Transition editor">
+ return <InspectorSection title="Transitions" description={`${map.transitions?.length??0}`} className="transitions-panel" persistenceKey="transitions-panel" defaultOpen><section aria-label="Transition editor">
  <p>Pick both squares, then save one map edit. Costs describe movement; they do not consume it.</p>
  <label>Existing transitions<select aria-label="Existing transitions" value={map.transitions?.some(t=>t.id===draft?.id)?draft!.id:''} onChange={e=>{const item=map.transitions?.find(t=>t.id===e.target.value);if(item)onSelect(item)}}><option value="">New transition</option>{map.transitions?.map(t=><option key={t.id} value={t.id}>{t.name||t.type} · {levels.find(l=>l.id===t.source.floorId)?.name} → {levels.find(l=>l.id===t.destination.floorId)?.name}</option>)}</select></label>
  <button type="button" onClick={onNew} disabled={disabled||levels.length<2}>New transition</button>
@@ -27,5 +28,5 @@ export default function TransitionsPanel({map,draft,onDraft,onNew,onPick,onSelec
  <button>Save transition</button>{map.transitions?.some(t=>t.id===draft.id)&&<button type="button" onClick={()=>{if(confirm('Delete this transition? Undo can restore it.'))void commit({type:'map.transition.remove',transitionId:draft.id})}}>Delete transition</button>}
  </fieldset></form>}
  {error&&<p role="alert">{error}</p>}
- </section></details>
+ </section></InspectorSection>
 }

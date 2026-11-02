@@ -1,3 +1,4 @@
+import {mapAction,openTactical,battlefieldView} from './workspace-helpers'
 import {multiplayerMode,openSetup,closeSetup,sessionAction} from './shell-helpers'
 import {test,expect,type Page} from '@playwright/test'
 import {randomUUID} from 'node:crypto'
@@ -39,11 +40,14 @@ test('light DM setup supports JSON drop, player ownership, visibility, HP sharin
     await expect(player.getByRole('button',{name:'Libraries',exact:true})).toHaveCount(0);await expect(player.getByRole('button',{name:'Session',exact:true})).toHaveCount(0);await expect(player.getByRole('button',{name:'Map editor',exact:true})).toHaveCount(0)
     await expect(player.locator('[data-ui-zone=A]')).toHaveCount(1);await expect(player.locator('[data-ui-zone=B]:visible')).toHaveCount(1)
     await player.getByRole('button',{name:'Players',exact:true}).click();await expect(player.getByRole('dialog',{name:'Players',exact:true})).toContainText('Krelmos');await player.keyboard.press('Escape')
-    await player.locator('.tactical-drawer > summary').click();await player.getByRole('button',{name:'20 ft sphere',exact:true}).click()
+    await openTactical(player);await mapAction(player,'20 ft sphere')
     const playerCanvas=player.locator('.battlefield-wrap canvas'),playerHandle=await playerCanvas.elementHandle()
     await player.getByRole('button',{name:'Tracker',exact:true}).click();await expect(playerCanvas).toBeHidden();await player.keyboard.press('Escape');await expect(player.locator('.player-artwork')).toHaveCount(0)
     await player.getByRole('button',{name:'Battle map',exact:true}).click();await expect(playerCanvas).toBeVisible();await expect(player.getByRole('combobox',{name:'Template shape',exact:true})).toHaveValue('sphere');expect(await playerCanvas.evaluate((node,previous)=>node===previous,playerHandle)).toBe(true)
-    await player.getByRole('button',{name:'Expand Map',exact:true}).click();await sessionAction(page,'End session');await expect(player.locator('body')).not.toHaveClass(/map-viewport-expanded/);await expect(player.getByText('Waiting for the DM to open and start an encounter.',{exact:true})).toBeVisible();expect(await playerHandle!.evaluate(node=>node.isConnected)).toBe(true);await sessionAction(page,'Start multiplayer session');await expect(playerCanvas).toBeVisible()
+    const retainedView=await battlefieldView(player),layoutRevision=(await api(page,path+'/snapshot')).revision
+    for(const width of [1280,1024,768]){await player.setViewportSize({width,height:900});expect(await battlefieldView(player)).toEqual(retainedView);await player.getByRole('button',{name:'Map view',exact:true}).click({trial:true});await player.getByRole('button',{name:'Reset camera',exact:true}).click({trial:true});expect(await player.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await expect(player.getByRole('button',{name:'Map editor',exact:true})).toHaveCount(0)}
+    expect((await api(page,path+'/snapshot')).revision).toBe(layoutRevision);await player.setViewportSize({width:1280,height:720})
+    await mapAction(player,'Expand Map');await player.getByRole('button',{name:'Map view',exact:true}).click();await sessionAction(page,'End session');await expect(player.getByRole('menu',{name:'Map view',exact:true})).toHaveCount(0);await expect(player.locator('body')).not.toHaveClass(/map-viewport-expanded/);await expect(player.getByText('Waiting for the DM to open and start an encounter.',{exact:true})).toBeVisible();expect(await playerHandle!.evaluate(node=>node.isConnected)).toBe(true);await sessionAction(page,'Start multiplayer session');await expect(playerCanvas).toBeVisible()
     expect(errors).toEqual([])
   }finally{await context.close()}
 })

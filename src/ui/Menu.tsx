@@ -2,11 +2,11 @@ import {useId,useRef,useState,type ReactNode} from 'react'
 import {Button} from './Button'
 import FloatingSurface from './FloatingSurface'
 export interface MenuEntry {id:string;label:string;onSelect:()=>void;disabled?:boolean;danger?:boolean;group?:string}
-export function Menu({label,items,disabled=false,triggerContent,className=''}:{label:string;items:MenuEntry[];disabled?:boolean;triggerContent?:ReactNode;className?:string}){
+export function Menu({label,items,disabled=false,triggerContent,className='',pressed,side}:{label:string;items:MenuEntry[];disabled?:boolean;triggerContent?:ReactNode;className?:string;pressed?:boolean;side?:'bottom'|'right'}){
  const id=useId(),trigger=useRef<HTMLButtonElement>(null),[open,setOpen]=useState(false),[last,setLast]=useState(false)
  if(disabled&&open)setOpen(false)
- return <><Button ref={trigger} className={`ledger-menu-trigger ${className}`} disabled={disabled} aria-label={label} aria-haspopup="menu" aria-expanded={open} aria-controls={open?id:undefined} onClick={()=>{setLast(false);setOpen(value=>!value)}} onKeyDown={event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();setLast(event.key==='ArrowUp');setOpen(true)}}}>{triggerContent??<>{label}<span aria-hidden="true">▾</span></>}</Button>
-  <FloatingSurface id={id} open={open&&!disabled} label={label} role="menu" trigger={trigger} onClose={()=>setOpen(false)} focusLast={last}>
+ return <><Button ref={trigger} className={`ledger-menu-trigger ${className}`} disabled={disabled} aria-label={label} aria-pressed={pressed} aria-haspopup="menu" aria-expanded={open} aria-controls={open?id:undefined} onClick={()=>{setLast(false);setOpen(value=>!value)}} onKeyDown={event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();setLast(event.key==='ArrowUp');setOpen(true)}}}>{triggerContent??<>{label}<span aria-hidden="true">▾</span></>}</Button>
+  <FloatingSurface id={id} open={open&&!disabled} label={label} role="menu" trigger={trigger} onClose={()=>setOpen(false)} focusLast={last} side={side}>
    {items.map((item,index)=><div key={item.id} role="presentation">{item.group&&item.group!==items[index-1]?.group&&<div className="ledger-menu-group" role="presentation">{item.group}</div>}<Button role="menuitem" className="ledger-menu-item" variant={item.danger?'danger':'secondary'} disabled={item.disabled} onClick={()=>{setOpen(false);item.onSelect()}}>{item.label}</Button></div>)}
   </FloatingSurface>
  </>

@@ -1,9 +1,8 @@
 import {multiplayerMode,sessionAction,combatantAction,openSetup,closeSetup} from './shell-helpers'
 import { test, expect, type Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
-import { PerspectiveCamera, Vector3 } from 'three'
 import { makeTexturedGlb } from '../test-fixtures/glb'
-import { projectBattlefield } from './workspace-helpers'
+import { projectBattlefield,clickBattlefield } from './workspace-helpers'
 async function cameraState(page:Page){return page.locator('.battlefield-wrap canvas:visible').evaluate(async node=>{for(const resource of performance.getEntriesByType('resource').filter(r=>r.name.includes('/@react-three_fiber.js')).reverse()){const module=await import(resource.name),state=module._roots.get(node)?.store.getState();if(state?.controls)return{position:state.camera.position.toArray(),target:state.controls.target.toArray()}}throw new Error('No mounted camera')})}
 async function api(page: Page, path: string, body?: unknown) {
   return page.evaluate(async ({path,body})=>{const{csrf}=await(await fetch('/api/session')).json();const r=await fetch('/api'+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:body===undefined?undefined:JSON.stringify(body)});if(!r.ok)throw new Error(await r.text());return r.json()},{path,body})
@@ -32,10 +31,9 @@ async function reorderInitialSession(page:Page){
   }}
 }
 async function floorClick(page: Page, x: number, z: number) {
-  const canvas=page.locator('canvas:visible');await canvas.scrollIntoViewIfNeeded();const box=(await canvas.boundingBox())!
-  const camera=new PerspectiveCamera(42,box.width/box.height,.1,300);camera.position.set(12,14,12);camera.lookAt(0,0,0);camera.updateMatrixWorld()
-  const p=new Vector3(x-9.5,0,z-9.5).project(camera);await page.mouse.click(box.x+(p.x+1)*box.width/2,box.y+(1-p.y)*box.height/2)
+  await clickBattlefield(page,{x:x-9.5,y:0,z:z-9.5})
 }
+
 test('DM assigns shared miniatures live; two players retain movement, fallback and independent cameras', async ({page,browser})=>{
   const frames:string[]=[],sockets:string[]=[];page.on('websocket',socket=>{sockets.push(socket.url());socket.on('framesent',event=>{if(String(event.payload).includes('game.command'))frames.push(String(event.payload))})})
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message))
@@ -78,10 +76,9 @@ test('DM assigns shared miniatures live; two players retain movement, fallback a
     await expect(players[0].locator('[data-miniature-state=ready]')).toHaveCount(2);expect(modelRequests).toBe(1)
     // A hit on the GLB selects the existing combatant, rather than moving it.
     await players[0].locator('.map-initiative-list button').filter({hasText:'Hero 2'}).click()
-    const selectionCanvas=players[0].locator('canvas');await selectionCanvas.scrollIntoViewIfNeeded();const selectionBox=(await selectionCanvas.boundingBox())!
-    const selectionCamera=new PerspectiveCamera(42,selectionBox.width/selectionBox.height,.1,300);selectionCamera.position.set(12,14,12);selectionCamera.lookAt(0,0,0);selectionCamera.updateMatrixWorld()
-    const meshPoint=new Vector3(-1.5,.62,-.25).project(selectionCamera)
-    await players[0].mouse.click(selectionBox.x+(meshPoint.x+1)*selectionBox.width/2,selectionBox.y+(1-meshPoint.y)*selectionBox.height/2)
+    // Dismiss the contextual surface before testing an adjacent mesh hit.
+    await players[0].getByRole('button',{name:'Dismiss object controls',exact:true}).click()
+    await clickBattlefield(players[0],{x:-1.5,y:.62,z:-.25})
     await expect(players[0].locator('.map-initiative-list button').filter({hasText:'Hero 1'})).toHaveAttribute('aria-pressed','true')
     await expect(players[1].getByText('Model unavailable',{exact:true})).toHaveCount(2)
     await players[1].locator('.map-initiative-list button').filter({hasText:'Hero 2'}).click();await floorClick(players[1],10,14)

@@ -1,6 +1,6 @@
 # UI/UX migration plan — proposed after Phase 0
 
-**Baseline:** `0a2aedf`. **Prepared:** 31 October 2026. **Status:** Phase 0 complete; **Phase 1A/1B implemented following the user’s explicit approval**, with evidence in [Phase 1 foundations](phase-1-foundations.md). Phase 2A–2C is implemented following the 1 November 2026 request; see [Phase 2 application shell](phase-2-application-shell.md). Phase 3 and later remain planned. No deployment is requested.
+**Baseline:** `0a2aedf`. **Prepared:** 31 October 2026. **Status:** Phase 0 complete; **Phase 1A/1B implemented following the user’s explicit approval**, with evidence in [Phase 1 foundations](phase-1-foundations.md). Phase 2A–2C is implemented following the 1 November 2026 request; see [Phase 2 application shell](phase-2-application-shell.md). Phase 3A–3C is implemented following the 2 November 2026 request; see [Battle Map workspace](phase-3-battle-workspace.md). Phase 4 remains planned. No deployment is requested.
 
 The goal is the proposal's visual hierarchy with every existing feature, data boundary, role and scene contract preserved. Use the [feature matrix](feature-zone-matrix.md) as a checklist and the [audit](ui-audit.md) as evidence. The [guideline addendum](ui-design-guidelines-v2.1.md#12-repository-backed-phase-0-corrections-proposed-for-review) resolves planning conflicts; it does not introduce APIs or domain features.
 
