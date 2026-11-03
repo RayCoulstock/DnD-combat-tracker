@@ -8,7 +8,7 @@ import { io, type Socket } from 'socket.io-client'
 import type { AddressInfo } from 'node:net'
 import { createApplication } from '../app.ts'
 import { migrate } from '../migrate.ts'
-import { importEncounter, mergeMapSnapshot } from '../../shared/domain.ts'
+import { importEncounter, mergeMapSnapshot, projectEncounter } from '../../shared/domain.ts'
 import type { ClientEvents, CommandEnvelope, CommandResult, GameCommand, ServerEvents, Snapshot, SessionState } from '../../shared/domain.ts'
 
 const origin = 'http://localhost:5173'
@@ -333,11 +333,25 @@ test('PostgreSQL multiplayer lifecycle with DM and two players', { timeout: 9000
       assert.ok(c1.snapshot!.state.dungeonMap!.floors.some(f => f.x === 1 && f.z === 0 && f.type === 'grass'))
       assert.deepEqual(c1.snapshot!.state.battleMap.tokens['1'], { x: 13, z: 14 })
     })
+    await t.test('combat controls persist, synchronize, protect hidden order IDs and reach a late joining socket',async()=>{
+      const before=dc.snapshot!.state,active=before.activeId,round=before.round,subject=before.combatants.find(c=>c.id===3)!
+      await accepted(dc,{type:'combatant.controls',combatantId:3,initiative:-2,side:'neutral'})
+      await accepted(dc,{type:'initiative.mode',mode:'manual'})
+      const index=dc.snapshot!.state.combatants.findIndex(c=>c.id===3)
+      if(index>0)await accepted(dc,{type:'initiative.move',combatantId:3,direction:'up'})
+      assert.equal(dc.snapshot!.state.activeId,active);assert.equal(dc.snapshot!.state.round,round)
+      for(const client of [c1,c2]){await waitFor(()=>client.snapshot!.revision===dc.snapshot!.revision,'Combat controls did not reach player');const projected=client.snapshot!.state;assert.equal(projected.combatants.find(c=>c.id===3)!.side,'neutral');assert.equal(projected.combatants.find(c=>c.id===3)!.initiative,-2);assert.ok(!projected.turnOrder!.manualIds.some(id=>String(id)==='2'));assert.ok(!JSON.stringify(projected).includes('Secret dragon'))}
+      const updated=dc.snapshot!.state.combatants.find(c=>c.id===3)!;assert.deepEqual({...updated,initiative:subject.initiative,side:subject.side},subject)
+      for(const command of [{type:'combatant.controls',combatantId:1,initiative:99},{type:'combatant.controls',combatantId:1,side:'enemy'},{type:'initiative.mode',mode:'initiative'},{type:'initiative.move',combatantId:1,direction:'up'}] as GameCommand[]){const denied=await send(c1,command);assert.ok(!denied.ok&&denied.error.code==='FORBIDDEN')}
+      const late=await p1.connect(campaign.id);try{assert.deepEqual(late.snapshot!.state.turnOrder,c1.snapshot!.state.turnOrder);assert.deepEqual(late.snapshot!.state.combatants.map(c=>c.id),c1.snapshot!.state.combatants.map(c=>c.id))}finally{late.socket.disconnect()}
+      const exported=await dm.request(`${path}/export`);assert.equal(exported.turnOrder.mode,'manual');assert.equal(exported.combatants.find((c:{id:number})=>c.id===3).side,'neutral')
+    })
     await t.test('server restart recovers PostgreSQL state and authenticated sessions', async () => {
       const revision = dc.snapshot!.revision
       const campaignRevision = dc.session!.revision
       const savedMap = dc.snapshot!.state.dungeonMap
       const savedMapRevision = dc.snapshot!.state.mapRevision
+      const savedOrder=projectEncounter(dc.snapshot!.state,{role:'player',id:p1.actor!.id}).turnOrder
       const savedTactical = dc.snapshot!.state.tactical
       assert.equal(savedTactical!.length,1)
       for (const s of sockets) s.disconnect()
@@ -346,6 +360,8 @@ test('PostgreSQL multiplayer lifecycle with DM and two players', { timeout: 9000
       await new Promise<void>(resolve => application.http.listen(port, '127.0.0.1', resolve))
       const restored = await p1.request(`${path}/snapshot`)
       assert.equal(restored.revision, revision)
+      assert.deepEqual(restored.state.turnOrder,savedOrder)
+      assert.equal(restored.state.combatants.find((c:{id:number})=>c.id===3).side,'neutral')
       assert.deepEqual(restored.state.dungeonMap, savedMap)
       assert.equal(restored.state.mapRevision, savedMapRevision)
       assert.deepEqual(restored.state.tactical,savedTactical)

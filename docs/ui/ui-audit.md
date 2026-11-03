@@ -190,3 +190,8 @@ Laptop overlays exposed a concrete risk missed by fixed mockups: the canvas can 
 ## Phase 4 follow-through — 2 November 2026
 
 The historical inventory above remains the baseline. [Phase 4](phase-4-design-compliance.md) now adopts the tracker sheet/roster, read-only projected player sheet, library cards/forms, upload drawer and shared feedback/confirmations. Owners of encounter commands, multiplayer state, imports and GLB resources remain in place. The [matrix](feature-zone-matrix.md#phase-4-actual-locations) records relocated controls; the compliance report distinguishes completed work from remaining device/assistive-technology checks and thumbnail infrastructure.
+
+
+## Milestone 5.5 follow-through
+
+The historical initiative/manual-order gaps above are now addressed by [Combat controls](../milestone-5.5-combat-controls.md). The existing side field gains Neutral; turn ordering remains stable-ID based, with persisted manual order and explicit completed-turn tracking. The map roster follows encounter order rather than sorting a second time. Existing transaction, projection, resource and UI owners are retained.

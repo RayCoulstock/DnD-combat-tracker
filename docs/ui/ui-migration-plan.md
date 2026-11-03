@@ -122,3 +122,8 @@ Rollback is a normal code revert of the affected presentation PR. No UI phase sh
 A PR description should list the matrix IDs moved, screenshots for relevant sizes/roles, data/state/permission invariants verified, automated commands and manual checks actually run, limitations and rollback. Do not mark a prototype as accessible or multiplayer-safe just because its desktop screenshot matches the concept.
 
 **Historical Phase 0 review stop (subsequently satisfied):** Phase 0 ended here. Approve or revise the proposed decisions and the first foundation PR's scope before beginning Phase 1. No redesign code, schema, dependency or deployment change is included in the Phase 0 deliverables.
+
+
+## Post-redesign Milestone 5.5
+
+[Combat controls](../milestone-5.5-combat-controls.md) is separately authorized feature work after Phase 4. It deliberately extends optional encounter metadata and command validation; this is not a schema change merely to relocate UI. Existing state owners and rollback/permission/resource gates remain. The report documents manual-order initialization, completed-turn handling, active removal, serialization, role projection, migration implications and acceptance.
