@@ -1,3 +1,4 @@
+import {reconcileTurnOrder} from '../shared/combatOrder.ts'
 import { ownedEntry } from './combatant-library.ts'
 import { instantiateLibrary, characterStateSchema } from '../shared/combatantLibrary.ts'
 import { isGridPosition } from '../src/mapState.ts'
@@ -28,8 +29,8 @@ export async function loadState(db: PoolClient, encounterId: string): Promise<En
   const rows = (await db.query('SELECT * FROM combatants WHERE encounter_id=$1 ORDER BY ordinal', [encounterId])).rows
   const instance = (await db.query('SELECT document,revision,history FROM encounter_maps WHERE encounter_id=$1', [encounterId])).rows[0]
   const references = new Set((await db.query("SELECT combatant_id FROM combatant_asset_references r JOIN assets_3d a ON a.id=r.asset_id WHERE r.encounter_id=$1 AND a.upload_status='ready'", [encounterId])).rows.map(r => r.combatant_id))
-  return { ...encounter.state, ...(encounter.state.tactical?{tactical:activeTactical(encounter.state.tactical,Date.now())}:{}), dungeonMap: instance?.document ? readDungeon(instance.document) : undefined, mapRevision: instance?.revision ?? 0, mapUndoDepth: instance?.history.undo.length ?? 0, mapRedoDepth: instance?.history.redo.length ?? 0, combatants: rows.map(r => ({ ...r.data, miniatureStatus: r.data.miniature?.assetId ? (references.has(r.id) ? 'ready' : 'unavailable') : undefined, ownerId: r.owner_id, visible: r.visible })),
-    battleMap: { ...encounter.state.battleMap, tokens: Object.fromEntries(rows.map(r => [r.id, r.position])) } }
+  return reconcileTurnOrder({ ...encounter.state, ...(encounter.state.tactical?{tactical:activeTactical(encounter.state.tactical,Date.now())}:{}), dungeonMap: instance?.document ? readDungeon(instance.document) : undefined, mapRevision: instance?.revision ?? 0, mapUndoDepth: instance?.history.undo.length ?? 0, mapRedoDepth: instance?.history.redo.length ?? 0, combatants: rows.map(r => ({ ...r.data, miniatureStatus: r.data.miniature?.assetId ? (references.has(r.id) ? 'ready' : 'unavailable') : undefined, ownerId: r.owner_id, visible: r.visible })),
+    battleMap: { ...encounter.state.battleMap, tokens: Object.fromEntries(rows.map(r => [r.id, r.position])) } })
 }
 export async function persistState(db: PoolClient, encounterId: string, input: EncounterState, history?: MapHistory, allowUnresolved = false, requiredAssetId?: string, requiredScenery: string[] = [], requiredImage?: string) {
   const saved = (await db.query('SELECT document,history FROM encounter_maps WHERE encounter_id=$1', [encounterId])).rows[0]

@@ -1,3 +1,6 @@
+import {CombatControls,ManualMoves,TurnOrderMenu} from './CombatControls'
+import {allegianceLabels,type TurnOrder} from '../shared/combatOrder'
+import type {EncounterState} from '../shared/domain'
 import {useMapViewport} from './useMapViewport'
 import TransitionTravel from './TransitionTravel'
 import Transitions3D from './Transitions3D'
@@ -36,7 +39,7 @@ interface Combatant {
   id: string | number
   name: string
   short: string
-  side: string
+  side: keyof typeof allegianceLabels
   hp: number
   maxHp: number
   initiative: number
@@ -48,6 +51,8 @@ interface Combatant {
 }
 
 export interface BattleMap3DProps {
+  turnOrder?:TurnOrder
+  combatControlState?:EncounterState
   keyboardActive?:boolean
   onPlaceSquare?:(destination:GridPosition,floorId?:string)=>void
   onSelectTransition?:(id:string)=>void
@@ -252,7 +257,7 @@ export default function BattleMap3D(input: BattleMap3DProps) {
     {travel&&travelFrom&&selectedCombatant&&props.dungeonMap&&props.onCommand&&props.actor?.role!=='player'&&<TransitionTravel key={`${travel.id}:${selectedCombatant.id}:${travelFrom}`} transition={travel} from={travelFrom} map={props.dungeonMap} battleMap={props.map} combatants={props.combatants} combatantId={selectedCombatant.id} send={props.onCommand} onFollow={view.select} onClose={()=>setTravelId(null)} disabled={props.connected===false}/>}
     <aside className="tabletop-panel tabletop-roster" data-ui-zone="C1" aria-label="Combatant roster">
       <button className="roster-expand" aria-label={rosterExpanded?'Collapse roster':'Expand roster'} aria-expanded={rosterExpanded} onClick={()=>setRosterExpanded(!rosterExpanded)}>{rosterExpanded?'«':'»'}</button><span className="eyebrow">INITIATIVE</span><h2>Round {props.round}</h2>
-      <div className="map-initiative-list">{[...(activeVisible?activeCombatants:[])].sort((a,b)=>b.initiative-a.initiative).map((combatant) => <button key={combatant.id} title={`${combatant.name} · Initiative ${combatant.initiative}`} aria-label={combatant.name} aria-pressed={combatant.id === props.selectedId} aria-current={combatant.id === props.activeId ? 'step' : undefined} className={`${combatant.id === props.selectedId ? 'selected' : ''} ${combatant.id === props.activeId ? 'active' : ''}`} onClick={() => selectToken(combatant.id)}><span className={`map-token-dot ${combatant.side}`}>{combatant.short==='?'?combatant.name.split(/\s+/).slice(0,2).map(w=>w[0]).join(''):combatant.short}</span><span><strong>{combatant.name}</strong>{combatant.id === props.selectedId && <small>◇ Selected</small>}{combatant.id === props.activeId && <small>▶ Active turn</small>}{combatant.conditions?.length ? <small>{combatant.conditions.join(', ')}</small> : null}<small>Initiative {combatant.initiative}</small></span>{(!props.playerId || combatant.ownerId === props.playerId || combatant.hpShown === true) && <em>{combatant.hp}/{combatant.maxHp} HP</em>}</button>)}</div>
+      {props.actor?.role!=='player'&&props.onCommand&&<div className="map-order-menu"><TurnOrderMenu state={{turnOrder:props.turnOrder}} send={props.onCommand} connected={props.connected}/></div>}<div className="map-initiative-list">{(activeVisible?activeCombatants:[]).map((combatant) => <div key={combatant.id} className="map-initiative-row"><button title={`${combatant.name} · ${allegianceLabels[combatant.side]} · Initiative ${combatant.initiative}`} aria-label={combatant.name} aria-description={`${allegianceLabels[combatant.side]}${combatant.id===props.activeId?' · Active turn':''}`} aria-pressed={combatant.id === props.selectedId} aria-current={combatant.id === props.activeId ? 'step' : undefined} className={`${combatant.id === props.selectedId ? 'selected' : ''} ${combatant.id === props.activeId ? 'active' : ''}`} onClick={() => selectToken(combatant.id)}><span className={`map-token-dot ${combatant.side}`}>{combatant.short==='?'?combatant.name.split(/\s+/).slice(0,2).map(w=>w[0]).join(''):combatant.short}</span><span><strong>{combatant.name}</strong>{combatant.id === props.selectedId && <small>◇ Selected</small>}{combatant.id === props.activeId && <small>▶ Active turn</small>}{combatant.conditions?.length ? <small>{combatant.conditions.join(', ')}</small> : null}<small>Initiative {combatant.initiative} · {allegianceLabels[combatant.side]}</small></span>{(!props.playerId || combatant.ownerId === props.playerId || combatant.hpShown === true) && <em>{combatant.hp}/{combatant.maxHp} HP</em>}</button>{props.actor?.role!=='player'&&props.onCommand&&<div className="map-roster-controls"><CombatControls combatant={combatant} send={props.onCommand} connected={props.connected}/>{props.combatControlState&&<ManualMoves combatant={combatant} state={props.combatControlState} send={props.onCommand} connected={props.connected}/>}</div>}</div>)}</div>
       {!props.combatants.length && <p className="map-empty">Add combatants in the tracker to place tokens.</p>}
     </aside>
     <div className="battlefield-wrap" data-ui-zone="C2">
@@ -303,7 +308,7 @@ export default function BattleMap3D(input: BattleMap3DProps) {
      <header className="context-inspector-header"><strong>{props.editing?'Map editor':'Inspector'}</strong><Button onClick={()=>openInspector(false)}>Hide panel »</Button></header>
      <div ref={tacticalDrawerRef}><InspectorSection title="Tactical tools" open={tacticsOpen} onOpenChange={setTacticsOpen}>{tools.controls}</InspectorSection></div>
      {props.editorInspector}<div hidden={props.editing}>
-      {selectedCombatant&&<InspectorSection title={selectedCombatant.name} defaultOpen><p>{!props.playerId||selectedCombatant.ownerId===props.playerId||selectedCombatant.hpShown?`${selectedCombatant.hp}/${selectedCombatant.maxHp} HP · `:''}Initiative {selectedCombatant.initiative}</p><p>{selectedCombatant.conditions?.join(', ')||'No active conditions'}</p>{props.combatantDetails}{props.combatantActions}{props.onAppearance&&props.actor?.role!=='player'&&<Button onClick={props.onAppearance}>Appearance</Button>}</InspectorSection>}
+      {selectedCombatant&&<InspectorSection title={selectedCombatant.name} defaultOpen><p>{!props.playerId||selectedCombatant.ownerId===props.playerId||selectedCombatant.hpShown?`${selectedCombatant.hp}/${selectedCombatant.maxHp} HP · `:''}Initiative {selectedCombatant.initiative} · {allegianceLabels[selectedCombatant.side]}</p><p>{selectedCombatant.conditions?.join(', ')||'No active conditions'}</p>{props.combatantDetails}{props.combatantActions}{props.onAppearance&&props.actor?.role!=='player'&&<Button onClick={props.onAppearance}>Appearance</Button>}</InspectorSection>}
      </div>
       {input.actor?.role!=='player'&&levels.length>1&&input.onCommand&&<form className="combatant-transfer" onSubmit={e=>{e.preventDefault();const data=new FormData(e.currentTarget);setMapError('');void input.onCommand!({type:'combatant.floor.transfer',combatantId:String(data.get('combatant')),floorId:String(data.get('floor')),destination:{x:Number(data.get('x')),z:Number(data.get('z'))}}).catch(error=>setMapError(error.message))}}>
        <label>Transfer combatant<select aria-label="Transfer combatant" name="combatant">{input.combatants.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>

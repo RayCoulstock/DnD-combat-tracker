@@ -60,6 +60,16 @@ See [Phase 3 report](phase-3-battle-workspace.md) for exceptions, testing and ac
 
 See [Phase 4 compliance report](phase-4-design-compliance.md) for permissions, preservation, tests and remaining UX checks. Detailed baseline rows below describe original capabilities; this table is the current destination overlay.
 
+## Milestone 5.5 actual locations
+
+| Feature | Current location / contract |
+| --- | --- |
+| Initiative and allegiance edits | C1 expanded row, C2 sheet header and C3 selected-combatant inspector share `CombatControls`, a P1 form popover with explicit Save, Escape cancellation, validation and feedback. Existing E3 CombatantEditor also exposes allegiance and validates new initiative changes. Players receive read-only values. |
+| Turn-order mode | C1 Turn order menu in tracker/map, with current mode also shown in Tracker summary. No new B row or canvas dock. B6 Next Turn retains its location and follows the authoritative order. |
+| Manual move up/down | Expanded C1, C2 header and C3 selected entity controls; named buttons, disabled boundaries and errors. Collapsed rails hide editing controls, retain allegiance descriptions/tooltips and a non-colour active-turn arrow. |
+| Allegiance defaults and filtering | Existing `side` extended with Neutral. B6 creation has all three choices; E4 Combatant Library has Default allegiance independently of entry type. Campaign setup adds a Neutral filter. Instance changes never update library/campaign state implicitly. |
+| Projection and persistence | Optional encounter `turnOrder` metadata, persisted JSON/ordinal and existing revisioned commands. Player ID lists filter hidden combatants/floors. See [schema and turn policy](../milestone-5.5-combat-controls.md). |
+
 ## Legend and rules
 
 - **L** = standalone local mode; **D** = authenticated DM in owned context; **P** = permitted player. **P-own** means ownership/visible-floor restrictions still apply. Anonymous entry is **A**. Role availability does not override connection, busy, preview or resource constraints.
@@ -320,7 +330,7 @@ These are **not existing features to implement under the guise of preservation**
 | New blank encounter combatant / direct JSON Add | Blank creation is in library; JSON import is in library or encounter import, not an independent encounter Add form | Keep those entry paths honest; a later B6 adapter is feature work. |
 | Full stat-block editing of arbitrary encounter character | Current DM edit covers name/initiative/max HP/notes; library has complete JSON editor | Preserve both scopes. Do not claim a new character builder exists. |
 | Temp HP / condition duration / recharge engine | No dedicated supported state or automation | Remove as mandatory mockup targets; separately design commands/schema if requested. |
-| Manual roster sort/reorder | Initiative sort/turn progression exists, no arbitrary reorder action | Keep C1 order; no decorative clickable sort button. |
+| Manual roster sort/reorder | Implemented in Milestone 5.5 using stable IDs, retained manual order and completed-turn tracking | C1 mode/menu and keyboard move controls; B6 progression unchanged. |
 | Standalone global Map templates page | Campaign/editor-scoped templates + local storage; images separate | A3 may expose contextual management first. Deep-linkable aggregation needs navigation/context design. |
 | Player-view preview | No authorized player-preview mode | Do not implement with CSS filtering of a DM snapshot. Later server projection design; D3 reservation. |
 | Recent edit timeline / last-edit timestamp | Undo/redo depths and private persisted history exist, no timeline contract | Keep D3 undo/redo/clear. No invented names/timestamps/history broadcast. |

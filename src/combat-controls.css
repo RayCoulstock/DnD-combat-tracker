@@ -1,0 +1,14 @@
+.combat-control-form{max-width:330px;padding:8px;min-width:220px}.combat-control-form h3{font-family:var(--ledger-font-heading);margin:4px 0}.combat-control-form p{font-size:12px;color:var(--ledger-muted);white-space:normal}
+.combat-controls{display:inline-flex;min-width:0}.combat-controls>.ledger-button{white-space:normal;font-size:12px;text-align:left}.manual-moves{display:inline-flex;gap:4px}.manual-moves>.ledger-button{min-width:40px}.turn-order-controls{margin:8px 0}
+.initiative-row{min-width:0}.initiative-row-controls{display:flex;flex-wrap:wrap;gap:4px;margin:0 4px 6px}.tracker-workspace[data-roster-expanded=false] .initiative-row-controls,.tracker-workspace[data-roster-expanded=false] .turn-order-controls{display:none}
+.tracker-workspace .avatar.neutral,.map-token-dot.neutral,.dm-token-avatar.neutral{border-color:var(--ledger-muted);color:var(--ledger-muted);background:var(--ledger-well)}
+.combat-side-label{display:inline-block;font-size:11px;color:var(--ledger-muted);font-style:normal;margin:0 4px}.map-roster-controls{display:flex;gap:4px;flex-wrap:wrap;padding:4px 8px}.workspace-roster-collapsed .map-roster-controls{display:none}
+.tabletop-shell[data-roster-expanded=false] .map-roster-controls,.tabletop-shell[data-roster-expanded=false] .map-order-menu,.tracker-workspace[data-roster-expanded=false] .tracker-order-menu{display:none}
+.tabletop-shell .map-roster-controls .ledger-button{display:inline-flex;grid-template-columns:none;width:auto;padding:8px;min-height:40px;border:1px solid var(--ledger-control-line);background:var(--ledger-card);color:var(--ledger-ink);font-size:12px}
+.tabletop-shell .map-initiative-list .map-token-dot.neutral{border-color:var(--ledger-muted);color:var(--ledger-muted);background:var(--ledger-well)}
+.tracker-workspace .portrait.neutral{background:var(--ledger-well);color:var(--ledger-muted);border-color:var(--ledger-muted)}.dm-setup .dm-side.neutral{background:var(--ledger-well);color:var(--ledger-muted)}
+.tracker-workspace .initiative-item[aria-current=step],.tabletop-shell .map-initiative-list button[aria-current=step]{position:relative;box-shadow:inset 3px 0 var(--ledger-accent)}
+.tracker-workspace[data-roster-expanded=false] .initiative-item[aria-current=step]::after,.tabletop-shell[data-roster-expanded=false] .map-initiative-row>button[aria-current=step]::after{content:'▶';position:absolute;right:0;top:0;font-size:10px;color:var(--ledger-ink)}
+.dm-setup [aria-label="Filter tokens"]{flex-wrap:wrap;min-width:0;max-width:100%}.dm-setup [aria-label="Filter tokens"]>button{min-height:40px}
+
+.combatant-modal .side-picker{grid-template-columns:repeat(3,minmax(0,1fr))}.combatant-modal .side-picker .neutral-choice.active{color:var(--ledger-muted);background:var(--ledger-card);box-shadow:0 1px 4px #302d2520}

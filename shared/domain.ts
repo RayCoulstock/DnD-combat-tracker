@@ -1,3 +1,4 @@
+import {prepareTurnOrder,reconcileTurnOrder,nextTurn,removeFromOrder,type TurnOrder} from './combatOrder.ts'
 import {transitionRoute} from './transitions.ts'
 import {reuseDungeonGeometry,dungeonLevels,composeLevels,primaryLevelId} from './dungeon.ts'
 import { z } from 'zod'
@@ -14,7 +15,7 @@ export const combatantSchema = z.object({
   sourceLibraryId:z.uuid().optional(), persistentIdentity:z.boolean().optional(), unplaced:z.boolean().optional(),
   floorId:z.string().min(1).max(100).optional(), miniature: miniatureSchema.optional(), hpShown: z.boolean().optional(),
   id: idSchema, name: z.string().trim().min(1).max(200), short: z.string().max(20).default('?'),
-  side: z.enum(['hero', 'enemy']), role: text.default(''), initiative: z.number().finite().min(-1000).max(1000),
+  side: z.enum(['hero', 'enemy', 'neutral']), role: text.default(''), initiative: z.number().finite().min(-1000).max(1000),
   hp: z.number().int().min(0).max(100000), maxHp: z.number().int().min(1).max(100000),
   ac: z.number().int().min(0).max(1000), speed: text.default('30 ft'),
   conditions: z.array(z.string().max(100)).max(50), saves: z.array(z.tuple([z.string().max(30), z.number().finite()])).max(20),
@@ -24,7 +25,10 @@ export const combatantSchema = z.object({
   ownerId: z.uuid().nullable().default(null), visible: z.boolean().default(true), privateNotes: text.default(''),
 }).passthrough().refine(c => c.hp <= c.maxHp, 'HP exceeds maximum')
 export type Combatant = z.infer<typeof combatantSchema>
+const orderIds=z.array(idSchema).max(100).refine(ids=>new Set(ids.map(String)).size===ids.length,'Duplicate order IDs')
+export const turnOrderSchema=z.object({mode:z.enum(['initiative','manual']),manualIds:orderIds.default([]),completedIds:orderIds.default([])}).strict()
 export const encounterFileSchema = z.object({
+  turnOrder:turnOrderSchema.optional(),
   tactical:z.array(tacticalRecordSchema).max(64).optional(),
   version: z.literal(1), round: z.number().int().min(1).max(1000000),
   activeId: idSchema.nullable().optional(), selectedId: idSchema.nullable().optional(),
@@ -33,6 +37,7 @@ export const encounterFileSchema = z.object({
   combatants: z.array(combatantSchema).max(100), battleMap: z.unknown().optional(),
 }).refine(s => new Set(s.combatants.map(c => String(c.id))).size === s.combatants.length, 'Duplicate combatant IDs').refine(s=>!s.tactical||new Set(s.tactical.map(r=>r.id)).size===s.tactical.length,'Duplicate tactical IDs')
 export interface EncounterState {
+  turnOrder?:TurnOrder
   tactical?:TacticalRecord[]
   levelsHidden?:boolean
   dungeonMap?: DungeonMap; mapRevision?: number; mapUndoDepth?: number; mapRedoDepth?: number
@@ -44,9 +49,9 @@ export function importEncounter(value: unknown, preservePermissions = false): En
   const data = encounterFileSchema.parse(value)
   const combatants = data.combatants.map(c => preservePermissions ? c : { ...c, ownerId: null })
   const ids = new Set(combatants.map(c => c.id))
-  return reconcileLevelTokens({ ...(data.tactical?{tactical:data.tactical.filter(r=>r.kind==='template').map(r=>({...r,ownerId:preservePermissions?r.ownerId:'imported'}))}:{}), version: 1, round: data.round, activeId: ids.has(data.activeId!) ? data.activeId! : combatants[0]?.id ?? null,
+  return reconcileTurnOrder(reconcileLevelTokens({ ...(data.turnOrder?{turnOrder:data.turnOrder}:{}), ...(data.tactical?{tactical:data.tactical.filter(r=>r.kind==='template').map(r=>({...r,ownerId:preservePermissions?r.ownerId:'imported'}))}:{}), version: 1, round: data.round, activeId: ids.has(data.activeId!) ? data.activeId! : combatants[0]?.id ?? null,
     selectedId: ids.has(data.selectedId!) ? data.selectedId! : combatants[0]?.id ?? null,
-    usedAbilities: data.usedAbilities, combatants, ...(data.dungeonMap ? { dungeonMap: data.dungeonMap } : {}), battleMap: normalizeBattleMap(data.dungeonMap ? { ...(data.battleMap as object ?? {}), width: Math.max(...dungeonLevels(data.dungeonMap).map(l=>l.width)), height: Math.max(...dungeonLevels(data.dungeonMap).map(l=>l.height)) } : data.battleMap, combatants.map(c => c.id)) })
+    usedAbilities: data.usedAbilities, combatants, ...(data.dungeonMap ? { dungeonMap: data.dungeonMap } : {}), battleMap: normalizeBattleMap(data.dungeonMap ? { ...(data.battleMap as object ?? {}), width: Math.max(...dungeonLevels(data.dungeonMap).map(l=>l.width)), height: Math.max(...dungeonLevels(data.dungeonMap).map(l=>l.height)) } : data.battleMap, combatants.map(c => c.id)) }))
 }
 export const emptyEncounter = (): EncounterState => importEncounter({ version: 1, round: 1, combatants: [] })
 const target = { combatantId: idSchema }
@@ -68,6 +73,9 @@ export const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('combatant.edit'), ...target, combatant: combatantSchema }).strict(),
   z.object({ type: z.literal('combatant.remove'), ...target }).strict(),
   z.object({ type: z.literal('ability.toggle'), ...target, key: z.string().max(400) }).strict(),
+  z.object({type:z.literal('combatant.controls'),...target,initiative:z.number().int().min(-1000).max(1000).optional(),side:z.enum(['hero','enemy','neutral']).optional()}).strict().refine(c=>c.initiative!==undefined||c.side!==undefined,'Choose a control to update'),
+  z.object({type:z.literal('initiative.mode'),mode:z.enum(['initiative','manual'])}).strict(),
+  z.object({type:z.literal('initiative.move'),...target,direction:z.enum(['up','down'])}).strict(),
   z.object({ type: z.literal('initiative.next') }).strict(),
   z.object({ type: z.literal('map.settings'), showGrid: z.boolean(), showLabels: z.boolean(), width: z.number().int().min(1).max(100).optional(), height: z.number().int().min(1).max(100).optional(), gridSizeFeet:z.number().int().min(1).max(100).optional() }).strict(),
   z.object({ type: z.literal('encounter.clear') }).strict(),
@@ -135,22 +143,36 @@ export function applyCommand(state: EncounterState, actor: Actor, command: GameC
     case 'combatant.conditions': return update({ conditions: command.conditions })
     case 'combatant.hp.visibility': return update({ hpShown: command.shown })
     case 'combatant.visibility': return update({ visible: command.visible })
+    case 'combatant.controls': return reconcileTurnOrder({...prepareTurnOrder(state),combatants:state.combatants.map(item=>item===c?{...item,...(command.initiative!==undefined?{initiative:command.initiative}:{}),...(command.side!==undefined?{side:command.side}:{})}:item)})
+    case 'initiative.mode': {
+      const prepared=prepareTurnOrder(state),order=prepared.turnOrder!
+      return reconcileTurnOrder({...prepared,turnOrder:{...order,mode:command.mode,manualIds:command.mode==='manual'&&!order.manualIds.length?state.combatants.map(c=>c.id):order.manualIds}})
+    }
+    case 'initiative.move': {
+      if(state.turnOrder?.mode!=='manual')throw new DomainError('INVALID','Switch to manual order before moving combatants.')
+      const prepared=prepareTurnOrder(state),ids=state.combatants.map(c=>c.id),index=ids.findIndex(id=>String(id)===String(command.combatantId)),destination=index+(command.direction==='up'?-1:1)
+      if(destination<0||destination>=ids.length)throw new DomainError('INVALID','Combatant is already at the end of this order.')
+      ;[ids[index],ids[destination]]=[ids[destination],ids[index]]
+      return reconcileTurnOrder({...prepared,turnOrder:{...prepared.turnOrder!,manualIds:ids}})
+    }
     case 'combatant.edit': {
       if (String(command.combatant.id) !== String(c!.id)) throw new DomainError('INVALID', 'Combatant identity cannot change.')
-      return { ...update({ ...command.combatant, id: c!.id, ownerId: c!.ownerId, floorId:c!.floorId }), combatants: update({ ...command.combatant, id: c!.id, ownerId: c!.ownerId, floorId:c!.floorId }).combatants.sort((a, b) => b.initiative - a.initiative) }
+      if(command.combatant.initiative!==c!.initiative&&!Number.isInteger(command.combatant.initiative))throw new DomainError('INVALID','Initiative must be an integer.')
+      return reconcileTurnOrder({...prepareTurnOrder(state),combatants:update({...command.combatant,id:c!.id,ownerId:c!.ownerId,floorId:c!.floorId}).combatants})
     }
     case 'combatant.add': {
       if(!command.allowPersistentDuplicate){
         const seen=new Set(state.combatants.filter(c=>c.persistentIdentity).map(c=>c.sourceLibraryId))
         for(const item of command.combatants)if(item.persistentIdentity&&item.sourceLibraryId){if(seen.has(item.sourceLibraryId))throw new DomainError('CONFLICT','This character is already in the encounter. Enable the duplicate override.');seen.add(item.sourceLibraryId)}
       }
+      const prepared=prepareTurnOrder(state)
       const combatants = [...state.combatants, ...command.combatants.map(c => ({ ...c, floorId:command.floorId??c.floorId??primaryLevelId(state.dungeonMap), ownerId: null }))].sort((a, b) => b.initiative - a.initiative)
       if (combatants.length > 100 || new Set(combatants.map(c => String(c.id))).size !== combatants.length) throw new DomainError('INVALID', 'Too many or duplicate combatants.')
-      return reconcileLevelTokens({ ...state, combatants, battleMap:reconcileBattleMap(state.battleMap,combatants.map(c=>c.id)), activeId: state.activeId ?? combatants[0]?.id ?? null })
+      return reconcileTurnOrder(reconcileLevelTokens({ ...prepared, combatants, battleMap:reconcileBattleMap(state.battleMap,combatants.map(c=>c.id)), activeId: state.activeId ?? combatants[0]?.id ?? null }))
     }
     case 'combatant.remove': {
       const combatants = state.combatants.filter(item => item !== c)
-      return { ...state, combatants, activeId: state.activeId === c!.id ? combatants[0]?.id ?? null : state.activeId,
+      return { ...removeFromOrder(state,c!.id),
         selectedId: state.selectedId === c!.id ? null : state.selectedId,
         usedAbilities: Object.fromEntries(Object.entries(state.usedAbilities).filter(([key]) => !key.startsWith(`${c!.id}:`))),
         battleMap: reconcileBattleMap(state.battleMap, combatants.map(c => c.id)) }
@@ -158,11 +180,7 @@ export function applyCommand(state: EncounterState, actor: Actor, command: GameC
     case 'ability.toggle':
       if (!command.key.startsWith(`${c!.id}:`)) throw new DomainError('INVALID', 'Invalid ability key.')
       return { ...state, usedAbilities: { ...state.usedAbilities, [command.key]: !state.usedAbilities[command.key] } }
-    case 'initiative.next': {
-      if (!state.combatants.length) return state
-      const next = (state.combatants.findIndex(c => c.id === state.activeId) + 1) % state.combatants.length
-      return { ...state, activeId: state.combatants[next].id, round: state.round + (next === 0 ? 1 : 0) }
-    }
+    case 'initiative.next': return nextTurn(state)
     case 'map.settings':
       if (state.dungeonMap && ((command.width && command.width !== state.dungeonMap.width) || (command.height && command.height !== state.dungeonMap.height))) throw new DomainError('INVALID', 'Use the dungeon builder to replace map dimensions.')
       return { ...state, battleMap: reconcileBattleMap({ ...state.battleMap, showGrid: command.showGrid, showLabels: command.showLabels, gridSizeFeet:command.gridSizeFeet??state.battleMap.gridSizeFeet, width: command.width ?? state.battleMap.width, height: command.height ?? state.battleMap.height }, state.combatants.map(c => c.id)) }
@@ -210,7 +228,7 @@ export function projectEncounter(state: EncounterState, actor: Actor): Encounter
   const owned = combatants.filter(c => c.ownerId === actor.id)
   const dungeonMap=playerDungeon(state.dungeonMap)
   const levels=dungeonMap?dungeonLevels(dungeonMap):[]
-  return { ...state, levelsHidden:Boolean(state.dungeonMap&&!dungeonMap), tactical:state.tactical?.filter(r=>levelVisible(state,r.floorId)).map(r=>({...r,floorId:r.floorId??primaryLevelId(state.dungeonMap)})), dungeonMap, mapUndoDepth: undefined, mapRedoDepth: undefined, combatants, selectedId: null, activeId: ids.has(String(state.activeId)) ? state.activeId : null,
+  return { ...state, ...(state.turnOrder?{turnOrder:{...state.turnOrder,manualIds:state.turnOrder.manualIds.filter(id=>ids.has(String(id))),completedIds:state.turnOrder.completedIds.filter(id=>ids.has(String(id)))}}:{}), levelsHidden:Boolean(state.dungeonMap&&!dungeonMap), tactical:state.tactical?.filter(r=>levelVisible(state,r.floorId)).map(r=>({...r,floorId:r.floorId??primaryLevelId(state.dungeonMap)})), dungeonMap, mapUndoDepth: undefined, mapRedoDepth: undefined, combatants, selectedId: null, activeId: ids.has(String(state.activeId)) ? state.activeId : null,
     usedAbilities: Object.fromEntries(Object.entries(state.usedAbilities).filter(([key]) => owned.some(c => key.startsWith(`${c.id}:`)))),
     battleMap: { ...state.battleMap, ...(state.dungeonMap?{width:Math.max(4,...levels.map(l=>l.width)),height:Math.max(4,...levels.map(l=>l.height))}:{}), tokens: Object.fromEntries(Object.entries(state.battleMap.tokens).filter(([id]) => ids.has(id))) } }
 }
