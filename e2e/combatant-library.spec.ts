@@ -1,3 +1,4 @@
+import {exercisePersistentCharacterLibrary} from './persistent-character-library'
 import {multiplayerMode,library,openSetup,closeSetup,combatantAction} from './shell-helpers'
 import { test, expect, type Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
@@ -43,12 +44,13 @@ test('DM imports once, assigns a default model, reuses independent monsters and 
   // Global management must not reopen an abandoned encounter-copy draft.
   await combatantAction(page,'Save selected combatant to library')
   await expect(page.getByRole('button',{name:'Save library entry',exact:true})).toBeVisible()
-  await page.getByRole('button',{name:'Close library',exact:true}).click()
+  await page.getByRole('button',{name:'Close library',exact:true}).click();await page.getByRole('dialog',{name:'Discard library draft',exact:true}).getByRole('button',{name:'Discard changes',exact:true}).click()
   await library(page)
   await expect(page.getByRole('button',{name:'Save library entry',exact:true})).toHaveCount(0)
   await page.getByRole('button',{name:'Close library',exact:true}).click()
   await page.reload();await library(page);await page.getByRole('button',{name:'Library Goblin · Monster Template',exact:true}).click();await expect(page.getByText(`Current model: ${asset.id}`,{exact:false})).toBeVisible()
   await page.getByRole('button',{name:'Duplicate entry',exact:true}).click();await page.getByRole('button',{name:'Save library entry',exact:true}).click();await expect(page.getByRole('button',{name:'Library Goblin Copy · Monster Template',exact:true})).toBeVisible()
-  await page.getByRole('button',{name:'Archive entry',exact:true}).click();await expect(page.getByRole('button',{name:'Library Goblin Copy · Monster Template',exact:true})).toHaveCount(0)
+  await page.getByRole('button',{name:'Archive entry',exact:true}).click();await page.getByRole('dialog',{name:'Archive entry',exact:true}).getByRole('button',{name:'Archive',exact:true}).click();await expect(page.getByRole('button',{name:'Library Goblin Copy · Monster Template',exact:true})).toHaveCount(0)
+  await page.getByRole('button',{name:'Close library',exact:true}).click();await exercisePersistentCharacterLibrary(page,campaign)
   expect(errors).toEqual([])
 })

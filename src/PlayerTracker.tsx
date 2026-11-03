@@ -1,0 +1,18 @@
+import type {Combatant} from '../shared/domain'
+import {Button,EmptyState,StatusPill} from './ui'
+import {useWorkspacePreference} from './workspacePreferences'
+export function PlayerCombatantDetails({combatant,playerId}:{combatant:Combatant;playerId:string}){
+ const owned=combatant.ownerId===playerId,showHp=owned||combatant.hpShown===true
+ return <article className="online-card ledger-player-sheet"><header><div><span className="eyebrow">{owned?'YOUR CHARACTER':'PUBLIC COMBATANT'}</span><h2>{combatant.name}</h2></div><StatusPill>{owned?'Read-only character sheet':'Limited information'}</StatusPill></header>
+ {showHp&&<p className="player-health">{combatant.hp}/{combatant.maxHp} HP{owned?` · AC ${combatant.ac} · ${combatant.speed}`:''}</p>}
+ <p>Initiative {combatant.initiative}</p>{combatant.conditions.length>0&&<p>Conditions: {combatant.conditions.join(', ')}</p>}
+ {owned?<>{combatant.role&&<p>{combatant.role}</p>}{combatant.artwork&&<img className="player-artwork" src={combatant.artwork} alt={`${combatant.name} character art`}/>}
+ <dl className="player-abilities">{combatant.saves.map(([name,value])=><div key={name}><dt>{name}</dt><dd>{value}</dd></div>)}</dl>
+ {combatant.details?.map(([label,value])=><p key={label}><strong>{label}</strong> {value}</p>)}
+ <section aria-label="Character abilities">{combatant.actions.length?combatant.actions.map((action,index)=><section key={`${action.name}:${index}`} className="player-action"><small>{action.category||'Action'}</small><h3>{action.name}</h3><p>{action.text}</p></section>):<p>No listed actions.</p>}</section></>:<p>Visible on the battlefield. Other statistics are private.</p>}
+ </article>
+}
+export default function PlayerTracker({combatants,selected,activeId,playerId,onSelect}:{combatants:Combatant[];selected:Combatant|null|undefined;activeId:string|number|null;playerId:string;onSelect:(id:string|number)=>void}){
+ const[expanded,setExpanded]=useWorkspacePreference('player.tracker.rosterExpanded',true)
+ return <section className="tracker-workspace player-tracker" data-roster-expanded={expanded} aria-label="Player encounter tracker"><aside className="initiative-panel" data-ui-zone="C1" aria-label="Initiative roster"><Button aria-label={expanded?'Collapse initiative roster':'Expand initiative roster'} aria-expanded={expanded} onClick={()=>setExpanded(!expanded)}>{expanded?'«':'»'}</Button><h2>Initiative order</h2><div className="initiative-list">{combatants.map(c=><Button className="initiative-item" key={c.id} aria-label={`${c.name} · Initiative ${c.initiative}`} aria-current={c.id===activeId?'step':undefined} aria-pressed={c.id===selected?.id} title={c.name} onClick={()=>onSelect(c.id)}><span className="init-number">{c.initiative}</span><span className={`avatar ${c.side}`} aria-hidden="true">{c.short}</span><span className="init-info"><strong>{c.name}</strong>{c.id===activeId&&<small>Active turn</small>}{(c.ownerId===playerId||c.hpShown)&&<small>{c.hp}/{c.maxHp} HP</small>}</span></Button>)}</div></aside><section className="content" data-ui-zone="C2"><div className="tracker-sheet-tools"><Button aria-expanded={expanded} onClick={()=>setExpanded(!expanded)}>{expanded?'Hide initiative roster':'Show initiative roster'}</Button><span>Permitted character information · read only</span></div>{selected?<PlayerCombatantDetails combatant={selected} playerId={playerId}/>:<EmptyState title="No visible combatants">Waiting for the DM to add or reveal combatants.</EmptyState>}</section></section>
+}

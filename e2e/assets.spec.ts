@@ -17,10 +17,11 @@ test('DM asset upload, metadata search, isolated preview, errors and deletion', 
   const encounterCanvas = page.locator('canvas:visible'), encounterElement = await encounterCanvas.elementHandle()
   await library(page,'3D Asset Library')
   await expect(page.getByText('No assets yet. Upload your first GLB model.')).toBeVisible()
-  await page.getByLabel('GLB file', { exact: false }).setInputFiles({ name: 'meshy-chair.glb', mimeType: 'model/gltf-binary', buffer: await makeTexturedGlb() })
+  await page.getByRole('button',{name:'Upload GLB',exact:true}).click();await page.getByLabel('GLB file', { exact: false }).setInputFiles({ name: 'meshy-chair.glb', mimeType: 'model/gltf-binary', buffer: await makeTexturedGlb() })
   await page.getByLabel('Upload asset name', { exact: true }).fill('Meshy oak chair')
   await page.getByLabel('Upload asset category', { exact: true }).selectOption('furniture')
   await page.getByLabel('Upload asset tags (comma separated)', { exact: true }).fill('oak,tavern')
+  await page.getByRole('button',{name:'Close Upload GLB',exact:true}).click();await expect(page.getByRole('button',{name:'Upload GLB',exact:true})).toBeFocused();await page.getByRole('button',{name:'Upload GLB',exact:true}).click();await expect(page.getByLabel('Upload asset name',{exact:true})).toHaveValue('Meshy oak chair');expect(await page.getByLabel('GLB file',{exact:false}).evaluate((input:HTMLInputElement)=>input.files?.[0]?.name)).toBe('meshy-chair.glb')
   // Pause the model response to make the loading indicator observable.
   let releaseFile!: () => void
   const fileGate = new Promise<void>(resolve => { releaseFile = resolve })
@@ -82,8 +83,7 @@ test('DM asset upload, metadata search, isolated preview, errors and deletion', 
   await expect(page.getByRole('combobox',{name:'Encounter',exact:true}).locator('option:checked')).toHaveText('Keep this battlefield')
   await library(page,'3D Asset Library')
   await page.locator('.asset-card').click(); await expect(preview.locator('canvas')).toBeVisible()
-  page.once('dialog', dialog => dialog.accept())
-  await page.getByRole('button', { name: 'Delete asset', exact: true }).click()
+  await page.getByRole('button',{name:'Asset actions',exact:true}).click();await page.getByRole('menuitem',{name:'Delete asset',exact:true}).click();await page.getByRole('dialog',{name:'Delete asset',exact:true}).getByRole('button',{name:'Delete asset',exact:true}).click()
   await expect(page.getByText('Asset deleted.', { exact: true })).toBeVisible()
   await expect(page.getByText('No assets yet. Upload your first GLB model.', { exact: true })).toBeVisible()
   expect(errors).toEqual([])

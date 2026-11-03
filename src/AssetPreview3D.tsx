@@ -1,3 +1,4 @@
+import {Button} from './ui'
 import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import { Component, useEffect, useLayoutEffect, useMemo, useRef, useState, useId, type ReactNode } from 'react'
@@ -60,5 +61,5 @@ export default function AssetPreview3D({ asset, normalize = false, architectural
   useEffect(() => () => { if (prepared?.model) disposeInstance(prepared.model) }, [prepared])
   if (error?.id === asset.id || prepared?.error) return <p role="alert">Preview failed: {error?.id === asset.id ? error.message : prepared?.error}</p>
   if (!prepared?.model) return <p role="status">Loading model preview…</p>
-  return <section className="asset-preview" aria-label="3D asset preview"><p>Drag to orbit · wheel to zoom · right-drag to pan</p><button onClick={() => setReset(n => n + 1)}>Reset preview camera</button><PreviewBoundary><div className="asset-preview-viewport"><Canvas frameloop="demand" camera={{ fov: 40 }}><PreviewScene model={prepared.model} reset={reset} /></Canvas></div></PreviewBoundary></section>
+  return <section className="asset-preview" aria-label="3D asset preview"><p>Drag to orbit · wheel to zoom · right-drag to pan</p><Button onClick={() => setReset(n => n + 1)}>Reset preview camera</Button><PreviewBoundary><div className="asset-preview-viewport"><Canvas frameloop="demand" camera={{ fov: 40 }}><PreviewScene model={prepared.model} reset={reset} /></Canvas></div></PreviewBoundary></section>
 }

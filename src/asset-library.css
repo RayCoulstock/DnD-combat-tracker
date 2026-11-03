@@ -3,3 +3,24 @@
 .miniature-dialog{position:fixed;inset:24px;background:#f7f5ef;overflow:auto;border:1px solid #b5af9f;border-radius:8px;box-shadow:0 0 0 30px #0009}.miniature-settings{max-width:800px;margin:auto;padding:24px}.miniature-settings button,.miniature-settings input,.miniature-settings select{padding:8px;margin:6px;border:1px solid #aaa;border-radius:5px;background:white;color:#282820}.miniature-settings label{display:block}.miniature-settings fieldset{border:1px solid #ccc}.miniature-settings [role=alert]{color:#a02b20}
 
 .miniature-action{margin:12px 24px;padding:9px 14px;border:1px solid #b5af9f;border-radius:6px;background:#fff;color:#282820;cursor:pointer}
+/* Phase 4 adoption; preview viewport sizes and shared renderer remain unchanged. */
+.asset-library.ledger-library{box-sizing:border-box;max-width:1600px;margin:auto;padding:24px;color:var(--ledger-ink);background:var(--ledger-bg);min-height:calc(100dvh - 120px)}
+.asset-library.ledger-library>header.ledger-library-heading{position:static;display:flex;min-height:0;height:auto;background:transparent;padding:0 0 16px;box-shadow:none;grid-template-columns:none;flex-wrap:wrap;align-items:center}
+.asset-library.ledger-library>header h1{font-size:26px;margin:4px 0;color:var(--ledger-ink)}
+.asset-library.ledger-library .asset-workspace{grid-template-columns:minmax(0,1.2fr) minmax(320px,1fr);gap:20px;align-items:start}
+.asset-library.ledger-library .asset-workspace[hidden]{display:none}
+.asset-library.ledger-library .asset-grid{grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:12px}
+.asset-library.ledger-library .asset-card{display:flex;align-items:stretch;justify-content:flex-start;flex-direction:column;padding:12px;gap:8px;background:var(--ledger-card);border-color:var(--ledger-line);text-align:left;font-size:13px;overflow-wrap:anywhere}
+.asset-library.ledger-library .asset-card[aria-pressed=true]{outline:2px solid var(--ledger-accent);outline-offset:1px}
+.asset-library.ledger-library .asset-card>span:not(.asset-placeholder){color:var(--ledger-muted);font-size:12px}
+.asset-library.ledger-library .asset-placeholder{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;min-height:110px;border-radius:8px;background:var(--ledger-well);color:var(--ledger-party);font-size:12px;border:1px solid var(--ledger-line)}
+.asset-library.ledger-library .asset-thumb-monster{background:var(--ledger-accent-soft);color:var(--ledger-accent)}.asset-library.ledger-library .asset-thumb-terrain{background:var(--ledger-ok-soft);color:var(--ledger-ok)}
+.asset-library.ledger-library .asset-details{background:var(--ledger-card);padding:16px;border:1px solid var(--ledger-line);border-radius:12px}.asset-detail-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}.asset-detail-heading h2{margin:4px 0}
+.asset-library.ledger-library fieldset{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;border-color:var(--ledger-line)}
+.asset-library.ledger-library fieldset>h3,.asset-library.ledger-library fieldset>p,.asset-library.ledger-library fieldset>fieldset{grid-column:1/-1}.asset-library.ledger-library fieldset>label{min-width:0;margin:0}
+.asset-library.ledger-library .asset-search{margin:16px 0}.asset-library.ledger-library .asset-search .ledger-button{padding:8px 12px}
+.asset-upload-progress{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px;background:var(--ledger-warn-soft);color:var(--ledger-warn);border-radius:10px}.asset-upload-progress progress{max-width:100%}
+.asset-upload.ledger-form{background:transparent;padding:0}.asset-upload.ledger-form fieldset{display:grid;gap:12px}.asset-upload.ledger-form fieldset label{margin:0}
+.asset-library.ledger-library .asset-preview{margin:12px 0;background:#303635}.asset-library.ledger-library .asset-preview p{color:white}
+@media(max-width:899px){.asset-library.ledger-library{padding:16px}.asset-library.ledger-library .asset-workspace{grid-template-columns:minmax(0,1fr)}.asset-library.ledger-library .asset-workspace>section:first-child{max-height:420px;overflow:auto;padding:4px}}
+@media(max-width:599px){.asset-library.ledger-library{padding:12px}.asset-library.ledger-library fieldset{grid-template-columns:minmax(0,1fr)}.asset-library.ledger-library .asset-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.asset-library.ledger-library .asset-preview-viewport{height:280px}.asset-library.ledger-library .asset-preview{min-height:360px}}

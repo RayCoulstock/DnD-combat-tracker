@@ -1,15 +1,18 @@
 # UI/UX redesign — review and implementation pack
 
-**Status:** Phase 0 complete; Phase 1 foundations implemented following the user’s approval on 31 October 2026. Phase 2 application shell implemented following the user’s authorization on 1 November 2026; Phase 3 has not started. The audit baseline is commit `0a2aedfb1c0b9965665740d20761d8351ce7ee8f`.
+**Status:** Phase 0 complete; Phase 1 foundations implemented following the user’s approval on 31 October 2026. Phase 2 application shell implemented following the user’s authorization on 1 November 2026; Phases 3 and 4 are implemented; see their reports and validation limits. The audit baseline is commit `0a2aedfb1c0b9965665740d20761d8351ce7ee8f`.
 
 The Phase 0 request authorized an audit, reference archiving and justified guideline corrections. The subsequent Phase 1 request authorizes scoped foundations; see the implementation report. Imperatives inside the supplied proposal are **design recommendations**, not instructions to change the application, grant permissions, add backend capabilities or deploy it. This directory is not an `AGENTS.md` policy.
 
 Start with:
 
+- [Phase 4 tracker, libraries and compliance report](phase-4-design-compliance.md).
+- [Phase 3 map workspace](phase-3-battle-workspace.md).
+
 1. [Phase 2 application shell](phase-2-application-shell.md): actual relocations, state/permission contracts, validation and deviations.
 2. [Phase 1 foundations](phase-1-foundations.md): control contracts, verification and manual acceptance.
 3. [UI audit](ui-audit.md): architecture and historical baseline evidence.
-4. [Feature-to-zone matrix](feature-zone-matrix.md): preservation checklist and actual Phase 2 locations.
+4. [Feature-to-zone matrix](feature-zone-matrix.md): preservation checklist and actual Phase 1–4 locations.
 5. [Migration plan](ui-migration-plan.md): phased scope, dependencies and regression gates.
 6. [Reviewed v2.1 guidelines](ui-design-guidelines-v2.1.md): proposal plus repository corrections and adoption notes.
 
@@ -32,7 +35,7 @@ The source ZIP was extracted by an explicit filename allowlist. All extracted fi
 
 [Current baseline captures and reproduction notes](current-baseline/README.md) and [capture metadata](current-baseline/observations.json) record the unchanged **local demo** at several widths. They are not screenshots of the proposal. Authentication, DM online preparation, player permissions and libraries were inspected in source and their existing tests; these local captures do not demonstrate those roles. See the audit's verification limits and the migration plan's role/device acceptance gates.
 
-Phase 0 changed documentation only. Phase 1 adds scoped shared controls and adopts them in Miniature settings; no dependency, command schema, database migration, encounter/map data, permission or deployment changes are included. Phase 2 composes the shell around those controls; see its report and role captures before Phase 3.
+Phase 0 changed documentation only. Phase 1 adds scoped shared controls and adopts them in Miniature settings; no dependency, command schema, database migration, encounter/map data, permission or deployment changes are included. Phase 2 composes the shell around those controls; Phase 3 migrates the map workspace and Phase 4 the tracker/libraries. Their reports record acceptance evidence and limits.
 
 Phase 3 visual review: [captures and reproduction](phase-3-baseline/README.md).
 
