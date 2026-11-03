@@ -307,3 +307,10 @@ C1–C3 and D1–D6 now wrap the existing `BattleMap3D` scene for DM/local and d
 - `[` and `]` toggle the map roster and inspector, with field/modal/IME guards and help-sheet disclosure. Existing editor keys are preserved. The other proposed §9 shortcuts remain reservations; this phase does not add global Save, Next turn or new geometry gestures.
 
 No backend/schema/dependency migration, player preview mode, new editing tool, Phase 4 tracker/library restyle or deployment is included.
+
+
+## 16. Phase 4 tracker and library adoption — 2 November 2026
+
+Tracker now uses an expanded-by-default, remembered C1 initiative roster and primary C2 combatant sheet. Supported encounter editing is an E3 drawer; contextual/model/library/campaign actions live in the sheet header/E1. Player Tracker/C3 render only projected permitted information. Combatant Library keeps its existing E4 context with grouped import/JSON forms and explicit saved/draft status. Asset management remains A3/C2, pickers E4, upload E3. Both libraries reuse Phase 1 controls and shared feedback/confirmation patterns.
+
+Asset cards use category-labelled fallback tiles because the existing API has no generated thumbnails; the actual selected preview retains the shared GLB loader. No per-card binary downloads, new persistence model or authorization changes are introduced. Complete supported stat-block content takes priority over abbreviated mockup examples. See [Phase 4 compliance report](phase-4-design-compliance.md) for verification, manual acceptance and separately listed remaining UX work.

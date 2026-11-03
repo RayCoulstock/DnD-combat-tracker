@@ -1,6 +1,6 @@
-# Feature-to-zone preservation matrix — Phase 0
+# Feature-to-zone preservation matrix
 
-**Baseline:** `0a2aedf`, reviewed 31 October 2026. **Status:** proposed destinations except the implemented Phase 1/2 locations recorded below. Each existing control family below must remain discoverable before its old entry point is removed. Repeated rows of characters, floors, assets or invitations are represented by a family; every named field/variant within a family must survive. Read this with the [audit](ui-audit.md) and [migration plan](ui-migration-plan.md).
+**Baseline:** `0a2aedf`, reviewed 31 October 2026. **Status:** proposed destinations except the implemented Phase 1–4 locations recorded below. Each existing control family below must remain discoverable before its old entry point is removed. Repeated rows of characters, floors, assets or invitations are represented by a family; every named field/variant within a family must survive. Read this with the [audit](ui-audit.md) and [migration plan](ui-migration-plan.md).
 
 ## Phase 1 adoption
 
@@ -47,6 +47,18 @@ The detailed inventory below remains the preservation checklist. This table reco
 | X01, X03–X06 | Existing modal top layer and role/connection gates; P1 Menu/Popover/InspectorSection/Button/StatusPill plus CanvasDock. Optional collapse preferences do not replace local templates or server state. |
 
 See [Phase 3 report](phase-3-battle-workspace.md) for exceptions, testing and acceptance steps. Inventory IDs above group families rather than redefining the detailed rows.
+
+## Phase 4 actual locations
+
+| Inventory family | Actual Phase 4 location / owner |
+| --- | --- |
+| T01–T03, T12–T15 | B2/B6 progression unchanged; App C1 expanded initiative roster and C2 sheet, remembered collapse, selection/active-turn semantics. PlayerTracker uses the same read-only hierarchy. |
+| T16–T24, A13–A15, C10–C11, C16 | C2 sheet header and Combatant actions: edit → E3 CombatantEditor, duplicate, artwork, remove → E4 confirmation, model → existing E4 MiniatureSettings, library/campaign → E4. C3 map actions retain existing handlers. |
+| C01–C16 | A3/B6 → E4 CombatantLibrary; search/category/campaign/archive toolbar, identity list/detail, grouped import/JSON, model assignment, metadata save/duplicate/archive, saved/full/duplicate placement options. Unsaved discard → E4 confirmation. Campaign state remains explicit per-character E4. |
+| A01–A12 | A3/C2 AssetLibrary management or existing E4 picker; labelled GLB cards and selected shared preview, search/category/paging, metadata/calibration accordion, actions-menu deletion confirmation. Upload → retained E3 drawer with external progress/cancel status. Built-ins and architectural-role selection remain. |
+| X01–X07 | Phase 1 Button/Menu/Popover/Drawer/InspectorSection/StatusPill reused in touched flows; shared Feedback/EmptyState/useConfirmation. Conditions use E2 Popover; responsive library forms and internal tracker scrolling. Legacy map/editor synchronous confirmations remain unchanged. |
+
+See [Phase 4 compliance report](phase-4-design-compliance.md) for permissions, preservation, tests and remaining UX checks. Detailed baseline rows below describe original capabilities; this table is the current destination overlay.
 
 ## Legend and rules
 

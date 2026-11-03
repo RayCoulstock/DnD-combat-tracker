@@ -185,3 +185,8 @@ Phase 0 changes only `docs/ui/`. The test/capture record below is updated after 
 The original findings above remain the Phase 0 evidence. Phase 3 implements C1–C3 and D1–D6 around the retained scene and command owners; see [Battle Map workspace](phase-3-battle-workspace.md) and [visual review](phase-3-baseline/README.md). Roster collapse, contextual combatant controls, grouped retained inspector forms and a single hint owner address U03/U10. Optional UI preferences are isolated from template data. Expanded mode now retains inspector visibility explicitly instead of using a second fullscreen-only inspector flag.
 
 Laptop overlays exposed a concrete risk missed by fixed mockups: the canvas can remain full-width while an inspector covers its right edge. Right-side docks and object-toolbar bounds therefore use the available visible area, with browser click-actionability checks in addition to rectangle assertions. The remaining manual cross-browser/touch/screen-reader/zoom checks are listed in the implementation report. No authorization, schema, asset pipeline or multiplayer protocol change is required.
+
+
+## Phase 4 follow-through — 2 November 2026
+
+The historical inventory above remains the baseline. [Phase 4](phase-4-design-compliance.md) now adopts the tracker sheet/roster, read-only projected player sheet, library cards/forms, upload drawer and shared feedback/confirmations. Owners of encounter commands, multiplayer state, imports and GLB resources remain in place. The [matrix](feature-zone-matrix.md#phase-4-actual-locations) records relocated controls; the compliance report distinguishes completed work from remaining device/assistive-technology checks and thumbnail infrastructure.

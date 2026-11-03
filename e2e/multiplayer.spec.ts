@@ -91,7 +91,16 @@ test('local ledger, DM and two browsers, camera isolation and offline camera', a
       await expect(player.getByRole('button', { name: 'Invite player' })).toHaveCount(0)
     }
     await openSetup(page);await page.getByRole('combobox', { name: /^Controlled by / }).first().selectOption({ label: 'Player 1' })
-    await closeSetup(page);await expect(players[0].locator('.online-card').filter({ hasText: '10/10 HP · AC 15' })).toBeVisible()
+    await closeSetup(page)
+    const retainedPlayerCanvas=await players[0].locator('canvas').elementHandle()
+    await players[0].getByRole('button',{name:'Tracker',exact:true}).click()
+    await expect(players[0].locator('.online-card:visible').filter({ hasText: '10/10 HP · AC 15' })).toBeVisible()
+    await expect(players[0].getByRole('button',{name:'Combatant actions',exact:true})).toHaveCount(0)
+    await expect(players[0].getByRole('button',{name:'Libraries',exact:true})).toHaveCount(0)
+    for(const width of [1280,768,390]){await players[0].setViewportSize({width,height:900});const collapse=players[0].getByRole('button',{name:'Collapse initiative roster',exact:true});if(await collapse.isVisible())await collapse.click();await expect(players[0].getByRole('button',{name:'Show initiative roster',exact:true})).toBeInViewport();expect(await players[0].evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)}
+    await players[0].setViewportSize({width:1400,height:1000});await players[0].getByRole('button',{name:'Battle map',exact:true}).click()
+    expect(await retainedPlayerCanvas!.evaluate(node=>node===document.querySelector('canvas'))).toBe(true)
+    await players[1].getByRole('button',{name:'Tracker',exact:true}).click();await expect(players[1].locator('.online-card:visible')).toContainText('Other statistics are private.');await expect(players[1].locator('.online-card:visible')).not.toContainText('AC 15');await expect(players[1].getByText('Private monster',{exact:true})).toHaveCount(0);await players[1].getByRole('button',{name:'Battle map',exact:true}).click()
     // A real floor click moves the assigned token, and all authorised views receive it.
     const canvas = players[0].locator('canvas')
     const box = await canvas.boundingBox(); expect(box).not.toBeNull()
