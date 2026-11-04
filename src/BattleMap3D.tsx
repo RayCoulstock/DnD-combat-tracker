@@ -1,3 +1,4 @@
+import TerrainLayer3D from './TerrainLayer3D'
 import FloorSurface3D from './FloorSurface3D'
 import {surfaceMode} from '../shared/floor-surface'
 import {CombatControls,ManualMoves,TurnOrderMenu} from './CombatControls'
@@ -161,6 +162,7 @@ function LevelScene({ onPlaceSquare, combatants, map, selectedId, activeId, onSe
     </mesh>
     {dungeonMap&&surfaceMode(dungeonMap)==='texture'&&dungeonMap.floorSurface?.texture&&<FloorSurface3D texture={dungeonMap.floorSurface.texture} width={map.width} height={map.height} scope={assetScope} context={assetContext}/>}
     {dungeonMap&&surfaceMode(dungeonMap)==='solid'&&dungeonMap.floorSurface?.solidColor&&<mesh name="floor-solid" position={[0,-.002,0]} rotation={[-Math.PI/2,0,0]} raycast={()=>null}><planeGeometry args={[map.width,map.height]}/><meshBasicMaterial color={dungeonMap.floorSurface.solidColor} toneMapped={false}/></mesh>}
+    {dungeonMap?.terrainPaint?.length?<TerrainLayer3D strokes={dungeonMap.terrainPaint} width={map.width} height={map.height} scope={assetScope} context={assetContext}/>:null}
     {dungeonMap?.floorImage && surfaceMode(dungeonMap)==='image' && <FloorImage3D image={dungeonMap.floorImage} width={map.width} height={map.height} scope={assetScope} context={assetContext} />}
     {((dungeonMap&&surfaceMode(dungeonMap)==='image'?dungeonMap.floorImage?.showGrid:undefined) ?? map.showGrid) && <BattlefieldGrid width={map.width} height={map.height} />}
     {!dungeonMap && <group>

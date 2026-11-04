@@ -137,3 +137,8 @@ A PR description should list the matrix IDs moved, screenshots for relevant size
 ## Post-redesign Milestone 5.7
 
 [Floor textures](../milestone-5.7-floor-textures.md) is feature work after Milestone 5.6. Migration 013 adds image-asset metadata only; optional per-level floorSurface settings extend map JSON through normal serialization. Apply the migration before starting the API, and retain database/media backup conventions. No binary relocation, renderer replacement or geometry migration is required. Regression gates include legacy calibration, inactive settings, UV aspect/rotation, independent stacked floors, reference deletion/history, authorization, reload/reconnect and bounded resource cleanup. Roll back application binaries only with awareness that old strict readers cannot consume newly configured floorSurface fields. No automatic deployment is authorized.
+
+
+## Post-redesign Milestone 5.7.1
+
+[Floor inspector repair and terrain painting](../milestone-5.7.1-terrain-painting.md) is implemented as independently tested A (form/modal repair) and B (terrain) increments. Optional terrainPaint extends existing floor geometry JSON; there is no new SQL migration or binary store. Deploy through normal review/backup procedures only after the layout, gesture, mask, history, resource, permission and full-regression gates pass. Older strict readers do not understand terrain fields; retain compatible binaries for rollback or export copies before editing. Existing maps are not rewritten. The report records compositing/erase semantics, payload/resource limits and manual acceptance. No deployment is included.
