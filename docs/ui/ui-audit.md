@@ -214,3 +214,5 @@ The historical party-preset gap is addressed by [Group Presets](../milestone-5.6
 ## Milestone 6.0A follow-through
 
 Inspection confirmed one demand-rendered scene, legacy white ambient/directional lights, 1024px directional shadows, ACES/sRGB defaults and unlit floor artwork. Optional atmosphere now adds explicit map/floor controls around these owners. Legacy maps retain their old path; opted-in floor art uses a shared lit adapter with its existing UV/alpha/clipping and a legibility fill. Stacked floors intentionally share the active-floor environment. [Architecture](../milestone-6.0-lighting.md) records limitations, privacy/resource risks and the three review increments.
+
+6.0B adds point-light editing within the existing palette/Selection inspector. Full-width fields reuse the repaired lighting form. Attachments resolve existing transforms and permissions; no GLB binaries or player capabilities change. Point shadow budgets are viewer-local and deliberately small.

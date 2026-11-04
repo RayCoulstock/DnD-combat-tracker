@@ -1,3 +1,4 @@
+import {resolveLight,reconcileLightParents,permittedLightSources} from './lightingState.ts'
 import {groupAddSchema,type GroupInsertionResult} from './groupPresets.ts'
 import {prepareTurnOrder,reconcileTurnOrder,nextTurn,removeFromOrder,type TurnOrder} from './combatOrder.ts'
 import {transitionRoute} from './transitions.ts'
@@ -88,7 +89,8 @@ export type CommandEnvelope = z.infer<typeof envelopeSchema>
 export class DomainError extends Error {
   constructor(public code: 'FORBIDDEN' | 'INVALID' | 'CONFLICT' | 'NOT_FOUND' | 'UNAUTHENTICATED' | 'SESSION_ENDED', message: string,public groupResult?:GroupInsertionResult) { super(message) }
 }
-export function applyCommand(state: EncounterState, actor: Actor, command: GameCommand, now=Date.now()): EncounterState {
+export function applyCommand(state:EncounterState,actor:Actor,command:GameCommand,now=Date.now()):EncounterState{return reconcileLightParents(state,applyCommandCore(state,actor,command,now),command.type==='combatant.remove')}
+function applyCommandCore(state: EncounterState, actor: Actor, command: GameCommand, now=Date.now()): EncounterState {
   if(command.type==='tactical.create'||command.type==='tactical.update'||command.type==='tactical.remove'||command.type==='tactical.clear'){
     const records=activeTactical(state.tactical,now)
     if(command.type==='tactical.clear'){if(actor.role!=='dm')throw new DomainError('FORBIDDEN','Only the DM may clear shared overlays.');return{...state,tactical:[]}}
@@ -195,7 +197,9 @@ export function applyMapEdit(state: EncounterState, actor: Actor, command: MapCo
   if (actor.role !== 'dm') throw new DomainError('FORBIDDEN', 'Only the DM may edit maps.')
   try {
     if (!state.dungeonMap?.level && command.type === 'map.floorImage.set' && Object.values(state.battleMap.tokens).some(p => p.x >= command.width || p.z >= command.height)) throw new Error('Resize would move combatants outside the map. Move them inside the new bounds first.')
-    const result = editMap({ document: state.dungeonMap ?? null, width: state.battleMap.width, height: state.battleMap.height }, history, command)
+    let editCommand:MapCommand=command
+    if(command.type==='map.lighting.source.detach'){const source=state.dungeonMap?.lighting?.sources?.find(s=>s.id===command.id);if(!source)throw new Error('Light no longer exists.');const resolved=resolveLight(source,state),{attachment,...plain}=source;void attachment;editCommand={type:'map.lighting.source.set',source:{...plain,floorId:resolved.floorId,position:resolved.position}}}
+    const result = editMap({ document: state.dungeonMap ?? null, width: state.battleMap.width, height: state.battleMap.height }, history, editCommand)
     if (!state.dungeonMap?.level && (command.type === 'map.undo' || command.type === 'map.redo') && (state.dungeonMap?.floorImage || result.frame.document?.floorImage) && Object.values(state.battleMap.tokens).some(p => p.x >= result.frame.width || p.z >= result.frame.height)) throw new Error('Undo/redo would move combatants outside the map. Move them inside the restored bounds first.')
     let next: EncounterState = { ...state, tactical:state.tactical?.map(r=>({...r,floorId:r.floorId??primaryLevelId(state.dungeonMap)})), combatants:state.combatants.map(c=>({...c,floorId:c.floorId??primaryLevelId(state.dungeonMap)})), dungeonMap: result.frame.document ?? undefined,
       battleMap: reconcileBattleMap({ ...state.battleMap, width: result.frame.width, height: result.frame.height }, state.combatants.map(c => c.id)),
@@ -211,6 +215,7 @@ export function applyMapEdit(state: EncounterState, actor: Actor, command: MapCo
       }
     }
     next=reconcileLevelTokens({...next,battleMap:{...next.battleMap,tokens:state.battleMap.tokens}})
+    next=reconcileLightParents(state,next,command.type==='map.prop.remove'||command.type==='map.scenery.remove'||command.type==='map.level.remove')
     return { state: next, history: result.history }
   } catch (error) { throw new DomainError('INVALID', error instanceof Error ? error.message : 'Invalid map edit.') }
 }
@@ -228,7 +233,8 @@ export function projectEncounter(state: EncounterState, actor: Actor): Encounter
   })
   const ids = new Set(combatants.map(c => String(c.id)))
   const owned = combatants.filter(c => c.ownerId === actor.id)
-  const dungeonMap=playerDungeon(state.dungeonMap)
+  let dungeonMap=playerDungeon(state.dungeonMap)
+  if(dungeonMap?.lighting)dungeonMap={...dungeonMap,lighting:{...dungeonMap.lighting,sources:permittedLightSources(state,ids)}}
   const levels=dungeonMap?dungeonLevels(dungeonMap):[]
   return { ...state, ...(state.turnOrder?{turnOrder:{...state.turnOrder,manualIds:state.turnOrder.manualIds.filter(id=>ids.has(String(id))),completedIds:state.turnOrder.completedIds.filter(id=>ids.has(String(id)))}}:{}), levelsHidden:Boolean(state.dungeonMap&&!dungeonMap), tactical:state.tactical?.filter(r=>levelVisible(state,r.floorId)).map(r=>({...r,floorId:r.floorId??primaryLevelId(state.dungeonMap)})), dungeonMap, mapUndoDepth: undefined, mapRedoDepth: undefined, combatants, selectedId: null, activeId: ids.has(String(state.activeId)) ? state.activeId : null,
     usedAbilities: Object.fromEntries(Object.entries(state.usedAbilities).filter(([key]) => owned.some(c => key.startsWith(`${c.id}:`)))),
