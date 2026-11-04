@@ -88,3 +88,11 @@ The new server coverage additionally verifies one committed revision per stroke,
 - B assets/tests: new Mud/Sand/Water PNGs and the existing CC0 license; `shared/terrain.test.ts`, `server/terrain-resources.test.ts`, `server/tests/terrain-painting.test.ts`, `e2e/terrain-painting.spec.ts`. UI guidelines, audit, migration plan and feature matrix record actual ownership.
 
 Changes remain uncommitted for review on `feature/milestone-5-7-1-terrain-painting`; no automatic deployment occurred.
+
+## CI follow-up — deterministic scenery selection and inspector readiness
+
+A later CI run timed out at the first scenery transform field because the preceding map click had not exposed Selected scenery properties. The test projected the floor anchor under a one-triangle GLB fixture, rather than a triangle interior. Both normal and fullscreen scenery selection now use the same live-mesh helper: resolve the active renderer and interactive floor, include the rendered model/world transforms, and click a triangle interior through the canvas locator's actionability checks. The test explicitly verifies selection before filling transform fields.
+
+Repeating the scenario also exposed a setup race: the image helper could inspect an absent, asynchronously mounted floor inspector, skip mode selection, then wait for an image section that remained hidden. It now waits for the floor surface and its mode control before opening image settings.
+
+Validation: lint and type checks passed; `e2e/levels.spec.ts` and `e2e/floor-images.spec.ts` each passed twice (`--repeat-each=2`, four complete runs, 5.5 minutes). Application code, domain assertions, rate limits and the original 120-second test timeout are unchanged. The full 35-test result above records milestone validation; this follow-up reruns the affected workflows repeatedly rather than claiming a new full-suite execution.

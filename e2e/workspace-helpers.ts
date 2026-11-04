@@ -1,6 +1,24 @@
 import {expect,type Page} from '@playwright/test'
 export async function expandEditor(page:Page){const inspector=page.locator('.inspector:visible');for(const text of ['New blank map','Map file & templates','Floor']){const summary=inspector.locator('summary').filter({hasText:text==='Floor'?/^Floor\s*(stone|wood|dirt|grass|lava)$/:text});if(await summary.count()&&!(await summary.locator('..').evaluate(el=>(el as HTMLDetailsElement).open)))await summary.click()}}
-export async function openInspectorSection(page:Page,title:string){if(title==='Floor Image'){const surface=page.locator('.inspector:visible [data-floor-image]:visible').getByLabel('Surface mode',{exact:true});const parent=page.locator('.inspector:visible summary:visible').filter({hasText:/^Floor Surface/});if(await parent.count()&&!await parent.locator('..').evaluate(el=>(el as HTMLDetailsElement).open))await parent.click();if(await surface.count()&&await surface.inputValue()!=='image')await surface.selectOption('image')} const summary=page.locator('.inspector:visible summary:visible').filter({hasText:title});await expect(summary).toBeVisible();if(!await summary.locator('..').evaluate(node=>(node as HTMLDetailsElement).open))await summary.click()}
+export async function openInspectorSection(page:Page,title:string){
+ if(title==='Floor Image'){
+  // Creating a server-backed map returns before its inspector mounts. Wait for
+  // that surface before changing mode; skipping a missing control leaves the
+  // image section permanently hidden rather than merely slow to appear.
+  const floor=page.locator('.inspector:visible [data-floor-image]:visible')
+  await expect(floor).toBeVisible()
+  const parent=floor.locator('summary').filter({hasText:/^Floor Surface/})
+  await expect(parent).toBeVisible()
+  if(!await parent.locator('..').evaluate(el=>(el as HTMLDetailsElement).open))await parent.click()
+  const surface=floor.getByLabel('Surface mode',{exact:true})
+  await expect(surface).toBeVisible()
+  if(await surface.inputValue()!=='image')await surface.selectOption('image')
+ }
+ const summary=page.locator('.inspector:visible summary:visible').filter({hasText:title})
+ await expect(summary).toBeVisible()
+ if(!await summary.locator('..').evaluate(node=>(node as HTMLDetailsElement).open))await summary.click()
+}
+
 export async function mapAction(page:Page,name:string){
  if(['Draw wall','Wall line','Rectangle room','Corridor'].includes(name)){await page.getByRole('button',{name:'Wall tools',exact:true}).click();await page.getByRole('menuitem',{name,exact:true}).click();return}
  if(['Expand Map','Browser fullscreen','Exit browser fullscreen','Show map inspector','Hide map inspector'].includes(name)){await page.getByRole('button',{name:'Map view',exact:true}).click();await page.getByRole('menuitem',{name,exact:true}).click();return}
@@ -52,4 +70,38 @@ export async function battlefieldView(page:Page){
   }
   throw Error('No mounted battlefield camera')
  })
+}
+
+// GLB fixtures can be a single upright triangle: the floor anchor lies on its
+// edge, not a reliable visible hit. Select an interior point of the live mesh,
+// including its instance transform and active-floor elevation.
+export async function clickSceneryTriangle(page:Page){
+ const canvas=page.locator('.battlefield-wrap canvas:visible')
+ let point:{x:number;y:number;z:number}|null=null
+ await expect.poll(async()=>{
+  point=await canvas.evaluate(async node=>{
+   const urls=[...new Set(performance.getEntriesByType('resource').map(e=>e.name).filter(n=>n.includes('/@react-three_fiber.js')))].reverse()
+   for(const url of urls){
+    const module=await import(/* @vite-ignore */url),state=module._roots.get(node)?.store.getState();if(!state?.internal.active)continue
+    state.scene.updateMatrixWorld(true)
+    let result:{x:number;y:number;z:number}|null=null
+    state.scene.traverse((group:import('three').Object3D)=>{
+     if(result||group.name!=='scenery-placement-transform')return
+     let level:import('three').Object3D|null=group;while(level&&!level.userData.levelId)level=level.parent
+     if(!level?.userData.levelInteractive)return
+     group.traverse(child=>{
+      if(result)return;const mesh=child as import('three').Mesh,position=mesh.geometry?.attributes.position,index=mesh.geometry?.index
+      if(!mesh.isMesh||!mesh.visible||!position||position.count<3)return
+      const a=index?.getX(0)??0,b=index?.getX(1)??1,c=index?.getX(2)??2
+      const p=mesh.position.clone().set((position.getX(a)+position.getX(b)+position.getX(c))/3,(position.getY(a)+position.getY(b)+position.getY(c))/3,(position.getZ(a)+position.getZ(b)+position.getZ(c))/3).applyMatrix4(mesh.matrixWorld)
+      result={x:p.x,y:p.y,z:p.z}
+     })
+    })
+    return result
+   }
+   return null
+  })
+  return point!==null
+ },{message:'Wait for a rendered scenery triangle on the interactive floor'}).toBe(true)
+ await clickBattlefield(page,point!)
 }
