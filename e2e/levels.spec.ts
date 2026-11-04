@@ -5,7 +5,7 @@ import {test,expect,type Page} from '@playwright/test'
 import {randomUUID} from 'node:crypto'
 import {makeFloorImage} from '../test-fixtures/floor-image'
 import {makeTexturedGlb} from '../test-fixtures/glb'
-import {expandEditor,projectBattlefield} from './workspace-helpers'
+import {expandEditor,projectBattlefield,clickSceneryTriangle} from './workspace-helpers'
 async function api(page:Page,path:string,body?:unknown){return page.evaluate(async({path,body})=>{
  const{csrf}=await(await fetch('/api/session')).json();const result=await fetch('/api'+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:body===undefined?undefined:JSON.stringify(body)});if(!result.ok)throw Error(await result.text());return result.json()
 },{path,body})}
@@ -36,8 +36,8 @@ test('three populated levels retain images, geometry, transforms, tokens, drafts
   const asset=await page.evaluate(async bytes=>{const{csrf}=await(await fetch('/api/session')).json(),form=new FormData();form.set('metadata',JSON.stringify({name:'Level barrel',category:'furniture'}));form.set('file',new Blob([new Uint8Array(bytes)]),'barrel.glb');const result=await fetch('/api/assets',{method:'POST',headers:{'X-CSRF-Token':csrf},body:form});if(!result.ok)throw Error(await result.text());return result.json()},Array.from(await makeTexturedGlb()))
   await editor.getByRole('button',{name:'Add Object',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Add Object',exact:true});await dialog.locator('.asset-card').filter({hasText:'Level barrel'}).click();await dialog.getByRole('button',{name:'Use this model',exact:true}).click();await clickCell(page,12.5,6.5)
   await expect(page.locator('[data-scenery-state=ready]')).toHaveCount(1)
-  await editor.getByRole('button',{name:'Select',exact:true}).click();await clickCell(page,12.5,6.5)
-  const properties=editor.getByRole('region',{name:'Selected scenery properties',exact:true});await properties.getByLabel('Scenery rotation (degrees)',{exact:true}).fill('45');await properties.getByLabel('Scenery scale',{exact:true}).fill('2');await properties.getByLabel('Scenery vertical offset',{exact:true}).fill('1.25');await properties.getByRole('button',{name:'Apply scenery transform',exact:true}).click()
+  await editor.getByRole('button',{name:'Select',exact:true}).click();await expect(editor.getByRole('button',{name:'Select',exact:true})).toHaveAttribute('aria-pressed','true');await clickSceneryTriangle(page)
+  const properties=editor.getByRole('region',{name:'Selected scenery properties',exact:true});await expect(properties).toBeVisible();await properties.getByLabel('Scenery rotation (degrees)',{exact:true}).fill('45');await properties.getByLabel('Scenery scale',{exact:true}).fill('2');await properties.getByLabel('Scenery vertical offset',{exact:true}).fill('1.25');await properties.getByRole('button',{name:'Apply scenery transform',exact:true}).click()
   await expect.poll(async()=>(await api(page,path+'/snapshot')).state.dungeonMap.props[0].scale).toBe(2)
   await editor.getByRole('button',{name:'Duplicate Ground Floor',exact:true}).click()
   const copy=editor.getByRole('region',{name:'Level: Ground Floor copy',exact:true});await copy.getByLabel('Ground Floor copy name',{exact:true}).fill('Cellar');await copy.getByLabel('Ground Floor copy elevation',{exact:true}).fill('-10');await copy.getByRole('button',{name:'Apply level settings',exact:true}).click()

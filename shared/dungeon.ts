@@ -1,3 +1,4 @@
+import {terrainPaintSchema,terrainStrokeSchema} from './terrain.ts'
 import {floorSurfaceSchema} from './floor-surface.ts'
 import {transitionSchema} from './transitions.ts'
 import { floorImageSchema } from './floor-image.ts'
@@ -18,7 +19,7 @@ export const proceduralPropSchema = z.object({ id: objectId, type: z.enum(propTy
 export type ProceduralProp = z.infer<typeof proceduralPropSchema>
 export const propSchema = z.discriminatedUnion('type', [proceduralPropSchema, scenerySchema])
 const geometryShape = z.object({
-  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6)]), floorImage: floorImageSchema.optional(), floorSurface:floorSurfaceSchema.optional(), id: objectId, name: z.string().trim().min(1).max(150), width: size, height: size,
+  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6)]), floorImage: floorImageSchema.optional(), floorSurface:floorSurfaceSchema.optional(), terrainPaint:terrainPaintSchema.optional(), id: objectId, name: z.string().trim().min(1).max(150), width: size, height: size,
   theme: z.enum(themes), floors: z.array(cellSchema.extend({ type: z.enum(floorTypes) })).max(2500),
   walls: z.array(wallSchema).max(5100), doors: z.array(doorSchema).max(1000), props: z.array(propSchema).max(200),
 }).strict()
@@ -40,6 +41,7 @@ export function canonicalWall(x: number, z: number, edge: 'north' | 'east' | 'so
 const validateGeometry = (map: z.infer<typeof geometryShape>, ctx: z.RefinementCtx) => {
   const invalid = (message: string) => ctx.addIssue({ code: 'custom', message })
   if (map.floorImage && map.schemaVersion < 4) invalid('Floor images require map version 4.')
+  if(map.terrainPaint?.some(s=>s.points.some(p=>p.x>map.width||p.z>map.height)))invalid('Terrain stroke is outside floor bounds.')
   const seen = new Set<string>()
   for (const f of map.floors) {
     const key = `${f.x}:${f.z}`
@@ -67,6 +69,7 @@ const validateGeometry = (map: z.infer<typeof geometryShape>, ctx: z.RefinementC
 }
 export const dungeonSchema = documentShape.superRefine((map,ctx)=>{
   validateGeometry(map,ctx)
+  if(new TextEncoder().encode(JSON.stringify([map.terrainPaint,...(map.levels??[]).map(l=>l.terrainPaint)])).byteLength>300000)ctx.addIssue({code:'custom',message:'Terrain data exceeds the 300 KB map budget. Clear or simplify terrain before adding more strokes.'})
   if((map.level||map.levels)&&map.schemaVersion<5)ctx.addIssue({code:'custom',message:'Dungeon levels require map version 5.'})
   if(map.schemaVersion>=5&&!map.level)ctx.addIssue({code:'custom',message:'Version 5 requires primary level metadata.'})
   const ids=new Set([map.level?.id??LEGACY_LEVEL_ID]),elevations=[map.level?.elevationFeet??0]
@@ -109,7 +112,7 @@ export function reuseDungeonGeometry(previous:DungeonMap|undefined,next:DungeonM
  const prior=new Map(dungeonLevels(previous).map(l=>[l.id,l]))
  const levels=dungeonLevels(next).map(level=>{const old=prior.get(level.id);if(!old)return level
   const same=JSON.stringify(old)===JSON.stringify(level);if(same)return old
-  return {...level,...Object.fromEntries((['floors','walls','doors','props','floorImage','floorSurface'] as const).filter(k=>(k!=='floorSurface'||k in old||k in level)&&JSON.stringify(old[k])===JSON.stringify(level[k])).map(k=>[k,old[k]]))}
+  return {...level,...Object.fromEntries((['floors','walls','doors','props','floorImage','floorSurface','terrainPaint'] as const).filter(k=>(!['floorSurface','terrainPaint'].includes(k)||k in old||k in level)&&JSON.stringify(old[k])===JSON.stringify(level[k])).map(k=>[k,old[k]]))}
  })
  levelCache.set(next,levels);return next
 }
@@ -126,6 +129,8 @@ export function blankDungeon(id: string, name: string, width = 20, height = 20):
 // Legacy versions remain valid; scenery uses 2, architectural visuals 3, and floor images 4. Never downgrade a document.
 export const readDungeon = (value: unknown): DungeonMap => dungeonSchema.parse(value)
 export const mapCommandSchemas = [
+  z.object({type:z.literal('map.terrain.stroke'),stroke:terrainStrokeSchema}).extend({levelId:objectId.optional()}).strict(),
+  z.object({type:z.literal('map.terrain.clear')}).extend({levelId:objectId.optional()}).strict(),
   z.object({type:z.literal('map.floorSurface.set'),surface:floorSurfaceSchema}).extend({levelId:objectId.optional()}).strict(),
   z.object({type:z.literal('map.transition.set'),transition:transitionSchema}).strict(),
   z.object({type:z.literal('map.transition.remove'),transitionId:objectId}).strict(),
@@ -182,6 +187,8 @@ function editSingleMap(frame: MapFrame, history: MapHistory, command: MapCommand
     if (!map) throw new Error('Create or load a dungeon map first.')
     const requireId = (items: { id: string }[], id: string) => { if (!items.some(v => v.id === id)) throw new Error('Map object no longer exists.') }
     switch (command.type) {
+      case 'map.terrain.stroke': map.terrainPaint=terrainPaintSchema.parse([...(map.terrainPaint??[]),command.stroke]); break
+      case 'map.terrain.clear': delete map.terrainPaint; break
       case 'map.floorSurface.set': map.floorSurface=command.surface; break
       case 'map.floorImage.set':
         if(map.floorSurface)map.floorSurface={...map.floorSurface,mode:command.image?'image':'solid'};

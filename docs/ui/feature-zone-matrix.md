@@ -384,3 +384,18 @@ The Phase 0 party-preset reservation is now fulfilled by this separately authori
 | Surface history, templates and import/export | Existing D3 history and C3 Map/B5 file workflows | Existing map serialization/history and image reference tables, including inactive settings |
 
 Painted terrain remains in Editing → Floor and the existing D4 Floor tool. This is geometry/terrain paint; Floor Surface is a level-wide appearance overlay. No additional dock, chrome row or geometry engine is introduced.
+
+
+## Milestone 5.7.1 actual locations
+
+| Capability | Zone / implementation | Preserved contract |
+|---|---|---|
+| Readable base surface form, named thumbnail, explicit draft/saving/saved/error | C3 This level → Floor Surface; scoped vertical form | Existing image calibration, per-level drafts and explicit Apply |
+| Searchable selected-state texture picker and existing uploads | E4 native Modal, portalled to body; reused TextureLibrary | Escape closes search/picker; focus returns to invoker; no inspector reflow |
+| Texture paint / terrain erase / legacy floor-cell paint | D4 existing Floor location, primary button plus Floor tools flyout | Existing cell painting, room/corridor and global Erase remain separate/reachable |
+| Brush texture, diameter, opacity, softness, activation and confirmed clear | C3 This level → Terrain Painting | Brush changes affect next gesture; base surface remains independent |
+| Brush outline and gesture cancellation | Existing C2 editor interaction plane and D2 contextual hint | Left/pen/single-touch edit; middle/right/modifier navigation and Escape cancel |
+| Stroke/erase/clear undo and redo | Existing D3 history | One gesture is one revision/history entry; no pointer-move broadcasts |
+| Mud, Sand and Shallow water starters | Existing texture picker/library | Local original static CC0 assets; no animated/procedural materials |
+
+Terrain renders as at most four cached mask/material passes per floor. It introduces no permanent toolbar, second scene or geometry edit. Terrain settings and current stroke references are projected with existing floor visibility rules.

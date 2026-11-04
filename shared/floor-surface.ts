@@ -1,6 +1,6 @@
 import {z} from 'zod'
-export const starterTextures=[{id:'builtin:stone',name:'Stone floor'},{id:'builtin:wood',name:'Wooden plank floor'},{id:'builtin:grass',name:'Grass ground'}] as const
-export const textureAssetId=z.union([z.uuid(),z.enum(['builtin:stone','builtin:wood','builtin:grass'])])
+export const starterTextures=[{id:'builtin:stone',name:'Stone floor'},{id:'builtin:wood',name:'Wooden plank floor'},{id:'builtin:grass',name:'Grass ground'},{id:'builtin:mud',name:'Mud'},{id:'builtin:sand',name:'Sand'},{id:'builtin:water',name:'Shallow water'}] as const
+export const textureAssetId=z.union([z.uuid(),z.enum(['builtin:stone','builtin:wood','builtin:grass','builtin:mud','builtin:sand','builtin:water'])])
 export const hexColor=z.string().regex(/^#[0-9a-fA-F]{6}$/)
 export const repeatingTextureSchema=z.object({assetId:textureAssetId,repeatEverySquares:z.number().finite().min(.25).max(50).default(2),rotation:z.union([z.literal(0),z.literal(90),z.literal(180),z.literal(270)]).default(0),brightness:z.number().finite().min(.1).max(2).default(1),tint:hexColor.default('#ffffff'),offsetX:z.number().finite().min(-100).max(100).default(0),offsetZ:z.number().finite().min(-100).max(100).default(0)}).strict()
 export const floorSurfaceSchema=z.object({mode:z.enum(['solid','image','texture']),solidColor:hexColor.optional(),texture:repeatingTextureSchema.optional()}).strict().refine(s=>s.mode!=='texture'||Boolean(s.texture),'Choose a texture.')

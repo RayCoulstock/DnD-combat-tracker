@@ -1,4 +1,4 @@
-import {mapAction,openInspectorSection} from './workspace-helpers'
+import {mapAction,openInspectorSection,clickSceneryTriangle} from './workspace-helpers'
 import {expect,type Page} from '@playwright/test'
 import {projectBattlefield} from './workspace-helpers'
 async function api(page:Page,path:string){return page.evaluate(async path=>{const r=await fetch('/api'+path);if(!r.ok)throw Error(await r.text());return r.json()},path)}
@@ -34,13 +34,8 @@ export async function exerciseVerticalNavigation(page:Page,player:Page,path:stri
  await mapAction(page,'Draw wall');await page.keyboard.press('Escape');await expect(editor.getByRole('button',{name:'Select',exact:true})).toHaveAttribute('aria-pressed','true')
  await editor.getByRole('button',{name:'Add Object',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Add Object',exact:true});await expect(dialog).toBeVisible();expect(await dialog.evaluate(node=>node.matches(':modal'))).toBe(true)
  await page.keyboard.press('w');await expect(editor.getByRole('button',{name:'Select',exact:true})).toHaveAttribute('aria-pressed','true');await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0)
- // Select the actual GLB through the resized canvas, using a triangle interior.
- const modelPoint=await page.locator('.battlefield-wrap canvas:visible').evaluate(async node=>{
-  const resource=performance.getEntriesByType('resource').find(e=>e.name.includes('/@react-three_fiber.js'))!,{_roots}=await import(/* @vite-ignore */resource.name),state=_roots.get(node).store.getState();state.scene.updateMatrixWorld(true)
-  let point:{x:number;y:number;z:number}|null=null
-  state.scene.traverse((group:{name:string;traverse:(fn:(mesh:{isMesh?:boolean;geometry?:{attributes:{position:{count:number;getX:(i:number)=>number;getY:(i:number)=>number;getZ:(i:number)=>number}}};position:{clone:()=>{set:(x:number,y:number,z:number)=>{applyMatrix4:(m:unknown)=>{x:number;y:number;z:number}}}};matrixWorld:unknown})=>void)=>void})=>{if(group.name==='scenery-placement-transform'&&!point)group.traverse(mesh=>{const a=mesh.geometry?.attributes.position;if(mesh.isMesh&&a&&a.count>=3&&!point){const p=mesh.position.clone().set((a.getX(0)+a.getX(1)+a.getX(2))/3,(a.getY(0)+a.getY(1)+a.getY(2))/3,(a.getZ(0)+a.getZ(1)+a.getZ(2))/3).applyMatrix4(mesh.matrixWorld);point={x:p.x,y:p.y,z:p.z}}})});return point!
- })
- const modelPixel=await projectBattlefield(page,modelPoint);await page.mouse.click(modelPixel.x,modelPixel.y)
+ // Select the actual rendered mesh through the resized, actionable canvas.
+ await clickSceneryTriangle(page)
  await expect(editor.getByRole('region',{name:'Selected scenery properties',exact:true})).toBeVisible();await page.keyboard.press('Escape')
  await page.getByRole('button',{name:'Restore View',exact:true}).click();await expect(image.getByLabel('Horizontal image offset',{exact:true})).toHaveValue('2.75')
  // Create a usable link by picking squares through the existing editor surface.
