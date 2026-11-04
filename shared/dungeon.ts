@@ -1,3 +1,4 @@
+import {lightingSchema,environmentSchema,environmentOverrideSchema} from './lighting.ts'
 import {terrainPaintSchema,terrainStrokeSchema} from './terrain.ts'
 import {floorSurfaceSchema} from './floor-surface.ts'
 import {transitionSchema} from './transitions.ts'
@@ -19,14 +20,14 @@ export const proceduralPropSchema = z.object({ id: objectId, type: z.enum(propTy
 export type ProceduralProp = z.infer<typeof proceduralPropSchema>
 export const propSchema = z.discriminatedUnion('type', [proceduralPropSchema, scenerySchema])
 const geometryShape = z.object({
-  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6)]), floorImage: floorImageSchema.optional(), floorSurface:floorSurfaceSchema.optional(), terrainPaint:terrainPaintSchema.optional(), id: objectId, name: z.string().trim().min(1).max(150), width: size, height: size,
+  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6)]), floorImage: floorImageSchema.optional(), floorSurface:floorSurfaceSchema.optional(), terrainPaint:terrainPaintSchema.optional(), lightingOverride:environmentOverrideSchema.optional(), id: objectId, name: z.string().trim().min(1).max(150), width: size, height: size,
   theme: z.enum(themes), floors: z.array(cellSchema.extend({ type: z.enum(floorTypes) })).max(2500),
   walls: z.array(wallSchema).max(5100), doors: z.array(doorSchema).max(1000), props: z.array(propSchema).max(200),
 }).strict()
 export const LEGACY_LEVEL_ID = 'ground'
 export const levelMetadataSchema = z.object({id:objectId,name:z.string().trim().min(1).max(150),elevationFeet:z.number().finite().min(-1000).max(1000),playerVisible:z.boolean()}).strict()
 const additionalLevelSchema = geometryShape.omit({schemaVersion:true}).extend({elevationFeet:levelMetadataSchema.shape.elevationFeet,playerVisible:z.boolean()})
-const documentShape = geometryShape.extend({level:levelMetadataSchema.optional(),levels:z.array(additionalLevelSchema).max(11).optional(),transitions:z.array(transitionSchema).max(200).optional()}).strict()
+const documentShape = geometryShape.extend({lighting:lightingSchema.optional(),level:levelMetadataSchema.optional(),levels:z.array(additionalLevelSchema).max(11).optional(),transitions:z.array(transitionSchema).max(200).optional()}).strict()
 export type DungeonLevel = z.infer<typeof additionalLevelSchema>
 export type LevelMetadata = z.infer<typeof levelMetadataSchema>
 export type DungeonMap = z.infer<typeof documentShape>
@@ -95,7 +96,7 @@ const levelCache=new WeakMap<DungeonMap,DungeonLevel[]>()
 // One adapter for legacy documents and version 5; stable views avoid geometry rebuilds on combat updates.
 export function dungeonLevels(map:DungeonMap):DungeonLevel[]{
   const cached=levelCache.get(map);if(cached)return cached
-  const {level,levels,schemaVersion,transitions,...geometry}=map;void schemaVersion;void transitions
+  const {level,levels,schemaVersion,transitions,lighting,...geometry}=map;void schemaVersion;void transitions;void lighting
   const result=[{...geometry,...(level??legacyMetadata)},...(levels??[])]
   levelCache.set(map,result);return result
 }
@@ -112,7 +113,7 @@ export function reuseDungeonGeometry(previous:DungeonMap|undefined,next:DungeonM
  const prior=new Map(dungeonLevels(previous).map(l=>[l.id,l]))
  const levels=dungeonLevels(next).map(level=>{const old=prior.get(level.id);if(!old)return level
   const same=JSON.stringify(old)===JSON.stringify(level);if(same)return old
-  return {...level,...Object.fromEntries((['floors','walls','doors','props','floorImage','floorSurface','terrainPaint'] as const).filter(k=>(!['floorSurface','terrainPaint'].includes(k)||k in old||k in level)&&JSON.stringify(old[k])===JSON.stringify(level[k])).map(k=>[k,old[k]]))}
+  return {...level,...Object.fromEntries((['floors','walls','doors','props','floorImage','floorSurface','terrainPaint','lightingOverride'] as const).filter(k=>(!['floorSurface','terrainPaint','lightingOverride'].includes(k)||k in old||k in level)&&JSON.stringify(old[k])===JSON.stringify(level[k])).map(k=>[k,old[k]]))}
  })
  levelCache.set(next,levels);return next
 }
@@ -121,7 +122,7 @@ export function composeLevels(map:DungeonMap,levels:DungeonLevel[]):DungeonMap{
   if(!levels.length)throw new Error('The last dungeon level cannot be deleted.')
   const [first,...rest]=levels
   const {id,name,elevationFeet,playerVisible,...geometry}=first
-  return {...geometry,id:map.id,name:map.name,schemaVersion:map.schemaVersion===6?6:5,...(map.transitions?{transitions:map.transitions}:{}),level:{id,name,elevationFeet,playerVisible},levels:rest}
+  return {...geometry,...(map.lighting?{lighting:map.lighting}:{}),id:map.id,name:map.name,schemaVersion:map.schemaVersion===6?6:5,...(map.transitions?{transitions:map.transitions}:{}),level:{id,name,elevationFeet,playerVisible},levels:rest}
 }
 export function blankDungeon(id: string, name: string, width = 20, height = 20): DungeonMap {
   return dungeonSchema.parse({ schemaVersion: 1, id, name, width, height, theme: 'stone-dungeon', floors: [], walls: [], doors: [], props: [] })
@@ -129,6 +130,8 @@ export function blankDungeon(id: string, name: string, width = 20, height = 20):
 // Legacy versions remain valid; scenery uses 2, architectural visuals 3, and floor images 4. Never downgrade a document.
 export const readDungeon = (value: unknown): DungeonMap => dungeonSchema.parse(value)
 export const mapCommandSchemas = [
+  z.object({type:z.literal('map.lighting.environment.set'),environment:environmentSchema}).extend({levelId:objectId.optional()}).strict(),
+  z.object({type:z.literal('map.lighting.override.set'),override:environmentOverrideSchema.nullable()}).extend({levelId:objectId.optional()}).strict(),
   z.object({type:z.literal('map.terrain.stroke'),stroke:terrainStrokeSchema}).extend({levelId:objectId.optional()}).strict(),
   z.object({type:z.literal('map.terrain.clear')}).extend({levelId:objectId.optional()}).strict(),
   z.object({type:z.literal('map.floorSurface.set'),surface:floorSurfaceSchema}).extend({levelId:objectId.optional()}).strict(),
@@ -187,6 +190,7 @@ function editSingleMap(frame: MapFrame, history: MapHistory, command: MapCommand
     if (!map) throw new Error('Create or load a dungeon map first.')
     const requireId = (items: { id: string }[], id: string) => { if (!items.some(v => v.id === id)) throw new Error('Map object no longer exists.') }
     switch (command.type) {
+      case 'map.lighting.override.set': if(command.override)map.lightingOverride=command.override;else delete map.lightingOverride;break
       case 'map.terrain.stroke': map.terrainPaint=terrainPaintSchema.parse([...(map.terrainPaint??[]),command.stroke]); break
       case 'map.terrain.clear': delete map.terrainPaint; break
       case 'map.floorSurface.set': map.floorSurface=command.surface; break
@@ -263,6 +267,7 @@ export function editMap(frame:MapFrame,history:MapHistory,command:MapCommand):{f
   if(command.type==='map.undo'||command.type==='map.redo'||command.type==='map.history.clear'||command.type==='map.blank'||command.type==='map.load'||command.type==='map.template.load')return editSingleMap(frame,history,command)
   const document=frame.document
   if(!document)throw new Error('Create or load a dungeon map first.')
+  if(command.type==='map.lighting.environment.set'){const next=readDungeon({...document,lighting:{environment:command.environment}});return {frame:{...frame,document:reuseDungeonGeometry(document,next)},history:{undo:bounded([...history.undo,structuredClone(frame)]),redo:[]}}}
   if(command.type==='map.transition.set'||command.type==='map.transition.remove'){
     const transitions=document.transitions??[]
     if(command.type==='map.transition.remove'&&!transitions.some(t=>t.id===command.transitionId))throw new Error('Transition no longer exists.')

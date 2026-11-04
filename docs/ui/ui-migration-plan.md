@@ -142,3 +142,7 @@ A PR description should list the matrix IDs moved, screenshots for relevant size
 ## Post-redesign Milestone 5.7.1
 
 [Floor inspector repair and terrain painting](../milestone-5.7.1-terrain-painting.md) is implemented as independently tested A (form/modal repair) and B (terrain) increments. Optional terrainPaint extends existing floor geometry JSON; there is no new SQL migration or binary store. Deploy through normal review/backup procedures only after the layout, gesture, mask, history, resource, permission and full-regression gates pass. Older strict readers do not understand terrain fields; retain compatible binaries for rollback or export copies before editing. Existing maps are not rewritten. The report records compositing/erase semantics, payload/resource limits and manual acceptance. No deployment is included.
+
+## Milestone 6.0 review sequence
+
+Use three focused stacked increments: A environment/quality/compatibility, B point emitters/attachments, C saved scenes/transitions. Each retains existing renderer and command/persistence owners and gets focused unit/integration/browser checks before the next increment. Optional map JSON requires no SQL migration; old strict readers require coordinated binary rollback. No automatic deployment or Milestone 6.1 work is included. See [lighting architecture](../milestone-6.0-lighting.md) for policy and acceptance.
