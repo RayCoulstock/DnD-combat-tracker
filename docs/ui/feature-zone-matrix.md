@@ -370,3 +370,17 @@ Sources above cover all current user-facing component families, including dialog
 | Staging placement | Disabled review option with explanation | Deferred: no existing staging region/allocator; no random or automatic positioning |
 
 The Phase 0 party-preset reservation is now fulfilled by this separately authorized generic Group Presets feature. Historical Phase 0/Phase 4 scope statements remain historical. No permanent row or canvas dock is added.
+
+
+## Milestone 5.7 actual locations
+
+| Feature | Location | Existing owner/contract retained |
+|---|---|---|
+| Floor mode, colour, repeat scale, quarter-turn rotation, brightness/tint and reset/reload/apply | C3 → This level → Floor Surface (`FloorSurfacePanel`) | Explicit map command/revision; per-level drafts; no dimensions/elevation mutation |
+| Image upload, calibration, local preview, locking, opacity, grid and explicit removal | Nested Floor Image section, shown in image mode; D4 Image opens it | Existing FloorImagePanel and image command/UV pipeline; switching mode retains calibration |
+| Texture browsing/search/source filter, preview and selection | Floor Surface → Choose floor texture → E4 picker | Existing Modal/Button/Feedback/confirmation; built-ins also work locally |
+| Named texture uploads, rename, deletion and reference counts | A3 → 3D Asset Library → Floor Textures | Existing image validation/storage/recovery, owner/revision checks and deletion protection |
+| Texture rendering and fallback/retry | Existing C2 LevelScene, under grid/interactions | Floor-specific UV geometry and texture view; retained scene/renderer/camera/elevation |
+| Surface history, templates and import/export | Existing D3 history and C3 Map/B5 file workflows | Existing map serialization/history and image reference tables, including inactive settings |
+
+Painted terrain remains in Editing → Floor and the existing D4 Floor tool. This is geometry/terrain paint; Floor Surface is a level-wide appearance overlay. No additional dock, chrome row or geometry engine is introduced.

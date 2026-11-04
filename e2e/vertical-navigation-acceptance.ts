@@ -1,4 +1,4 @@
-import {mapAction} from './workspace-helpers'
+import {mapAction,openInspectorSection} from './workspace-helpers'
 import {expect,type Page} from '@playwright/test'
 import {projectBattlefield} from './workspace-helpers'
 async function api(page:Page,path:string){return page.evaluate(async path=>{const r=await fetch('/api'+path);if(!r.ok)throw Error(await r.text());return r.json()},path)}
@@ -11,7 +11,7 @@ async function cameraState(page:Page){return page.locator('.battlefield-wrap can
 export async function exerciseVerticalNavigation(page:Page,player:Page,path:string,towerId:string){
  const editor=page.locator('.dungeon-builder:visible'),canvas=await page.locator('.battlefield-wrap canvas:visible').elementHandle()
  await page.getByLabel('Active level',{exact:true}).selectOption('ground')
- const summary=editor.locator('div:not([hidden]) > details > summary').filter({hasText:/^Floor Image/});if(!await summary.locator('..').evaluate(node=>(node as HTMLDetailsElement).open))await summary.click()
+ await openInspectorSection(page,'Floor Image')
  const image=editor.getByRole('region',{name:'Floor image settings'}).filter({visible:true});await image.getByLabel('Lock image transformations',{exact:true}).uncheck();await image.getByLabel('Horizontal image offset',{exact:true}).fill('2.75')
  const before=await cameraState(page),revision=(await api(page,path+'/snapshot')).revision,normal=await page.locator('.battlefield-wrap canvas:visible').boundingBox()
  await mapAction(page,'Expand Map');await expect(editor).toHaveAttribute('data-map-expanded','true');await expect(editor.locator('.inspector')).toBeVisible()

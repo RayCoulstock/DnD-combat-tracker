@@ -1,3 +1,5 @@
+import FloorSurface3D from './FloorSurface3D'
+import {surfaceMode} from '../shared/floor-surface'
 import {CombatControls,ManualMoves,TurnOrderMenu} from './CombatControls'
 import {allegianceLabels,type TurnOrder} from '../shared/combatOrder'
 import type {EncounterState} from '../shared/domain'
@@ -157,8 +159,10 @@ function LevelScene({ onPlaceSquare, combatants, map, selectedId, activeId, onSe
       <planeGeometry args={[map.width, map.height]} />
       <meshStandardMaterial color={dungeonMap ? '#242724' : '#666760'} roughness={0.92} metalness={0.02} />
     </mesh>
-    {dungeonMap?.floorImage && <FloorImage3D image={dungeonMap.floorImage} width={map.width} height={map.height} scope={assetScope} context={assetContext} />}
-    {(dungeonMap?.floorImage?.showGrid ?? map.showGrid) && <BattlefieldGrid width={map.width} height={map.height} />}
+    {dungeonMap&&surfaceMode(dungeonMap)==='texture'&&dungeonMap.floorSurface?.texture&&<FloorSurface3D texture={dungeonMap.floorSurface.texture} width={map.width} height={map.height} scope={assetScope} context={assetContext}/>}
+    {dungeonMap&&surfaceMode(dungeonMap)==='solid'&&dungeonMap.floorSurface?.solidColor&&<mesh name="floor-solid" position={[0,-.002,0]} rotation={[-Math.PI/2,0,0]} raycast={()=>null}><planeGeometry args={[map.width,map.height]}/><meshBasicMaterial color={dungeonMap.floorSurface.solidColor} toneMapped={false}/></mesh>}
+    {dungeonMap?.floorImage && surfaceMode(dungeonMap)==='image' && <FloorImage3D image={dungeonMap.floorImage} width={map.width} height={map.height} scope={assetScope} context={assetContext} />}
+    {((dungeonMap&&surfaceMode(dungeonMap)==='image'?dungeonMap.floorImage?.showGrid:undefined) ?? map.showGrid) && <BattlefieldGrid width={map.width} height={map.height} />}
     {!dungeonMap && <group>
       <mesh position={[0, 0.75, -map.height / 2]} castShadow receiveShadow><boxGeometry args={[map.width + 0.3, 1.5, 0.3]} /><meshStandardMaterial color="#4a4943" roughness={0.88} /></mesh>
       <mesh position={[-map.width / 2, 0.75, -map.height / 4]} castShadow receiveShadow><boxGeometry args={[0.3, 1.5, map.height / 2]} /><meshStandardMaterial color="#4a4943" roughness={0.88} /></mesh>
@@ -242,10 +246,10 @@ export default function BattleMap3D(input: BattleMap3DProps) {
   const controlsRef = useRef<OrbitControlsImpl>(null)
   const [rosterExpanded,setRosterExpanded]=useWorkspacePreference('map.rosterExpanded',false)
   const resetCamera = () => {const c=controlsRef.current;if(c){c.reset();const dy=elevationToWorld(activeLevel?.elevationFeet??0)-c.target.y;c.target.y+=dy;c.object.position.y+=dy;c.update()}}
-  const showGrid=activeLevel?.floorImage?.showGrid??props.map.showGrid
+  const showGrid=(activeLevel&&surfaceMode(activeLevel)==='image'?activeLevel.floorImage?.showGrid:undefined)??props.map.showGrid
   const toggleGrid=()=>{
     const map=activeLevel
-    if(map?.floorImage&&levelSend)void levelSend({type:'map.floorImage.set',width:map.width,height:map.height,image:{...map.floorImage,showGrid:!showGrid}}).catch(error=>setMapError(error.message))
+    if(map?.floorImage&&surfaceMode(map)==='image'&&levelSend)void levelSend({type:'map.floorImage.set',width:map.width,height:map.height,image:{...map.floorImage,showGrid:!showGrid}}).catch(error=>setMapError(error.message))
     else props.onToggleGrid()
   }
 

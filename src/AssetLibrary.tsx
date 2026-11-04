@@ -1,3 +1,4 @@
+import TextureLibrary from './TextureLibrary'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { assetCategories, assetMetadataSchema, type Asset3D, type AssetMetadata } from '../shared/assets'
 import CalibrationFields from './CalibrationFields'
@@ -48,6 +49,7 @@ function AssetDetails({ asset, api, onChange, onDelete }: { asset: Asset3D; api:
 }
 type Api = (path: string, body?: unknown) => Promise<unknown>
 export default function AssetLibrary({ api, csrf, onClose, onPick, onPickBuiltin, pickerTitle, architecturalRole }: { api: Api; csrf: string; onClose: () => void; onPick?: (asset: Asset3D) => void; onPickBuiltin?: (type: ProceduralProp['type']) => void; pickerTitle?: string; architecturalRole?: 'wall'|'door' }) {
+  const [texturesOpen,setTexturesOpen]=useState(false)
   const [uploadOpen,setUploadOpen]=useState(false),[failed,setFailed]=useState(false)
   const [calibration,setCalibration]=useState<Calibration | null>(null)
   const [source, setSource] = useState('all'), [builtin, setBuiltin] = useState<ProceduralProp['type'] | null>(null)
@@ -86,7 +88,8 @@ export default function AssetLibrary({ api, csrf, onClose, onPick, onPickBuiltin
       xhr.send(data)
     } catch (error) {setFailed(true); setMessage((error as Error).message) }
   }
-  return <main className="asset-library ledger-library" data-ui-zone="C2"><header className="ledger-library-heading"><div><span className="eyebrow">DM ACCOUNT LIBRARY</span><h1>{onPick ? pickerTitle ?? 'Choose a 3D miniature' : '3D Asset Library'}</h1><p>Reusable models with independent appearance settings for each placement.</p></div><div className="ledger-actions">{!onPick&&<Button onClick={()=>setUploadOpen(true)}>Upload GLB</Button>}<Button onClick={onClose}>{onPick ? 'Cancel selection' : 'Return to encounter'}</Button></div></header>
+  if(texturesOpen&&!onPick)return <main className="asset-library ledger-library"><TextureLibrary api={api} onClose={()=>setTexturesOpen(false)}/></main>
+  return <main className="asset-library ledger-library" data-ui-zone="C2"><header className="ledger-library-heading"><div><span className="eyebrow">DM ACCOUNT LIBRARY</span><h1>{onPick ? pickerTitle ?? 'Choose a 3D miniature' : '3D Asset Library'}</h1><p>Reusable models with independent appearance settings for each placement.</p></div><div className="ledger-actions">{!onPick&&<><Button onClick={()=>setUploadOpen(true)}>Upload GLB</Button><Button onClick={()=>setTexturesOpen(true)}>Floor Textures</Button></>}<Button onClick={onClose}>{onPick ? 'Cancel selection' : 'Return to encounter'}</Button></div></header>
     {!onPick && <Drawer open={uploadOpen} title="Upload GLB" onClose={()=>setUploadOpen(false)}><form className="asset-upload ledger-form" onSubmit={upload}><h2>Upload GLB</h2><fieldset disabled={progress !== null}><legend>New asset</legend><label>GLB file (up to {(maxBytes / 1024 / 1024).toFixed(1)} MiB)<input ref={fileRef} type="file" accept=".glb,model/gltf-binary" required onChange={e => setFile(e.target.files?.[0] ?? null)} /></label><MetadataFields prefix="Upload asset" value={metadata} onChange={setMetadata} /><Button variant="primary" type="submit">Upload model</Button></fieldset></form></Drawer>}
     {progress!==null&&<div className="asset-upload-progress" role="status"><progress max={100} value={progress}/><span>{progress<100?`Uploading ${progress}%`:'Validating model…'}</span><Button onClick={()=>setUploadOpen(true)}>View upload</Button><Button onClick={()=>xhrRef.current?.abort()}>Cancel upload</Button></div>}
     {message&&<Feedback error={failed}>{message}</Feedback>}

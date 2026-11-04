@@ -9,7 +9,7 @@ import { AssetError, type AssetStorage, type StagedAsset } from './asset-storage
 import { multipart } from './asset-upload.ts'
 import { floorImageLimits } from './floor-image-config.ts'
 import { validateFloorImage } from './floor-image-validation.ts'
-const publicImage = (row:Record<string,unknown>) => ({id:row.id,width:row.width,height:row.height,fileSize:Number(row.file_size),revision:row.revision})
+const publicImage = (row:Record<string,unknown>) => ({id:row.id,width:row.width,height:row.height,fileSize:Number(row.file_size),revision:row.revision,name:row.name,kind:row.kind,references:row.references===undefined?undefined:Number(row.references)})
 export async function recoverFloorImages(pool:Pool,storage:AssetStorage) {
   for(const row of (await pool.query("SELECT id,storage_key,upload_status FROM floor_images WHERE upload_status IN ('processing','deleting')")).rows){
     if(row.upload_status==='processing'){
@@ -42,7 +42,7 @@ export function registerFloorImageRoutes(app:Express,pool:Pool,storage:AssetStor
   app.use('/api/floor-images',(req,_res,next)=>{try{requireDM(req);next()}catch(error){next(error)}})
   app.get('/api/floor-images',async(req,res)=>{
     const actor=requireDM(req)
-    const rows=(await pool.query("SELECT * FROM floor_images WHERE owner_id=$1 AND upload_status='ready' ORDER BY created_at DESC LIMIT 100",[actor.id])).rows
+    const rows=(await pool.query("SELECT i.*, (SELECT count(*) FROM encounter_floor_image_references r WHERE r.image_id=i.id)+(SELECT count(*) FROM template_floor_image_references r WHERE r.image_id=i.id) AS references FROM floor_images i WHERE owner_id=$1 AND upload_status='ready' ORDER BY created_at DESC",[actor.id])).rows
     res.json({images:rows.map(publicImage),limits})
   })
   app.post('/api/floor-images',uploadLimit,async(req,res)=>{
@@ -53,7 +53,7 @@ export function registerFloorImageRoutes(app:Express,pool:Pool,storage:AssetStor
     const release=()=>{if(!released){released=true;active--;owners.delete(actor.id)}}
     let staged:StagedAsset|undefined,processed:StagedAsset|undefined,published:string|undefined,inserted:string|undefined
     try{
-      const upload=await multipart(req,storage,limits.maxBytes,['png','jpg','jpeg','webp'],value=>z.object({}).strict().parse(value));staged=upload.staged
+      const upload=await multipart(req,storage,limits.maxBytes,['png','jpg','jpeg','webp'],value=>z.object({name:z.string().trim().min(1).max(150).optional(),kind:z.enum(['battle-map','texture']).default('battle-map')}).strict().parse(value),['image/png','image/jpeg','image/webp','application/octet-stream']);staged=upload.staged
       const chunks:Buffer[]=[];for await(const chunk of await storage.read(staged.key))chunks.push(Buffer.from(chunk))
       const result=await validateFloorImage(new Uint8Array(Buffer.concat(chunks)),limits)
       if(req.aborted||res.destroyed)throw new AssetError(400,'Image upload cancelled.')
@@ -63,9 +63,9 @@ export function registerFloorImageRoutes(app:Express,pool:Pool,storage:AssetStor
       const image=await transaction(pool,async db=>{
         await db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE',[actor.id])
         const existing=(await db.query("SELECT * FROM floor_images WHERE owner_id=$1 AND content_hash=$2 AND upload_status<>'deleted' FOR UPDATE",[actor.id,processed!.hash])).rows[0]
-        if(existing){if(existing.upload_status==='ready')return publicImage(existing);throw new AssetError(409,'This image is being recovered. Retry after recovery completes.')}
+        if(existing){if(existing.upload_status==='ready'){if(upload.metadata.kind==='texture'){const row=(await db.query("UPDATE floor_images SET kind='texture',name=$2,revision=revision+1 WHERE id=$1 RETURNING *",[existing.id,upload.metadata.name??existing.name])).rows[0];return publicImage(row)}return publicImage(existing);}throw new AssetError(409,'This image is being recovered. Retry after recovery completes.')}
         const id=randomUUID(),key=`${actor.id}/${processed!.hash}.webp`
-        await db.query("INSERT INTO floor_images(id,owner_id,storage_key,content_hash,width,height,file_size,upload_status) VALUES($1,$2,$3,$4,$5,$6,$7,'processing')",[id,actor.id,key,processed!.hash,result.width,result.height,processed!.size]);inserted=id
+        await db.query("INSERT INTO floor_images(id,owner_id,storage_key,content_hash,width,height,file_size,upload_status,name,kind) VALUES($1,$2,$3,$4,$5,$6,$7,'processing',$8,$9)",[id,actor.id,key,processed!.hash,result.width,result.height,processed!.size,upload.metadata.name??(upload.metadata.kind==='texture'?'Floor texture':'Battle map image'),upload.metadata.kind]);inserted=id
         published=await storage.publish(processed!,actor.id,'webp')
         const row=(await db.query("UPDATE floor_images SET upload_status='ready' WHERE id=$1 RETURNING *",[id])).rows[0]
         return publicImage(row)
@@ -80,6 +80,12 @@ export function registerFloorImageRoutes(app:Express,pool:Pool,storage:AssetStor
       if(staged)await storage.remove(staged.key).catch(()=>{})
       if(processed)await storage.remove(processed.key).catch(()=>{})
     }
+  })
+  app.post('/api/floor-images/:imageId/metadata',async(req,res)=>{
+    const actor=requireDM(req),id=z.uuid().parse(req.params.imageId),data=z.object({name:z.string().trim().min(1).max(150),revision:z.number().int().positive()}).strict().parse(req.body)
+    const row=(await pool.query("UPDATE floor_images SET name=$3,revision=revision+1 WHERE id=$1 AND owner_id=$2 AND revision=$4 AND upload_status='ready' RETURNING *",[id,actor.id,data.name,data.revision])).rows[0]
+    if(!row)throw new AssetError(409,'Image changed or is unavailable. Refresh before renaming.')
+    res.json(publicImage(row))
   })
   app.post('/api/floor-images/:imageId/delete',async(req,res)=>{
     const actor=requireDM(req),id=z.uuid().parse(req.params.imageId),data=z.object({revision:z.number().int().positive()}).strict().parse(req.body)

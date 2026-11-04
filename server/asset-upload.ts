@@ -1,7 +1,7 @@
 import type { Request } from 'express'
 import Busboy from 'busboy'
 import { AssetError, type AssetStorage, type StagedAsset } from './asset-storage.ts'
-export async function multipart<T>(req: Request, storage: AssetStorage, maxBytes: number, extensions: string[], parseMetadata: (value: unknown) => T) {
+export async function multipart<T>(req: Request, storage: AssetStorage, maxBytes: number, extensions: string[], parseMetadata: (value: unknown) => T, mimeTypes?:string[]) {
   if (Number(req.headers['content-length'] ?? 0) > maxBytes + 32768) throw new AssetError(413, 'File exceeds the upload size limit.')
   let parser: ReturnType<typeof Busboy>
   try { parser = Busboy({ headers: req.headers, defParamCharset: 'utf8', preservePath: true, limits: { files: 1, fields: 1, parts: 3, fieldSize: 16384, fileSize: maxBytes + 1, headerPairs: 30 } }) }
@@ -12,6 +12,7 @@ export async function multipart<T>(req: Request, storage: AssetStorage, maxBytes
   parser.on('field', (name, value, info) => { if (name !== 'metadata' || info.valueTruncated) invalid('Invalid or oversized asset metadata.'); else { try { metadata = JSON.parse(value) } catch { invalid('Invalid asset metadata.') } } })
   parser.on('file', (name, stream, info) => {
     fileName = info.filename ?? ''
+    if(mimeTypes&&!mimeTypes.includes(info.mimeType)){invalid('Choose a supported image MIME type.');stream.resume();return}
     if (name !== 'file' || !fileName || fileName.length > 255 || (/[\\/]/.test(fileName) || [...fileName].some(c => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)) || !extensions.some(extension=>fileName.toLowerCase().endsWith('.'+extension))) { invalid('Choose a supported filename without directory paths.'); stream.resume(); return }
     jobs.push(storage.stage(stream, maxBytes).then(value => { staged = value; if (stream.truncated) failure = new AssetError(413, 'File exceeds the upload size limit.') }).catch(e => { failure = e }))
   })

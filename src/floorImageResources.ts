@@ -25,3 +25,7 @@ export async function loadFloorTexture(key:string,signal:AbortSignal) {
   }catch(error){bitmap.close();throw error}
 }
 export const floorTextures=new AssetResourceCache<Texture>(loadFloorTexture,4,96*1024*1024)
+
+export function textureUrl(id:string,scope?:string,context?:{campaignId:string;encounterId:string}){
+ return id.startsWith('builtin:')?`/textures/${id.slice(8)}.png`:floorImageUrl(id,scope,context)
+}
