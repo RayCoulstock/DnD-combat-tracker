@@ -1,0 +1,6 @@
+.texture-library { min-width:0; max-width:100%; }
+.texture-library .asset-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr)); gap:var(--space-4,16px); }
+.texture-card { min-width:0; overflow-wrap:anywhere; }
+.texture-card img { width:100%; height:144px; object-fit:contain; background:var(--surface-subtle,#edf0ea); }
+.texture-library fieldset { margin-top:16px; min-width:0; }
+.texture-library input,.texture-library select { max-width:100%; }

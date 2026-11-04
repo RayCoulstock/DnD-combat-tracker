@@ -200,3 +200,8 @@ The historical initiative/manual-order gaps above are now addressed by [Combat c
 ## Milestone 5.6 follow-through
 
 The historical party-preset gap is addressed by [Group Presets](../milestone-5.6-group-presets.md). Inspection confirmed that library instantiation, campaign-state resolution, combatant addition, transaction receipts and projected multiplayer updates can be reused. Only preset/member persistence and a batch-planning adapter are added; the initiative engine, scene and asset loader remain unchanged. A3 management and B6 review use existing modal/form components without replacing the mounted workspace. Optional staging is deferred because no staging configuration or valid-cell allocator exists. Refer to the report for executed tests and remaining physical-device/assistive-technology acceptance.
+
+
+## Milestone 5.7 follow-through
+
+[Repeating floor textures](../milestone-5.7-floor-textures.md) extends the existing level/image architecture. Inspection found that image validation, durable storage, current/history/template references, authorized file delivery, map revisions and bounded resource leases were reusable. Floor Surface now owns level-wide appearance in This level; existing painted-terrain geometry and image calibration remain. Optional fields preserve legacy map normalization and image appearance. Inactive assets stay deletion-protected while player download grants require active visible use. The implementation report separates automated coverage from remaining physical-device/assistive-technology acceptance.

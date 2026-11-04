@@ -132,3 +132,8 @@ A PR description should list the matrix IDs moved, screenshots for relevant size
 ## Post-redesign Milestone 5.6
 
 [Group Presets](../milestone-5.6-group-presets.md) is separately authorized feature work after Milestone 5.5. It adds relational reference-only presets and nullable command receipt results through migration 012. Rollout must migrate before starting the new API; normal database backups cover the new data. Existing encounter serialization, GLB loading, map state, campaign-state writes and projected multiplayer broadcasts retain their owners. Review gates include atomic/replayed insertion, private ownership, unavailable references/assets, saved/full state, initiative/manual order, elevated-floor individual placement and responsive keyboard workflows. Optional staging remains deferred; no redesign phase or automatic deployment is introduced.
+
+
+## Post-redesign Milestone 5.7
+
+[Floor textures](../milestone-5.7-floor-textures.md) is feature work after Milestone 5.6. Migration 013 adds image-asset metadata only; optional per-level floorSurface settings extend map JSON through normal serialization. Apply the migration before starting the API, and retain database/media backup conventions. No binary relocation, renderer replacement or geometry migration is required. Regression gates include legacy calibration, inactive settings, UV aspect/rotation, independent stacked floors, reference deletion/history, authorization, reload/reconnect and bounded resource cleanup. Roll back application binaries only with awareness that old strict readers cannot consume newly configured floorSurface fields. No automatic deployment is authorized.

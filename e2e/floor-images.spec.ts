@@ -1,3 +1,4 @@
+import {exerciseFloorTextures} from './floor-textures'
 import {mapAction,openInspectorSection} from './workspace-helpers'
 import {multiplayerMode,sessionAction,closeSetup,openSetup,chooseCampaign} from './shell-helpers'
 import {test,expect,type Page} from '@playwright/test'
@@ -115,6 +116,7 @@ test('DM uploads and calibrates an image under walls, a GLB and a combatant; pla
     await openInspectorSection(page,'Floor Image')
     expect(await settings.evaluate(node=>node.scrollWidth<=node.clientWidth+1)).toBe(true)
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+    await exerciseFloorTextures(page,player,path)
     expect(errors).toEqual([])
   }finally{resumeUpload();await context.close()}
 })
