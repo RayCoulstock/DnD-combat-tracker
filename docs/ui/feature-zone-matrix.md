@@ -353,3 +353,20 @@ These are **not existing features to implement under the guise of preservation**
 ## Traceability and review use
 
 Sources above cover all current user-facing component families, including dialogs, library/picker variants, player-only entry/waiting/detail views, editor inspector subcomponents, scene loading/retry controls and transient error states. Schemas/backend APIs are used to verify each capability; backend-only support is not counted as a visible control. During implementation, annotate the rows touched by each PR and record desktop, narrow, expanded and player verification. A row is complete only when the replacement is reachable, correctly scoped, keyboard usable and retains its existing data/permission behaviour.
+
+
+## Milestone 5.6 actual locations
+
+| Feature | Owner and implementation | Permission/state contract |
+|---|---|---|
+| Group preset search, campaign filter and archived entries | A3 Libraries → Group Presets; `GroupPresets.tsx` management modal | DM-owned data only; available without an active encounter |
+| Create, rename, description, campaign association, duplicate, archive/restore | Management detail form, existing E4 modal/confirmation components | Explicit revision-checked save; no encounter mutation |
+| Add/remove/reorder members; quantity, name and allegiance defaults | Management member cards with named keyboard move buttons | References current library entries, not copied definitions; persistent quantity one |
+| Inspect library identity and model assignment | Member cards show name, type, asset ID and appearance defaults | Existing Asset Library remains responsible for binaries and model management |
+| Review and add a group | B6 Add Combatant → Add Group Preset; searchable E4 review modal | Inclusion, monster quantity, saved/full state, explicit persistent duplication, confirmation |
+| Insertion results and retry recovery | Review modal Feedback/result region | One request UUID, fixed instance IDs, added/skipped/failed/warning report; no player definition broadcast |
+| Resulting encounter combatants | C1 roster and existing C2 sheet | Stable independent instances; existing initiative/manual order, active turn and round retained |
+| Individual map placement and appearance | Existing C1 selection and C3 inspector; current floor click | Roster-only addition defaults to unplaced on active floor; existing GLB pipeline retained |
+| Staging placement | Disabled review option with explanation | Deferred: no existing staging region/allocator; no random or automatic positioning |
+
+The Phase 0 party-preset reservation is now fulfilled by this separately authorized generic Group Presets feature. Historical Phase 0/Phase 4 scope statements remain historical. No permanent row or canvas dock is added.
