@@ -1,0 +1,10 @@
+import type {DungeonMap,DungeonLevel} from './dungeon.ts'
+import {legacyEnvironment,lightAppearanceSchema,type LightingSnapshot} from './lighting.ts'
+export function captureLighting(map:DungeonMap,levels:DungeonLevel[]):LightingSnapshot{return {environment:map.lighting?.environment??legacyEnvironment,overrides:Object.fromEntries(levels.filter(l=>l.lightingOverride&&Object.keys(l.lightingOverride).length).map(l=>[l.id,l.lightingOverride!])),sources:Object.fromEntries((map.lighting?.sources??[]).map(s=>[s.id,lightAppearanceSchema.parse(Object.fromEntries(Object.keys(lightAppearanceSchema.shape).map(k=>[k,s[k as keyof typeof s]])))]))}}
+export function applyLightingSnapshot(map:DungeonMap,snapshot:LightingSnapshot,compose:(levels:DungeonLevel[])=>DungeonMap,levels:DungeonLevel[]):DungeonMap{
+ const updated=levels.map(l=>{const{lightingOverride,...base}=l;void lightingOverride;return{...base,...(snapshot.overrides[l.id]?{lightingOverride:snapshot.overrides[l.id]}:{})}})
+ return {...compose(updated),lighting:{...map.lighting,environment:snapshot.environment,sources:map.lighting?.sources?.map(s=>({...s,...snapshot.sources[s.id]}))}}
+}
+// Canonical comparison ignores object insertion order and stale floor/source references.
+export function lightingSceneDirty(map:DungeonMap,levels:DungeonLevel[]){const scene=map.lighting?.scenes?.find(s=>s.id===map.lighting?.activeSceneId);if(!scene)return false;const current=captureLighting(map,levels),expected=scene.snapshot;return JSON.stringify(canonical(current))!==JSON.stringify(canonical({...expected,overrides:Object.fromEntries(Object.entries(expected.overrides).filter(([id])=>levels.some(l=>l.id===id))),sources:Object.fromEntries(Object.entries(expected.sources).filter(([id])=>(map.lighting?.sources??[]).some(s=>s.id===id)))}))}
+function canonical(value:unknown):unknown{if(Array.isArray(value))return value.map(canonical);if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,canonical(v)]));return value}

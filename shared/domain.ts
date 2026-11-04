@@ -234,7 +234,7 @@ export function projectEncounter(state: EncounterState, actor: Actor): Encounter
   const ids = new Set(combatants.map(c => String(c.id)))
   const owned = combatants.filter(c => c.ownerId === actor.id)
   let dungeonMap=playerDungeon(state.dungeonMap)
-  if(dungeonMap?.lighting)dungeonMap={...dungeonMap,lighting:{...dungeonMap.lighting,sources:permittedLightSources(state,ids)}}
+  if(dungeonMap?.lighting)dungeonMap={...dungeonMap,lighting:{environment:dungeonMap.lighting.environment,sources:permittedLightSources(state,ids),...(dungeonMap.lighting.transition?{transition:dungeonMap.lighting.transition}:{})}}
   const levels=dungeonMap?dungeonLevels(dungeonMap):[]
   return { ...state, ...(state.turnOrder?{turnOrder:{...state.turnOrder,manualIds:state.turnOrder.manualIds.filter(id=>ids.has(String(id))),completedIds:state.turnOrder.completedIds.filter(id=>ids.has(String(id)))}}:{}), levelsHidden:Boolean(state.dungeonMap&&!dungeonMap), tactical:state.tactical?.filter(r=>levelVisible(state,r.floorId)).map(r=>({...r,floorId:r.floorId??primaryLevelId(state.dungeonMap)})), dungeonMap, mapUndoDepth: undefined, mapRedoDepth: undefined, combatants, selectedId: null, activeId: ids.has(String(state.activeId)) ? state.activeId : null,
     usedAbilities: Object.fromEntries(Object.entries(state.usedAbilities).filter(([key]) => owned.some(c => key.startsWith(`${c.id}:`)))),
