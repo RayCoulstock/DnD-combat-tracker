@@ -1,3 +1,4 @@
+import {groupAddSchema,type GroupInsertionResult} from './groupPresets.ts'
 import {prepareTurnOrder,reconcileTurnOrder,nextTurn,removeFromOrder,type TurnOrder} from './combatOrder.ts'
 import {transitionRoute} from './transitions.ts'
 import {reuseDungeonGeometry,dungeonLevels,composeLevels,primaryLevelId} from './dungeon.ts'
@@ -56,7 +57,7 @@ export function importEncounter(value: unknown, preservePermissions = false): En
 export const emptyEncounter = (): EncounterState => importEncounter({ version: 1, round: 1, combatants: [] })
 const target = { combatantId: idSchema }
 export const commandSchema = z.discriminatedUnion('type', [
-  ...mapCommandSchemas, ...tacticalCommands,
+  ...mapCommandSchemas, ...tacticalCommands, groupAddSchema,
   z.object({type:z.literal('library.add'),entryId:z.uuid(),instanceId:z.uuid(),useSavedState:z.boolean().default(true),allowDuplicate:z.boolean().default(false),floorId:z.string().min(1).max(100).optional(),destination:z.object({x:z.number().int(),z:z.number().int()}).strict().optional()}).strict(),
   z.object({type:z.literal('library.state.save'),combatantId:idSchema,expectedRevision:z.number().int().nonnegative(),conditions:z.array(z.string().max(100)).max(50)}).strict(),
   z.object({ type: z.literal('map.generate'), options: generationOptionsSchema }).strict(),
@@ -85,7 +86,7 @@ export type GameCommand = z.infer<typeof commandSchema>
 export const envelopeSchema = z.object({ commandId: z.uuid(), encounterId: z.uuid(), revision: z.number().int().nonnegative(), command: commandSchema }).strict()
 export type CommandEnvelope = z.infer<typeof envelopeSchema>
 export class DomainError extends Error {
-  constructor(public code: 'FORBIDDEN' | 'INVALID' | 'CONFLICT' | 'NOT_FOUND' | 'UNAUTHENTICATED' | 'SESSION_ENDED', message: string) { super(message) }
+  constructor(public code: 'FORBIDDEN' | 'INVALID' | 'CONFLICT' | 'NOT_FOUND' | 'UNAUTHENTICATED' | 'SESSION_ENDED', message: string,public groupResult?:GroupInsertionResult) { super(message) }
 }
 export function applyCommand(state: EncounterState, actor: Actor, command: GameCommand, now=Date.now()): EncounterState {
   if(command.type==='tactical.create'||command.type==='tactical.update'||command.type==='tactical.remove'||command.type==='tactical.clear'){
@@ -115,6 +116,7 @@ export function applyCommand(state: EncounterState, actor: Actor, command: GameC
   if ('combatantId' in command && !c) throw new DomainError('NOT_FOUND', 'Combatant not found.')
   const update = (patch: Partial<Combatant>) => ({ ...state, combatants: state.combatants.map(item => item === c ? { ...item, ...patch } : item) })
   switch (command.type) {
+    case 'group.add':
     case 'library.add': case 'library.state.save': throw new DomainError('INVALID','Library commands require server persistence.')
     case 'combatant.transition.use': {
       const transition=state.dungeonMap?.transitions?.find(t=>t.id===command.transitionId)
@@ -247,7 +249,7 @@ export function acceptsSessionState(previous: SessionState | null, next: Session
   return next.campaignId === campaignId && (!previous || previous.campaignId !== campaignId || next.revision >= previous.revision)
 }
 export interface Member { id: string; displayName: string; connected: boolean }
-export type CommandResult = { ok: true; revision: number; duplicate: boolean } | { ok: false; error: { code: string; message: string } }
+export type CommandResult = { ok: true; revision: number; duplicate: boolean;groupResult?:GroupInsertionResult } | { ok: false; error: { code: string; message: string };groupResult?:GroupInsertionResult }
 export interface ServerEvents {
   'session.state': (state: SessionState) => void
   'encounter.snapshot': (snapshot: Snapshot) => void

@@ -127,3 +127,8 @@ A PR description should list the matrix IDs moved, screenshots for relevant size
 ## Post-redesign Milestone 5.5
 
 [Combat controls](../milestone-5.5-combat-controls.md) is separately authorized feature work after Phase 4. It deliberately extends optional encounter metadata and command validation; this is not a schema change merely to relocate UI. Existing state owners and rollback/permission/resource gates remain. The report documents manual-order initialization, completed-turn handling, active removal, serialization, role projection, migration implications and acceptance.
+
+
+## Post-redesign Milestone 5.6
+
+[Group Presets](../milestone-5.6-group-presets.md) is separately authorized feature work after Milestone 5.5. It adds relational reference-only presets and nullable command receipt results through migration 012. Rollout must migrate before starting the new API; normal database backups cover the new data. Existing encounter serialization, GLB loading, map state, campaign-state writes and projected multiplayer broadcasts retain their owners. Review gates include atomic/replayed insertion, private ownership, unavailable references/assets, saved/full state, initiative/manual order, elevated-floor individual placement and responsive keyboard workflows. Optional staging remains deferred; no redesign phase or automatic deployment is introduced.

@@ -1,6 +1,9 @@
+import {prepareGroupInsertion} from './group-insertion.ts'
+import {instantiateOwnedLibrary} from './library-instances.ts'
+import type {GroupInsertionResult} from '../shared/groupPresets.ts'
 import {reconcileTurnOrder} from '../shared/combatOrder.ts'
 import { ownedEntry } from './combatant-library.ts'
-import { instantiateLibrary, characterStateSchema } from '../shared/combatantLibrary.ts'
+import { characterStateSchema } from '../shared/combatantLibrary.ts'
 import { isGridPosition } from '../src/mapState.ts'
 import { syncEncounterImages, imageIds, historyImageIds } from './floor-image-references.ts'
 import type { PoolClient } from 'pg'
@@ -86,11 +89,12 @@ export async function execute(pool: Pool, actor: Actor, campaignId: string, data
     const encounter = (await db.query('SELECT id,revision FROM encounters WHERE id=$1 FOR UPDATE', [campaign.active_encounter_id])).rows[0]
     if (!encounter) throw new DomainError('NOT_FOUND', 'Open an encounter first.')
     if (encounter.id !== data.encounterId) throw new DomainError('CONFLICT', 'A different encounter is now open.')
-    const hash = createHash('sha256').update(JSON.stringify(data)).digest('hex')
-    const receipt = (await db.query('SELECT revision,payload_hash FROM command_receipts WHERE encounter_id=$1 AND actor_id=$2 AND command_id=$3', [encounter.id, actor.id, data.commandId])).rows[0]
+    if(data.command.type==='group.add'&&data.command.requestId!==data.commandId)throw new DomainError('INVALID','Group request ID must match command ID.')
+    const hash = createHash('sha256').update(JSON.stringify(data.command.type==='group.add'?{encounterId:data.encounterId,command:data.command}:data)).digest('hex')
+    const receipt = (await db.query('SELECT revision,payload_hash,result FROM command_receipts WHERE encounter_id=$1 AND actor_id=$2 AND command_id=$3', [encounter.id, actor.id, data.commandId])).rows[0]
     if (receipt) {
       if (receipt.payload_hash !== hash) throw new DomainError('CONFLICT', 'Command ID has already been used.')
-      return { revision: receipt.revision as number, duplicate: true }
+      return { revision: receipt.revision as number, duplicate: true,...(receipt.result?{groupResult:receipt.result as GroupInsertionResult}:{}) }
     }
     if (encounter.revision !== data.revision) throw new DomainError('CONFLICT', 'The encounter changed. Review the latest state and try again.')
     if (data.command.type === 'token.assign' && data.command.playerId !== null) {
@@ -98,6 +102,9 @@ export async function execute(pool: Pool, actor: Actor, campaignId: string, data
     }
     const current = await loadState(db, encounter.id)
     let command = data.command
+    let groupResult:GroupInsertionResult|undefined
+    let emptyGroup=false
+    if(command.type==='group.add'){const prepared=await prepareGroupInsertion(db,actor,campaignId,current,command);groupResult=prepared.report;emptyGroup=!prepared.combatants.length;command={type:'combatant.add',combatants:prepared.combatants,floorId:prepared.floorId,allowPersistentDuplicate:true}}
     if (command.type === 'map.generate') {
       if (actor.role !== 'dm') throw new DomainError('FORBIDDEN', 'Only the DM may generate maps.')
       try { command = { type: 'map.load', document: generateDungeon(command.options) } } catch (e) { throw new DomainError('INVALID', (e as Error).message) }
@@ -109,12 +116,8 @@ export async function execute(pool: Pool, actor: Actor, campaignId: string, data
       command = { type: 'map.load', document: readDungeon(template.document) }
     }
     if(command.type==='library.add'){
-      const entry=await ownedEntry(db,actor,command.entryId)
-      if(entry.kind!=='monster-template'&&entry.campaignId&&entry.campaignId!==campaignId)throw new DomainError('INVALID','This character belongs to another campaign.')
-      const saved=(await db.query('SELECT state FROM campaign_character_state WHERE campaign_id=$1 AND library_id=$2',[campaignId,entry.id])).rows[0]
-      let instance=instantiateLibrary(entry,command.instanceId,current,command.useSavedState?saved?.state:undefined,command.allowDuplicate)
-      const assetId=instance.miniature?.assetId
-      if(assetId&&!(await db.query("SELECT 1 FROM assets_3d WHERE id=$1 AND owner_id=$2 AND upload_status='ready' FOR UPDATE",[assetId,actor.id])).rowCount)instance={...instance,miniature:{...instance.miniature!,assetId:null}}
+      const {instance:created}=await instantiateOwnedLibrary(db,actor,campaignId,current,command.entryId,command.instanceId,command.useSavedState,command.allowDuplicate)
+      let instance=created
       const floorId=command.floorId??primaryLevelId(current.dungeonMap)
       const level=current.dungeonMap&&dungeonLevels(current.dungeonMap).find(l=>l.id===floorId)
       if(current.dungeonMap&&!level)throw new DomainError('INVALID','Choose an existing floor.')
@@ -135,7 +138,7 @@ export async function execute(pool: Pool, actor: Actor, campaignId: string, data
       await db.query(`INSERT INTO campaign_character_state(campaign_id,library_id,state) VALUES($1,$2,$3) ON CONFLICT(campaign_id,library_id) DO UPDATE SET state=$3,revision=campaign_character_state.revision+1,updated_at=now()`,[campaignId,entry.id,characterStateSchema.parse({hp:c.hp,maxHp:c.maxHp,conditions:command.conditions})])
     }
     let next: EncounterState, history: MapHistory | undefined
-    if(command.type==='library.state.save'){next=current}
+    if(command.type==='library.state.save'||emptyGroup){next=current}
     else if (isMapEdit(command)) {
       const saved = (await db.query('SELECT history FROM encounter_maps WHERE encounter_id=$1', [encounter.id])).rows[0]
       const result = applyMapEdit(current, actor, command, saved?.history ?? emptyHistory())
@@ -149,7 +152,7 @@ export async function execute(pool: Pool, actor: Actor, campaignId: string, data
     const revision = encounter.revision + 1
     await db.query('UPDATE encounters SET revision=$2 WHERE id=$1', [encounter.id, revision])
     await db.query('UPDATE campaigns SET state_revision=state_revision+1 WHERE id=$1', [campaignId])
-    await db.query('INSERT INTO command_receipts(encounter_id,actor_id,command_id,revision,payload_hash) VALUES($1,$2,$3,$4,$5)', [encounter.id, actor.id, data.commandId, revision, hash])
-    return { revision, duplicate: false }
+    await db.query('INSERT INTO command_receipts(encounter_id,actor_id,command_id,revision,payload_hash,result) VALUES($1,$2,$3,$4,$5,$6)', [encounter.id, actor.id, data.commandId, revision, hash,groupResult??null])
+    return { revision, duplicate: false,...(groupResult?{groupResult}:{}) }
   })
 }

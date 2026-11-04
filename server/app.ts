@@ -1,3 +1,4 @@
+import {registerGroupPresetRoutes} from './group-presets.ts'
 import { registerCombatantLibraryRoutes } from './combatant-library.ts'
 import { registerFloorImageRoutes } from './floor-images.ts'
 import {expireMeasurements} from './tactical.ts'
@@ -124,6 +125,7 @@ export function createApplication({ pool, secret, origin, production = false, al
   }
   const requireDM = (req: Request) => { const actor = requireActor(req); if (actor.role !== 'dm') throw new DomainError('FORBIDDEN', 'Dungeon Master access required.'); return actor }
   registerCombatantLibraryRoutes(app,pool,requireDM)
+  registerGroupPresetRoutes(app,pool,requireDM)
   registerMapRoutes(app, pool, requireDM)
   registerFloorImageRoutes(app, pool, assetStorage, requireDM, requireActor)
   registerAssetRoutes(app, pool, assetStorage, requireDM, assetValidationLimits, requireActor)
@@ -370,7 +372,7 @@ export function createApplication({ pool, secret, origin, production = false, al
   return { app, http, io, close: async () => { clearInterval(timer); await expiryJob; await new Promise<void>(resolve => io.close(() => resolve())) } }
 }
 function commandError(error: unknown) {
-  return { ok: false as const, error: error instanceof DomainError ? { code: error.code, message: error.message } : { code: 'INVALID', message: 'Unable to apply command.' } }
+  return { ok: false as const,...(error instanceof DomainError&&error.groupResult?{groupResult:error.groupResult}:{}), error: error instanceof DomainError ? { code: error.code, message: error.message } : { code: 'INVALID', message: 'Unable to apply command.' } }
 }
 // Precomputed valid Argon2id hash, used only for timing equalisation (not an account credential).
 const dummyHash = await argon2.hash(randomBytes(32), { type: argon2.argon2id })

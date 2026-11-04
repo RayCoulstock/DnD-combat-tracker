@@ -1,3 +1,4 @@
+import GroupPresets from './GroupPresets'
 import {CombatControls,TurnOrderMenu,ManualMoves} from './CombatControls'
 import {nextTurn as nextCombatTurn,allegianceLabels} from '../shared/combatOrder'
 import CombatantLibrary, { CampaignStateSave } from './CombatantLibrary'
@@ -36,13 +37,14 @@ function HealthBar({ value, max }) {
 const uniqueId = () => crypto.randomUUID()
 const maxArtworkSize = 3 * 1024 * 1024
 
-/** @param {{ chrome?: import('./ApplicationShell').TableChrome, assetScope?: string, multiplayer?: null | { snapshot: import('../shared/domain').Snapshot, connected: boolean, send: (command: import('../shared/domain').GameCommand) => Promise<void>, library?: import('./DungeonBuilder').MapLibrary, csrf?: string, exportFile: () => Promise<import('../shared/domain').EncounterState> } }} props */
+/** @param {{ chrome?: import('./ApplicationShell').TableChrome, assetScope?: string, multiplayer?: null | { snapshot: import('../shared/domain').Snapshot, connected: boolean, sendGroup: (command: import('../shared/groupPresets').GroupAdd,encounterId:string) => Promise<import('../shared/groupPresets').GroupInsertionResult>, send: (command: import('../shared/domain').GameCommand) => Promise<void>, library?: import('./DungeonBuilder').MapLibrary, csrf?: string, exportFile: () => Promise<import('../shared/domain').EncounterState> } }} props */
 function App({ multiplayer = null, assetScope = undefined, chrome = undefined }) {
   const [{ encounter: localState, history: localHistory }, setLocal] = useState(() => ({ encounter: readEncounter({ version: 1, round: 3, activeId: 1, combatants: initialCombatants }), history: emptyHistory() }))
   const state = multiplayer?.snapshot.state ?? localState
   const { combatants, activeId, round, usedAbilities, battleMap } = state
   const [activeFloorId,setActiveFloorId]=useState('ground')
   const creationFloorId=state.dungeonMap&&dungeonLevels(state.dungeonMap).some(level=>level.id===activeFloorId)?activeFloorId:primaryLevelId(state.dungeonMap)
+  const [groupPickerOpen,setGroupPickerOpen]=useState(false)
   const [combatantLibraryOpen,setCombatantLibraryOpen]=useState(false)
   const [libraryInitial,setLibraryInitial]=useState(undefined)
   const [campaignSaveOpen,setCampaignSaveOpen]=useState(false)
@@ -168,7 +170,7 @@ function App({ multiplayer = null, assetScope = undefined, chrome = undefined })
       {selected&&<Drawer open={editingCombatant} title="Edit combatant" onClose={()=>setEditingCombatant(false)}><CombatantEditor key={selected.id} combatant={selected} send={send} connected={canChange} onSaved={()=>setEditingCombatant(false)}/></Drawer>}
       <SessionBar round={round} state={chrome?.sessionState??(multiplayer?'Inactive':'Local')} view={view} onView={next=>{setView(next);if(next!=='tracker')window.dispatchEvent(new Event('ledger:map-open'))}} players={chrome?.players}
         items={[...(chrome?.sessionItems??[]).filter(item=>!item.danger),{id:'import',label:'Import encounter',group:'Encounter data',disabled:!canChange,onSelect:()=>encounterInputRef.current?.click()},{id:'export',label:'Export encounter',onSelect:exportEncounter},...(chrome?.sessionItems??[]).filter(item=>item.danger),{id:'clear',label:'Clear encounter',group:'Danger',danger:true,disabled:!canChange||!combatants.length,onSelect:clearEncounter}]}
-        add={()=>setShowAddCombatant(true)} next={nextTurn} canChange={canChange} hasCombatants={combatants.length>0} library={multiplayer?.library?openLibrary:undefined}>
+        add={()=>setShowAddCombatant(true)} next={nextTurn} groups={multiplayer?.library?()=>setGroupPickerOpen(true):undefined} canChange={canChange} hasCombatants={combatants.length>0} library={multiplayer?.library?openLibrary:undefined}>
         {chrome?.context??<strong className="ledger-context-name">{multiplayer?.snapshot.name??'Local encounter'}</strong>}
       </SessionBar>
 
@@ -180,6 +182,7 @@ function App({ multiplayer = null, assetScope = undefined, chrome = undefined })
         setCombatantLibraryOpen(false);chrome?.closeLibrary?.()
       }}/>}
 
+      {groupPickerOpen&&multiplayer?.library&&<GroupPresets key={multiplayer.snapshot.encounterId} mode="insert" api={multiplayer.library.api} snapshot={multiplayer.snapshot} campaignId={multiplayer.snapshot.campaignId} floorId={creationFloorId} connected={canChange} onInsert={command=>multiplayer.sendGroup(command,multiplayer.snapshot.encounterId)} onClose={()=>setGroupPickerOpen(false)}/>}
       {miniatureOpen && multiplayer?.library && selected && <MiniatureSettings key={`${multiplayer.snapshot.encounterId}:${selected.id}`} combatant={selected} api={multiplayer.library.api} csrf={multiplayer.csrf ?? ''} send={send} connected={canChange} onClose={() => setMiniatureOpen(false)} />}
       <input ref={encounterInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={importEncounter} />
       <input ref={artworkInputRef} className="visually-hidden" type="file" accept="image/*" onChange={updateArtwork} />

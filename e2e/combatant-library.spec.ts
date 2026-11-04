@@ -1,3 +1,4 @@
+import {exerciseGroupPresets} from './group-presets'
 import {exercisePersistentCharacterLibrary} from './persistent-character-library'
 import {multiplayerMode,library,openSetup,closeSetup,combatantAction} from './shell-helpers'
 import { test, expect, type Page } from '@playwright/test'
@@ -52,5 +53,6 @@ test('DM imports once, assigns a default model, reuses independent monsters and 
   await page.getByRole('button',{name:'Duplicate entry',exact:true}).click();await page.getByRole('button',{name:'Save library entry',exact:true}).click();await expect(page.getByRole('button',{name:'Library Goblin Copy · Monster Template',exact:true})).toBeVisible()
   await page.getByRole('button',{name:'Archive entry',exact:true}).click();await page.getByRole('dialog',{name:'Archive entry',exact:true}).getByRole('button',{name:'Archive',exact:true}).click();await expect(page.getByRole('button',{name:'Library Goblin Copy · Monster Template',exact:true})).toHaveCount(0)
   await page.getByRole('button',{name:'Close library',exact:true}).click();await exercisePersistentCharacterLibrary(page,campaign)
+  await exerciseGroupPresets(page,campaign)
   expect(errors).toEqual([])
 })

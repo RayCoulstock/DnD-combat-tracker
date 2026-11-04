@@ -195,3 +195,8 @@ The historical inventory above remains the baseline. [Phase 4](phase-4-design-co
 ## Milestone 5.5 follow-through
 
 The historical initiative/manual-order gaps above are now addressed by [Combat controls](../milestone-5.5-combat-controls.md). The existing side field gains Neutral; turn ordering remains stable-ID based, with persisted manual order and explicit completed-turn tracking. The map roster follows encounter order rather than sorting a second time. Existing transaction, projection, resource and UI owners are retained.
+
+
+## Milestone 5.6 follow-through
+
+The historical party-preset gap is addressed by [Group Presets](../milestone-5.6-group-presets.md). Inspection confirmed that library instantiation, campaign-state resolution, combatant addition, transaction receipts and projected multiplayer updates can be reused. Only preset/member persistence and a batch-planning adapter are added; the initiative engine, scene and asset loader remain unchanged. A3 management and B6 review use existing modal/form components without replacing the mounted workspace. Optional staging is deferred because no staging configuration or valid-cell allocator exists. Refer to the report for executed tests and remaining physical-device/assistive-technology acceptance.
