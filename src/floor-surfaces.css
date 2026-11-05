@@ -6,11 +6,11 @@
 .texture-library input,.texture-library select { max-width:100%; }
 /* Inspector forms must not inherit the legacy horizontal builder fieldset grid. */
 .builder-tools .floor-surface-form,.builder-tools .terrain-paint-form { min-width:0; max-width:100%; }
-.builder-tools :is(.floor-surface-form,.terrain-paint-form) fieldset { display:flex; flex-direction:column; gap:12px; min-width:0; margin:12px 0; padding:0; border:0; }
-.builder-tools :is(.floor-surface-form,.terrain-paint-form) label { display:flex; flex-direction:column; gap:6px; min-width:0; width:100%; margin:0; font-size:12px; line-height:1.5; overflow-wrap:normal; }
-.builder-tools :is(.floor-surface-form,.terrain-paint-form) :is(input:not([type=checkbox]),select) { width:100%; min-width:0; max-width:100%; box-sizing:border-box; min-height:40px; }
-.builder-tools :is(.floor-surface-form,.terrain-paint-form) .ledger-actions { display:flex; flex-wrap:wrap; gap:8px; min-width:0; }
-.builder-tools :is(.floor-surface-form,.terrain-paint-form) .ledger-actions button { flex:1 1 110px; min-width:0; white-space:normal; min-height:40px; }
+.builder-tools :is(.floor-surface-form,.terrain-paint-form,.lighting-form) fieldset { display:flex; flex-direction:column; gap:12px; min-width:0; margin:12px 0; padding:0; border:0; }
+.builder-tools :is(.floor-surface-form,.terrain-paint-form,.lighting-form) label { display:flex; flex-direction:column; gap:6px; min-width:0; width:100%; margin:0; font-size:12px; line-height:1.5; overflow-wrap:normal; }
+.builder-tools :is(.floor-surface-form,.terrain-paint-form,.lighting-form) :is(input:not([type=checkbox]),select) { width:100%; min-width:0; max-width:100%; box-sizing:border-box; min-height:40px; }
+.builder-tools :is(.floor-surface-form,.terrain-paint-form,.lighting-form) .ledger-actions { display:flex; flex-wrap:wrap; gap:8px; min-width:0; }
+.builder-tools :is(.floor-surface-form,.terrain-paint-form,.lighting-form) .ledger-actions button { flex:1 1 110px; min-width:0; white-space:normal; min-height:40px; }
 .floor-surface-current { display:flex; align-items:center; gap:12px; min-width:0; margin:0; }
 .floor-surface-current img { display:block; width:64px; height:64px; object-fit:contain; flex:none; border-radius:var(--ledger-radius-control,8px); background:var(--ledger-well,#eee); }
 .floor-surface-current figcaption { min-width:0; line-height:1.5; overflow-wrap:break-word; }
@@ -24,3 +24,6 @@
 .editor-palette .terrain-floor-tools>button[aria-haspopup] { flex:none; width:100%; min-width:40px; min-height:40px; font-size:0; }
 .editor-palette .terrain-floor-tools>button[aria-haspopup]::after { content:'▸'; font-size:12px; }
 .builder-tools .terrain-paint-form input[type=range] { accent-color:var(--ledger-accent,#9e2b20); padding-inline:0; border:0; background:transparent; }
+
+.builder-tools .lighting-form .lighting-checkbox {flex-direction:row;align-items:center;gap:8px;}
+.builder-tools .lighting-form .lighting-checkbox input{width:auto;min-width:20px;min-height:20px;}

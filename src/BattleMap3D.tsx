@@ -1,3 +1,7 @@
+import AtmosphericSurfaceMaterial from './AtmosphericSurfaceMaterial'
+import LightingEnvironment3D from './LightingEnvironment3D'
+import {effectiveEnvironment,type LightingQuality} from '../shared/lighting'
+import {useLightingPreferences} from './lightingPreferences'
 import TerrainLayer3D from './TerrainLayer3D'
 import FloorSurface3D from './FloorSurface3D'
 import {surfaceMode} from '../shared/floor-surface'
@@ -54,6 +58,7 @@ interface Combatant {
 }
 
 export interface BattleMap3DProps {
+ lightingQuality?:LightingQuality;lightingFlicker?:boolean;lightingReducedMotion?:boolean;
   turnOrder?:TurnOrder
   combatControlState?:EncounterState
   keyboardActive?:boolean
@@ -143,7 +148,7 @@ function BattlefieldGrid({ width, height }: { width: number; height: number }) {
   </lineSegments>
 }
 
-function LevelScene({ onPlaceSquare, combatants, map, selectedId, activeId, onSelectToken, onMoveToken, canMove, dungeonMap, editor, assetScope, assetContext, tactical, tacticalDraft, tacticalSelected, tacticalInteraction, onSelectTactical, toolbar, toolbarRef, sceneTransitions,sceneFloorId,sceneFloorNames,onTransitionMarker }: Omit<BattleMap3DProps, 'round' | 'onToggleGrid' | 'onToggleLabels' | 'onReturnToTracker'> & { controlsRef: React.RefObject<OrbitControlsImpl | null>;tacticalDraft:TacticalObject|null;tacticalSelected:string|null;tacticalInteraction:TacticalInteraction;onSelectTactical:(id:string)=>void;toolbar?:ObjectToolbarContext;toolbarRef:React.RefObject<HTMLDivElement|null> }) {
+function LevelScene({ onPlaceSquare, combatants, map, selectedId, activeId, onSelectToken, onMoveToken, canMove, dungeonMap, editor, assetScope, assetContext, tactical, tacticalDraft, tacticalSelected, tacticalInteraction, onSelectTactical, toolbar, toolbarRef, sceneTransitions,sceneFloorId,sceneFloorNames,onTransitionMarker,lit=false }: Omit<BattleMap3DProps, 'round' | 'onToggleGrid' | 'onToggleLabels' | 'onReturnToTracker'> & { controlsRef: React.RefObject<OrbitControlsImpl | null>;tacticalDraft:TacticalObject|null;tacticalSelected:string|null;tacticalInteraction:TacticalInteraction;onSelectTactical:(id:string)=>void;toolbar?:ObjectToolbarContext;toolbarRef:React.RefObject<HTMLDivElement|null>;lit?:boolean }) {
   const handleFloorClick = (event: ThreeEvent<MouseEvent>) => {
     if (tacticalInteraction.mode!=='navigate' || editor || canMove === false || event.delta > 3) return
     const destination = {
@@ -160,10 +165,10 @@ function LevelScene({ onPlaceSquare, combatants, map, selectedId, activeId, onSe
       <planeGeometry args={[map.width, map.height]} />
       <meshStandardMaterial color={dungeonMap ? '#242724' : '#666760'} roughness={0.92} metalness={0.02} />
     </mesh>
-    {dungeonMap&&surfaceMode(dungeonMap)==='texture'&&dungeonMap.floorSurface?.texture&&<FloorSurface3D texture={dungeonMap.floorSurface.texture} width={map.width} height={map.height} scope={assetScope} context={assetContext}/>}
-    {dungeonMap&&surfaceMode(dungeonMap)==='solid'&&dungeonMap.floorSurface?.solidColor&&<mesh name="floor-solid" position={[0,-.002,0]} rotation={[-Math.PI/2,0,0]} raycast={()=>null}><planeGeometry args={[map.width,map.height]}/><meshBasicMaterial color={dungeonMap.floorSurface.solidColor} toneMapped={false}/></mesh>}
-    {dungeonMap?.terrainPaint?.length?<TerrainLayer3D strokes={dungeonMap.terrainPaint} width={map.width} height={map.height} scope={assetScope} context={assetContext}/>:null}
-    {dungeonMap?.floorImage && surfaceMode(dungeonMap)==='image' && <FloorImage3D image={dungeonMap.floorImage} width={map.width} height={map.height} scope={assetScope} context={assetContext} />}
+    {dungeonMap&&surfaceMode(dungeonMap)==='texture'&&dungeonMap.floorSurface?.texture&&<FloorSurface3D texture={dungeonMap.floorSurface.texture} width={map.width} height={map.height} lit={lit} scope={assetScope} context={assetContext}/>}
+    {dungeonMap&&surfaceMode(dungeonMap)==='solid'&&dungeonMap.floorSurface?.solidColor&&<mesh name="floor-solid" receiveShadow={lit} position={[0,-.002,0]} rotation={[-Math.PI/2,0,0]} raycast={()=>null}><planeGeometry args={[map.width,map.height]}/><AtmosphericSurfaceMaterial lit={lit} color={dungeonMap.floorSurface.solidColor}/></mesh>}
+    {dungeonMap?.terrainPaint?.length?<TerrainLayer3D strokes={dungeonMap.terrainPaint} width={map.width} height={map.height} lit={lit} scope={assetScope} context={assetContext}/>:null}
+    {dungeonMap?.floorImage && surfaceMode(dungeonMap)==='image' && <FloorImage3D image={dungeonMap.floorImage} width={map.width} height={map.height} lit={lit} scope={assetScope} context={assetContext} />}
     {((dungeonMap&&surfaceMode(dungeonMap)==='image'?dungeonMap.floorImage?.showGrid:undefined) ?? map.showGrid) && <BattlefieldGrid width={map.width} height={map.height} />}
     {!dungeonMap && <group>
       <mesh position={[0, 0.75, -map.height / 2]} castShadow receiveShadow><boxGeometry args={[map.width + 0.3, 1.5, 0.3]} /><meshStandardMaterial color="#4a4943" roughness={0.88} /></mesh>
@@ -191,9 +196,11 @@ function BattlefieldScene(props:Parameters<typeof LevelScene>[0]){
  useEffect(()=>{const c=controlsRef.current;if(c){const y=elevationToWorld(elevation),dy=y-previousElevation.current;c.target.y=y;c.object.position.y+=dy;previousElevation.current=y;c.update();invalidate()}},[elevation,props.levelView?.activeId,controlsRef,invalidate])
  const levels=props.dungeonMap?dungeonLevels(props.dungeonMap):[]
  const activeId=props.levelView?.activeId??primaryLevelId(props.dungeonMap)
+ const activeLevel=levels.find(l=>l.id===activeId),configured=Boolean(props.dungeonMap?.lighting||activeLevel?.lightingOverride)
+ const environment=useMemo(()=>effectiveEnvironment(props.dungeonMap?.lighting,activeLevel?.lightingOverride),[props.dungeonMap?.lighting,activeLevel?.lightingOverride])
  const visible=levels.filter(l=>!props.levelView?.hiddenIds.includes(l.id)&&(props.levelView?.mode==='stacked'||l.id===activeId))
  return <>
-  <color attach="background" args={['#171a19']}/><ambientLight intensity={1.05}/><directionalLight position={[8,14,6]} intensity={2.1} castShadow shadow-mapSize={[1024,1024]}/>
+  <color attach="background" args={['#171a19']}/><LightingEnvironment3D environment={environment} configured={configured} quality={props.lightingQuality} width={activeLevel?.width??map.width} height={activeLevel?.height??map.height} offset={[(activeLevel?.width??map.width)-map.width,0,(activeLevel?.height??map.height)-map.height].map((n,i)=>i===1?elevation:n/2) as [number,number,number]}/>
   {!props.dungeonMap&&!props.levelsHidden&&<LevelScene {...props}/>}
   {visible.map(level=>{
    const active=level.id===activeId
@@ -201,7 +208,7 @@ function BattlefieldScene(props:Parameters<typeof LevelScene>[0]){
    const toolbar=active&&props.toolbar?{...props.toolbar,position:props.toolbar.position.map((v,i)=>v+offset[i]) as [number,number,number]}:undefined
    // Inactive levels are display only, including their labels; they never consume raycasts.
    return <group key={level.id} position={offset} userData={{levelInteractive:active,levelId:level.id}}>
-    <LevelScene {...props} onPlaceSquare={active?props.onPlaceSquare:undefined} sceneTransitions={props.dungeonMap?.transitions} sceneFloorNames={Object.fromEntries(levels.map(l=>[l.id,l.name]))} sceneFloorId={level.id} onTransitionMarker={active?props.onTransitionMarker:undefined} dungeonMap={levelDocument(level)} map={{...map,width:level.width,height:level.height}} editor={active?editor:undefined} canMove={active?props.canMove:false} combatants={props.combatants.filter(c=>(c.floorId??primaryLevelId(props.dungeonMap))===level.id)} onSelectToken={active?props.onSelectToken:()=>{}} tactical={active?props.tactical?.filter(r=>(r.floorId??primaryLevelId(props.dungeonMap))===level.id):[]} tacticalDraft={active?props.tacticalDraft:null} tacticalInteraction={active?props.tacticalInteraction:{...props.tacticalInteraction,mode:'navigate'}} toolbar={toolbar}/>
+    <LevelScene {...props} lit={configured} onPlaceSquare={active?props.onPlaceSquare:undefined} sceneTransitions={props.dungeonMap?.transitions} sceneFloorNames={Object.fromEntries(levels.map(l=>[l.id,l.name]))} sceneFloorId={level.id} onTransitionMarker={active?props.onTransitionMarker:undefined} dungeonMap={levelDocument(level)} map={{...map,width:level.width,height:level.height}} editor={active?editor:undefined} canMove={active?props.canMove:false} combatants={props.combatants.filter(c=>(c.floorId??primaryLevelId(props.dungeonMap))===level.id)} onSelectToken={active?props.onSelectToken:()=>{}} tactical={active?props.tactical?.filter(r=>(r.floorId??primaryLevelId(props.dungeonMap))===level.id):[]} tacticalDraft={active?props.tacticalDraft:null} tacticalInteraction={active?props.tacticalInteraction:{...props.tacticalInteraction,mode:'navigate'}} toolbar={toolbar}/>
    </group>
   })}
     <OrbitControls ref={controlsRef} makeDefault enableDamping dampingFactor={0.08} minDistance={7} maxDistance={Math.max(35, Math.max(map.width, map.height) * 2,(Math.max(0,...levels.map(l=>l.elevationFeet))-Math.min(0,...levels.map(l=>l.elevationFeet)))/5*2+30)} maxPolarAngle={Math.PI / 2.08} target={[0, 0, 0]} touches={{ONE:editor||tacticalInteraction.mode!=='navigate'?undefined:TOUCH.ROTATE,TWO:TOUCH.DOLLY_PAN}} mouseButtons={{ LEFT: editor||tacticalInteraction.mode!=='navigate' ? undefined : 0, MIDDLE: editor||tacticalInteraction.mode!=='navigate' ? 0 : 2, RIGHT: 2 }} />
@@ -209,6 +216,7 @@ function BattlefieldScene(props:Parameters<typeof LevelScene>[0]){
 }
 
 export default function BattleMap3D(input: BattleMap3DProps) {
+  const{quality,setQuality,flicker,setFlicker,reducedMotion}=useLightingPreferences()
   const shellRef=useRef<HTMLElement>(null),viewport=useMapViewport(shellRef,input.keyboardActive!==false)
   const [travelId,setTravelId]=useState<string|null>(null)
   const [chosen,setChosen]=useState<string>(''),[mode,setMode]=useState<LevelView['mode']>('single'),[hidden,setHidden]=useState<string[]>([])
@@ -218,7 +226,7 @@ export default function BattleMap3D(input: BattleMap3DProps) {
   const activeLevel=levels.find(l=>l.id===activeId)
   const activeCombatants=input.combatants.filter(c=>!input.dungeonMap||(c.floorId??primaryLevelId(input.dungeonMap))===activeId)
   const activeVisible=!view.hiddenIds.includes(activeId)
-  const props={...input,levelView:view,canMove:activeVisible?input.canMove:false,editor:activeVisible?input.editor:undefined,combatants:input.combatants}
+  const props={...input,lightingQuality:quality,lightingFlicker:flicker&&!reducedMotion,lightingReducedMotion:reducedMotion,levelView:view,canMove:activeVisible?input.canMove:false,editor:activeVisible?input.editor:undefined,combatants:input.combatants}
   const onTransitionMarker=(id:string)=>{if(input.editor&&input.onSelectTransition&&(input.editor.tool==='select'||input.editor.tool==='transition'))input.onSelectTransition(id);else if(input.actor?.role!=='player'){const t=input.dungeonMap?.transitions?.find(t=>t.id===id);if(t&&(t.source.floorId===activeId||t.directionality==='two-way'&&t.destination.floorId===activeId))setTravelId(id)}}
   const levelSend=input.onCommand?async(command:GameCommand)=>input.onCommand!((command.type==='tactical.create'||command.type==='tactical.update'||command.type==='map.floorImage.set')?(command.type==='map.floorImage.set'?{...command,levelId:activeId}:{...command,floorId:activeId}) as GameCommand:command):undefined
 
@@ -306,7 +314,7 @@ export default function BattleMap3D(input: BattleMap3DProps) {
       <CanvasDock slot={5} label="Camera controls" className="camera-toolbar">      <button aria-label="Reset camera" title="Reset camera" onClick={resetCamera}><RotateCcw size={16} /> Reset camera</button>
       {props.showSharedControls !== false && <><button aria-label={showGrid?"Hide grid":"Show grid"} title="Toggle grid" disabled={props.connected === false} onClick={toggleGrid}>{showGrid ? <EyeOff size={16} /> : <Eye size={16} />} {showGrid ? 'Hide grid' : 'Show grid'}</button>
       <button aria-label={props.map.showLabels?"Hide labels":"Show labels"} title="Toggle labels" disabled={props.connected === false} onClick={props.onToggleLabels}>{props.map.showLabels ? <EyeOff size={16} /> : <Eye size={16} />} {props.map.showLabels ? 'Hide labels' : 'Show labels'}</button></>}
-<button aria-label="Top-down" title="Top-down" onClick={()=>{const c=controlsRef.current;if(c){c.object.position.set(c.target.x,1.5*Math.max(props.map.width,props.map.height),c.target.z+.001);c.update()}}}>Top-down</button><button aria-label="Zoom out" onClick={()=>{const c=controlsRef.current;if(c){c.object.position.sub(c.target).multiplyScalar(1.2).add(c.target);c.update()}}}>−</button><button aria-label="Zoom in" onClick={()=>{const c=controlsRef.current;if(c){c.object.position.sub(c.target).multiplyScalar(.8).add(c.target);c.update()}}}>+</button></CanvasDock>
+<button aria-label="Top-down" title="Top-down" onClick={()=>{const c=controlsRef.current;if(c){c.object.position.set(c.target.x,1.5*Math.max(props.map.width,props.map.height),c.target.z+.001);c.update()}}}>Top-down</button><button aria-label="Zoom out" onClick={()=>{const c=controlsRef.current;if(c){c.object.position.sub(c.target).multiplyScalar(1.2).add(c.target);c.update()}}}>−</button><button aria-label="Zoom in" onClick={()=>{const c=controlsRef.current;if(c){c.object.position.sub(c.target).multiplyScalar(.8).add(c.target);c.update()}}}>+</button><Menu label="Rendering quality" triggerContent="◐" items={[...(['low','medium','high'] as const).map(q=>({id:q,label:`${q[0].toUpperCase()+q.slice(1)} quality${quality===q?' (selected)':''}`,onSelect:()=>setQuality(q)})),{id:'flicker',label:flicker?'Disable all flicker':'Enable flicker',onSelect:()=>setFlicker(!flicker)}]}/></CanvasDock>
       <CanvasDock slot={6} label="Map scale" className="map-scale-readout"><details><summary>1 sq = {props.map.gridSizeFeet} ft · {activeLevel?.width??props.map.width} × {activeLevel?.height??props.map.height} squares · Scale ▾</summary>      {props.actor?.role!=='player'&&props.onCommand&&<form className="grid-scale-control" onSubmit={e=>{e.preventDefault();const gridSizeFeet=Number(new FormData(e.currentTarget).get('feet'));setMapError('');void props.onCommand?.({type:'map.settings',showGrid:props.map.showGrid,showLabels:props.map.showLabels,gridSizeFeet}).catch(error=>setMapError(error.message))}}><label>Feet per square<input aria-label="Feet per square" name="feet" type="number" min={1} max={100} key={props.map.gridSizeFeet} defaultValue={props.map.gridSizeFeet} required disabled={props.connected===false}/></label><button disabled={props.connected===false}>Apply scale</button>{mapError&&<p role="alert">{mapError}</p>}</form>}
 </details></CanvasDock>
     </div>

@@ -1,3 +1,4 @@
+import AtmosphericSurfaceMaterial from './AtmosphericSurfaceMaterial'
 import { useEffect, useMemo, useState } from 'react'
 import { useThree } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
@@ -5,7 +6,7 @@ import { PlaneGeometry, type Texture } from 'three'
 import { floorImageUv, type FloorImage } from '../shared/floor-image'
 import { floorImageUrl, floorTextures } from './floorImageResources'
 
-export default function FloorImage3D({image,width,height,scope,context}:{image:FloorImage;width:number;height:number;scope?:string;context?:{campaignId:string;encounterId:string}}){
+export default function FloorImage3D({image,width,height,scope,context,lit=false}:{lit?:boolean;image:FloorImage;width:number;height:number;scope?:string;context?:{campaignId:string;encounterId:string}}){
   const limit=useThree(state=>Math.min(4096,state.gl.capabilities.maxTextureSize))
   const key=JSON.stringify([floorImageUrl(image.imageId,scope,context),limit])
   const [loaded,setLoaded]=useState<{key:string;texture?:Texture;error?:string}|null>(null),[retry,setRetry]=useState(0)
@@ -30,12 +31,8 @@ export default function FloorImage3D({image,width,height,scope,context}:{image:F
   },[texture,width,height,image])
   useEffect(()=>()=>geometry?.dispose(),[geometry])
   if(!texture||!geometry)return <Html center position={[0,.05,0]} style={{pointerEvents:error?'auto':'none'}}><span className="token-label" role={error?'alert':'status'}><span>{error?'Floor image unavailable':'Loading floor image…'}</span>{error&&<><span className="model-error-detail">{error}</span><button onClick={event=>{event.stopPropagation();setLoaded(null);setRetry(value=>value+1)}}>Retry floor image</button></>}</span></Html>
-  return <><mesh name="floor-image" renderOrder={-1} position={[0,-.002,0]} rotation={[-Math.PI/2,0,0]} raycast={()=>null}>
+  return <><mesh name="floor-image" receiveShadow={lit} renderOrder={-1} position={[0,-.002,0]} rotation={[-Math.PI/2,0,0]} raycast={()=>null}>
     <primitive object={geometry} attach="geometry" dispose={null}/>
-    <meshBasicMaterial map={texture} transparent opacity={image.opacity} depthWrite={false} toneMapped={false} onBeforeCompile={shader=>{
-      // Clip to the map plane, and leave the procedural floor visible wherever
-      // aspect-preserving contain/alignment places UVs outside the image.
-      shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>','#include <map_fragment>\nif (any(lessThan(vMapUv, vec2(0.0))) || any(greaterThan(vMapUv, vec2(1.0)))) discard;')
-    }}/>
+    <AtmosphericSurfaceMaterial lit={lit} map={texture} transparent opacity={image.opacity} depthWrite={false} clip/>
   </mesh><Html style={{pointerEvents:'none'}}><span className="visually-hidden" data-floor-image-state="ready">Floor image ready</span></Html></>
 }

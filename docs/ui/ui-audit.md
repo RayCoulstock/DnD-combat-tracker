@@ -210,3 +210,7 @@ The historical party-preset gap is addressed by [Group Presets](../milestone-5.6
 ## Milestone 5.7.1 follow-through
 
 [Inspector repair and terrain painting](../milestone-5.7.1-terrain-painting.md) identifies the inherited horizontal fieldset grid and unscoped preview as the narrow Floor Surface layout defects. The native picker was already body-portalled; Escape/search handling and explicit focus restoration are repaired through the existing Modal. Scoped vertical forms are covered by label/control geometry checks and desktop/tablet captures. The terrain extension reuses the current scene, map command/history, stable image references and visibility projections; a bounded stroke log drives a maximum of four mask passes per floor. Existing image calibration, geometry painting and GLB pipelines remain.
+
+## Milestone 6.0A follow-through
+
+Inspection confirmed one demand-rendered scene, legacy white ambient/directional lights, 1024px directional shadows, ACES/sRGB defaults and unlit floor artwork. Optional atmosphere now adds explicit map/floor controls around these owners. Legacy maps retain their old path; opted-in floor art uses a shared lit adapter with its existing UV/alpha/clipping and a legibility fill. Stacked floors intentionally share the active-floor environment. [Architecture](../milestone-6.0-lighting.md) records limitations, privacy/resource risks and the three review increments.

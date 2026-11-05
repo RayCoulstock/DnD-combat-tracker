@@ -399,3 +399,14 @@ Painted terrain remains in Editing → Floor and the existing D4 Floor tool. Thi
 | Mud, Sand and Shallow water starters | Existing texture picker/library | Local original static CC0 assets; no animated/procedural materials |
 
 Terrain renders as at most four cached mask/material passes per floor. It introduces no permanent toolbar, second scene or geometry edit. Terrain settings and current stroke references are projected with existing floor visibility rules.
+
+## Milestone 6.0A actual locations
+
+| Feature | Zone / implementation | Contract |
+|---|---|---|
+| Global ambient/directional colours, intensities/position, exposure and shadow cap | C3 Map → Lighting Environment | Explicit draft/Apply, existing map revision/history; absent data preserves legacy materials/lights |
+| Selected per-floor environment overrides and reset inheritance | C3 This level → Lighting Override | Only checked properties override global; stacked view uses the active floor's environment for all visible floors |
+| Daylight/Overcast/Torchlit dungeon/Night/Magical starting configurations | Environment's existing Menu | Loads a draft, never silently saves or applies gameplay rules |
+| Local quality/flicker preference | D5 Rendering quality menu | Viewer-only storage; no authoritative encounter update or extra toolbar |
+
+Floor art opts into a lit material only when atmospheric data is configured. Existing image clipping, repeats, terrain masks, grid and labels retain their owners. A small fill keeps scenes legible. No per-floor light-isolation claim is made.
