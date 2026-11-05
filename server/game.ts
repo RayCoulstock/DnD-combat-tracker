@@ -102,6 +102,7 @@ export async function execute(pool: Pool, actor: Actor, campaignId: string, data
     }
     const current = await loadState(db, encounter.id)
     let command = data.command
+    if(command.type==='map.lighting.scene.activate'||command.type==='map.lighting.scene.restore')command={...command,startedAt:Date.now()}
     let groupResult:GroupInsertionResult|undefined
     let emptyGroup=false
     if(command.type==='group.add'){const prepared=await prepareGroupInsertion(db,actor,campaignId,current,command);groupResult=prepared.report;emptyGroup=!prepared.combatants.length;command={type:'combatant.add',combatants:prepared.combatants,floorId:prepared.floorId,allowPersistentDuplicate:true}}
