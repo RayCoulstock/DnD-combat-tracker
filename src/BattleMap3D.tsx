@@ -1,3 +1,4 @@
+import PointLights3D from './PointLights3D'
 import AtmosphericSurfaceMaterial from './AtmosphericSurfaceMaterial'
 import LightingEnvironment3D from './LightingEnvironment3D'
 import {effectiveEnvironment,type LightingQuality} from '../shared/lighting'
@@ -58,7 +59,7 @@ interface Combatant {
 }
 
 export interface BattleMap3DProps {
- lightingQuality?:LightingQuality;lightingFlicker?:boolean;lightingReducedMotion?:boolean;
+ onSelectLight?:(id:string)=>void;lightingQuality?:LightingQuality;lightingFlicker?:boolean;lightingReducedMotion?:boolean;
   turnOrder?:TurnOrder
   combatControlState?:EncounterState
   keyboardActive?:boolean
@@ -200,7 +201,8 @@ function BattlefieldScene(props:Parameters<typeof LevelScene>[0]){
  const environment=useMemo(()=>effectiveEnvironment(props.dungeonMap?.lighting,activeLevel?.lightingOverride),[props.dungeonMap?.lighting,activeLevel?.lightingOverride])
  const visible=levels.filter(l=>!props.levelView?.hiddenIds.includes(l.id)&&(props.levelView?.mode==='stacked'||l.id===activeId))
  return <>
-  <color attach="background" args={['#171a19']}/><LightingEnvironment3D environment={environment} configured={configured} quality={props.lightingQuality} width={activeLevel?.width??map.width} height={activeLevel?.height??map.height} offset={[(activeLevel?.width??map.width)-map.width,0,(activeLevel?.height??map.height)-map.height].map((n,i)=>i===1?elevation:n/2) as [number,number,number]}/>
+  <color attach="background" args={['#171a19']}/><LightingEnvironment3D transition={props.dungeonMap?.lighting?.transition} reduced={props.lightingReducedMotion} context={activeId} environment={environment} configured={configured} quality={props.lightingQuality} width={activeLevel?.width??map.width} height={activeLevel?.height??map.height} offset={[(activeLevel?.width??map.width)-map.width,0,(activeLevel?.height??map.height)-map.height].map((n,i)=>i===1?elevation:n/2) as [number,number,number]}/>
+  {props.dungeonMap&&configured&&<PointLights3D reduced={props.lightingReducedMotion} document={props.dungeonMap} combatants={props.combatants} tokens={map.tokens} activeId={activeId} width={map.width} height={map.height} quality={props.lightingQuality} flicker={props.lightingFlicker} shadows={environment.shadows&&props.lightingQuality!=='low'} editor={Boolean(props.editing&&props.actor?.role!=='player')} pickable={props.editor?.tool==='lighting'||props.editor?.tool==='select'} onSelect={props.onSelectLight}/>}
   {!props.dungeonMap&&!props.levelsHidden&&<LevelScene {...props}/>}
   {visible.map(level=>{
    const active=level.id===activeId

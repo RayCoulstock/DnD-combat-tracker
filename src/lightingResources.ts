@@ -5,3 +5,5 @@ export function configureLightingRenderer(renderer:WebGLRenderer,exposure:number
  const prior={exposure:renderer.toneMappingExposure,shadows:renderer.shadowMap.enabled};renderer.toneMappingExposure=exposure;renderer.shadowMap.enabled=shadows
  return()=>{renderer.toneMappingExposure=prior.exposure;renderer.shadowMap.enabled=prior.shadows}
 }
+
+export function setLightingExposure(renderer:WebGLRenderer,exposure:number){renderer.toneMappingExposure=exposure}

@@ -1,4 +1,5 @@
-import {lightingSchema,environmentSchema,environmentOverrideSchema} from './lighting.ts'
+import {captureLighting,applyLightingSnapshot} from './lightingScenes.ts'
+import {lightingSchema,environmentSchema,environmentOverrideSchema,pointLightSchema,lightIdSchema,legacyEnvironment,lightingSceneSchema} from './lighting.ts'
 import {terrainPaintSchema,terrainStrokeSchema} from './terrain.ts'
 import {floorSurfaceSchema} from './floor-surface.ts'
 import {transitionSchema} from './transitions.ts'
@@ -79,6 +80,7 @@ export const dungeonSchema = documentShape.superRefine((map,ctx)=>{
     if(elevations.some(e=>Math.abs(e-level.elevationFeet)<.1))ctx.addIssue({code:'custom',message:'Levels must be at least 0.1 feet apart to avoid coincident floor surfaces.'})
     elevations.push(level.elevationFeet);ids.add(level.id);validateGeometry({...level,schemaVersion:5},ctx)
   }
+  if(map.lighting?.sources?.some(l=>!ids.has(l.floorId)))ctx.addIssue({code:'custom',message:'Light sources require existing floors.'})
   if(map.transitions&&map.schemaVersion<6)ctx.addIssue({code:'custom',message:'Transitions require map version 6.'})
   const transitionIds=new Set<string>(),levels=[{...map,id:map.level?.id??LEGACY_LEVEL_ID},...(map.levels??[])]
   for(const transition of map.transitions??[]){
@@ -130,6 +132,16 @@ export function blankDungeon(id: string, name: string, width = 20, height = 20):
 // Legacy versions remain valid; scenery uses 2, architectural visuals 3, and floor images 4. Never downgrade a document.
 export const readDungeon = (value: unknown): DungeonMap => dungeonSchema.parse(value)
 export const mapCommandSchemas = [
+  z.object({type:z.literal('map.lighting.scene.save'),id:lightIdSchema,name:z.string().trim().min(1).max(100),description:z.string().max(1000),durationMs:z.number().int().min(0).max(10000)}).extend({levelId:objectId.optional()}).strict(),
+  z.object({type:z.literal('map.lighting.scene.rename'),id:lightIdSchema,name:z.string().trim().min(1).max(100),description:z.string().max(1000),durationMs:z.number().int().min(0).max(10000)}).extend({levelId:objectId.optional()}).strict(),
+  z.object({type:z.literal('map.lighting.scene.duplicate'),id:lightIdSchema,newId:lightIdSchema}).extend({levelId:objectId.optional()}).strict(),
+  z.object({type:z.literal('map.lighting.scene.remove'),id:lightIdSchema}).extend({levelId:objectId.optional()}).strict(),
+  z.object({type:z.literal('map.lighting.scene.activate'),id:lightIdSchema,durationMs:z.number().int().min(0).max(10000),transitionId:z.uuid(),startedAt:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional()}).extend({levelId:objectId.optional()}).strict(),
+  z.object({type:z.literal('map.lighting.scene.restore'),durationMs:z.number().int().min(0).max(10000),transitionId:z.uuid(),startedAt:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional()}).extend({levelId:objectId.optional()}).strict(),
+  z.object({type:z.literal('map.lighting.source.set'),source:pointLightSchema}).extend({levelId:objectId.optional()}).strict(),
+  z.object({type:z.literal('map.lighting.source.remove'),id:lightIdSchema}).extend({levelId:objectId.optional()}).strict(),
+  z.object({type:z.literal('map.lighting.source.duplicate'),id:lightIdSchema,newId:lightIdSchema}).extend({levelId:objectId.optional()}).strict(),
+  z.object({type:z.literal('map.lighting.source.detach'),id:lightIdSchema}).extend({levelId:objectId.optional()}).strict(),
   z.object({type:z.literal('map.lighting.environment.set'),environment:environmentSchema}).extend({levelId:objectId.optional()}).strict(),
   z.object({type:z.literal('map.lighting.override.set'),override:environmentOverrideSchema.nullable()}).extend({levelId:objectId.optional()}).strict(),
   z.object({type:z.literal('map.terrain.stroke'),stroke:terrainStrokeSchema}).extend({levelId:objectId.optional()}).strict(),
@@ -267,7 +279,31 @@ export function editMap(frame:MapFrame,history:MapHistory,command:MapCommand):{f
   if(command.type==='map.undo'||command.type==='map.redo'||command.type==='map.history.clear'||command.type==='map.blank'||command.type==='map.load'||command.type==='map.template.load')return editSingleMap(frame,history,command)
   const document=frame.document
   if(!document)throw new Error('Create or load a dungeon map first.')
-  if(command.type==='map.lighting.environment.set'){const next=readDungeon({...document,lighting:{environment:command.environment}});return {frame:{...frame,document:reuseDungeonGeometry(document,next)},history:{undo:bounded([...history.undo,structuredClone(frame)]),redo:[]}}}
+  if(command.type==='map.lighting.scene.save'||command.type==='map.lighting.scene.rename'||command.type==='map.lighting.scene.duplicate'||command.type==='map.lighting.scene.remove'||command.type==='map.lighting.scene.activate'||command.type==='map.lighting.scene.restore'){
+    const rig=structuredClone(document.lighting??{environment:legacyEnvironment}),scenes=rig.scenes??[],existing='id'in command?scenes.find(s=>s.id===command.id):undefined
+    if(command.type!=='map.lighting.scene.save'&&command.type!=='map.lighting.scene.restore'&&!existing)throw new Error('Lighting scene no longer exists.')
+    let next=document
+    if(command.type==='map.lighting.scene.save'){const scene=lightingSceneSchema.parse({id:command.id,name:command.name,description:command.description,durationMs:command.durationMs,snapshot:captureLighting(document,dungeonLevels(document))});rig.scenes=[...scenes.filter(s=>s.id!==command.id),scene];rig.activeSceneId=scene.id}
+    else if(command.type==='map.lighting.scene.rename')rig.scenes=scenes.map(s=>s.id===command.id?{...s,name:command.name,description:command.description,durationMs:command.durationMs}:s)
+    else if(command.type==='map.lighting.scene.duplicate'){if(scenes.some(s=>s.id===command.newId))throw new Error('Scene ID is already in use.');rig.scenes=[...scenes,{...existing!,id:command.newId,name:existing!.name.slice(0,90)+' Copy'}]}
+    else if(command.type==='map.lighting.scene.remove'){rig.scenes=scenes.filter(s=>s.id!==command.id);if(rig.activeSceneId===command.id)delete rig.activeSceneId;if(rig.previousSceneId===command.id)delete rig.previousSceneId}
+    else{
+      const target=command.type==='map.lighting.scene.restore'?rig.previous:existing!.snapshot
+      if(!target)throw new Error('No previous lighting state is available.')
+      const previous=captureLighting(document,dungeonLevels(document)),previousId=rig.activeSceneId,targetId=command.type==='map.lighting.scene.restore'?rig.previousSceneId:command.id
+      next=applyLightingSnapshot(document,target,levels=>composeLevels(document,levels),dungeonLevels(document))
+      rig.environment=next.lighting!.environment;rig.sources=next.lighting!.sources;rig.previous=previous;rig.previousSceneId=previousId;rig.activeSceneId=targetId;rig.transition={id:command.transitionId,startedAt:command.startedAt??Date.now(),durationMs:command.durationMs}
+    }
+    next=readDungeon({...next,lighting:rig});return {frame:{...frame,document:reuseDungeonGeometry(document,next)},history:{undo:bounded([...history.undo,structuredClone(frame)]),redo:[]}}
+  }
+  if(command.type==='map.lighting.source.set'||command.type==='map.lighting.source.remove'||command.type==='map.lighting.source.duplicate'){
+    const rig=structuredClone(document.lighting??{environment:legacyEnvironment}),sources=rig.sources??[]
+    if(command.type==='map.lighting.source.set')rig.sources=[...sources.filter(s=>s.id!==command.source.id),command.source]
+    else {const source=sources.find(s=>s.id===command.id);if(!source)throw new Error('Light no longer exists.');if(command.type==='map.lighting.source.remove')rig.sources=sources.filter(s=>s.id!==command.id);else{if(sources.some(s=>s.id===command.newId))throw new Error('Light ID is already in use.');rig.sources=[...sources,{...source,id:command.newId,name:source.name.slice(0,90)+' Copy'}]}}
+    const next=readDungeon({...document,lighting:rig});return {frame:{...frame,document:reuseDungeonGeometry(document,next)},history:{undo:bounded([...history.undo,structuredClone(frame)]),redo:[]}}
+  }
+  if(command.type==='map.lighting.source.detach')throw new Error('Resolve light attachment using encounter state first.')
+  if(command.type==='map.lighting.environment.set'){const next=readDungeon({...document,lighting:{...document.lighting,environment:command.environment}});return {frame:{...frame,document:reuseDungeonGeometry(document,next)},history:{undo:bounded([...history.undo,structuredClone(frame)]),redo:[]}}}
   if(command.type==='map.transition.set'||command.type==='map.transition.remove'){
     const transitions=document.transitions??[]
     if(command.type==='map.transition.remove'&&!transitions.some(t=>t.id===command.transitionId))throw new Error('Transition no longer exists.')
@@ -275,6 +311,7 @@ export function editMap(frame:MapFrame,history:MapHistory,command:MapCommand):{f
     return {frame:{...frame,document:reuseDungeonGeometry(document,next)},history:{undo:bounded([...history.undo,structuredClone(frame)]),redo:[]}}
   }
   if(!command.type.startsWith('map.level.')&&!document.level&&!command.levelId)return editSingleMap(frame,history,command)
+  let rig=document.lighting
   let levels=dungeonLevels(document)
   if(command.type==='map.level.add'){
     if(levels.some(l=>l.id===command.id))throw new Error('Duplicate level ID.')
@@ -286,6 +323,7 @@ export function editMap(frame:MapFrame,history:MapHistory,command:MapCommand):{f
   }else if(command.type==='map.level.remove'){
     if(!levels.some(l=>l.id===command.id))throw new Error('Level no longer exists.')
     levels=levels.filter(l=>l.id!==command.id)
+    if(rig?.sources)rig={...rig,sources:rig.sources.filter(l=>l.floorId!==command.id)}
   }else if(command.type==='map.level.duplicate'){
     const source=levels.find(l=>l.id===command.id)
     if(!source||levels.some(l=>l.id===command.newId))throw new Error('Invalid source or duplicate level ID.')
@@ -293,6 +331,7 @@ export function editMap(frame:MapFrame,history:MapHistory,command:MapCommand):{f
     // Canonical wall edges are level-local keys; (levelId, wallId) is their unique identity.
     copy.doors=copy.doors.map((d,i)=>({...d,id:`${command.newId.slice(0,60)}:door:${i}`}))
     copy.props=copy.props.map((p,i)=>({...p,id:`${command.newId.slice(0,60)}:prop:${i}`}))
+    if(rig?.sources){const remap=new Map(source.props.map((p,i)=>[p.id,copy.props[i].id]));const emitters=rig.sources.filter(l=>l.floorId===source.id&&l.attachment?.kind!=='combatant').map((l,i)=>({...structuredClone(l),id:`${command.newId.slice(0,60)}:light:${i}`,floorId:command.newId,...(l.attachment?.kind==='scenery'?{attachment:{...l.attachment,floorId:command.newId,id:remap.get(l.attachment.id)??l.attachment.id}}:{})}));rig={...rig,sources:[...rig.sources,...emitters]}}
     levels=[...levels,{...copy,id:command.newId,name:command.name,elevationFeet:command.elevationFeet,playerVisible:false}]
   }else{
     const id=command.levelId??primaryLevelId(document),index=levels.findIndex(l=>l.id===id)
@@ -302,7 +341,7 @@ export function editMap(frame:MapFrame,history:MapHistory,command:MapCommand):{f
     const {schemaVersion,...geometry}=result;void schemaVersion
     levels=levels.map((l,i)=>i===index?{...geometry,id:source.id,name:source.name,elevationFeet:source.elevationFeet,playerVisible:source.playerVisible}:l)
   }
-  const composed=composeLevels(document,levels)
+  const composed=composeLevels({...document,...(rig?{lighting:rig}:{})},levels)
   if(command.type==='map.level.remove'&&composed.transitions)composed.transitions=composed.transitions.filter(t=>t.source.floorId!==command.id&&t.destination.floorId!==command.id)
   const next=reuseDungeonGeometry(document,readDungeon(composed))
   return {frame:{document:next,width:next.width,height:next.height},history:{undo:bounded([...history.undo,structuredClone(frame)]),redo:[]}}

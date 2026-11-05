@@ -31,17 +31,20 @@ export APP_ORIGIN=http://localhost:5173 NODE_ENV=test PORT=3001 ASSET_STORAGE_DI
 mkdir -p "$ASSET_STORAGE_DIR" ci-results
 npm run test:integration
 npm run db:migrate:production
-node dist-server/server/index.js > "$work/backend.log" 2>&1 & backend=$!
 node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5173 --strictPort > "$work/frontend.log" 2>&1 & frontend=$!
-node scripts/ci/wait-ready.mjs
-kill -0 "$backend" "$frontend"
-# No screenshots, traces or real GLBs are uploaded; JSON reporter is reduced to counts only.
+# Authentication limits are intentionally unchanged. Each serial shard gets its
+# own disposable API process so independent fixtures do not share an IP budget.
+# Keep the same disposable database/storage; no API reset/bypass route is needed.
 status=0
-PLAYWRIGHT_JSON_OUTPUT_FILE="$work/playwright.json" npm run test:e2e -- --reporter=line,json || status=$?
-node --input-type=module - "$work/playwright.json" <<'JS'
-import {readFileSync,writeFileSync} from 'node:fs'
-const report=JSON.parse(readFileSync(process.argv[2],'utf8'))
-writeFileSync('ci-results/browser-summary.json',JSON.stringify(report.stats,null,2)+'\n')
-JS
-
+for shard in 1 2; do
+  node dist-server/server/index.js > "$work/backend-$shard.log" 2>&1 & backend=$!
+  node scripts/ci/wait-ready.mjs
+  kill -0 "$backend" "$frontend"
+  # No screenshots, traces or real GLBs are uploaded; reports reduce to counts.
+  PLAYWRIGHT_JSON_OUTPUT_FILE="$work/playwright-$shard.json" npm run test:e2e -- --shard="$shard/2" --reporter=line,json || status=$?
+  kill -TERM "$backend"
+  wait "$backend" || true
+  backend=
+done
+node scripts/ci/browser-summary.mjs "$work/playwright-1.json" "$work/playwright-2.json" > ci-results/browser-summary.json
 exit "$status"
