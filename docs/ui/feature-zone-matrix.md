@@ -410,3 +410,7 @@ Terrain renders as at most four cached mask/material passes per floor. It introd
 | Local quality/flicker preference | D5 Rendering quality menu | Viewer-only storage; no authoritative encounter update or extra toolbar |
 
 Floor art opts into a lit material only when atmospheric data is configured. Existing image clipping, repeats, terrain masks, grid and labels retain their owners. A small fill keeps scenes legible. No per-floor light-isolation claim is made.
+
+Milestone 6.0B: D4 **Lighting tool** owns add/select/move; C3 Editing → Selection → **Lighting tool / Light properties** owns source presets, colour/intensity/radius/height, enabled, shadows, flicker, attachments, duplicate/delete. D3 retains map undo/redo. Gizmos are DM editor only; active-floor policy and local D5 quality budgets apply. No new permanent dock or row.
+
+Milestone 6.0C: C3 Map → **Lighting Scenes** owns saved-scene status/dirty feedback and **Manage lighting scenes** modal (search, metadata, duration, save changes/as-new, duplicate/delete, activate, restore). No new B header control; D3 retains undo/redo/fullscreen. Players see permitted effective atmosphere, never scene definitions/management. Environment and source animations run locally from committed activation metadata.

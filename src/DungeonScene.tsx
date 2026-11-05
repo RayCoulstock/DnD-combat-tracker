@@ -15,7 +15,7 @@ import { canonicalWall, type Cell, type DungeonMap, type ProceduralProp, type Wa
 export interface EditorHit { edgeDistance?: number; position?: Cell; cell: Cell; wall: Wall; objectId?: string; kind?: 'prop' | 'wall' | 'door' }
 export interface EditorInteraction {
   terrain?:{disabled?:boolean;mode:'paint'|'erase';brush:TerrainBrush;texture:RepeatingTexture;onStroke:(stroke:TerrainStroke)=>void}
-  tool: 'transition' | 'select' | 'floor' | 'wall' | 'door' | 'object' | 'erase' | 'scenery' | 'sceneryMove' | 'wall-line' | 'room' | 'corridor' | 'objectMove'
+  tool: 'lighting' | 'transition' | 'select' | 'floor' | 'wall' | 'door' | 'object' | 'erase' | 'scenery' | 'sceneryMove' | 'wall-line' | 'room' | 'corridor' | 'objectMove'
   transitionPicking?:boolean
   activation?:number
   document?:DungeonMap

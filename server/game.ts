@@ -50,7 +50,7 @@ export async function persistState(db: PoolClient, encounterId: string, input: E
   if (history || !isDeepStrictEqual(existing?.document ?? null, state.dungeonMap ?? null)) {
     if (state.dungeonMap) readDungeon(state.dungeonMap)
     await db.query(`INSERT INTO encounter_maps(encounter_id,document,history,schema_version) VALUES($1,$2,$3,$4)
-      ON CONFLICT(encounter_id) DO UPDATE SET document=$2,history=$3,schema_version=$4,revision=encounter_maps.revision+1,updated_at=now()`, [encounterId, state.dungeonMap ?? null, history ?? emptyHistory(), state.dungeonMap?.schemaVersion ?? 1])
+      ON CONFLICT(encounter_id) DO UPDATE SET document=$2,history=$3,schema_version=$4,revision=encounter_maps.revision+1,updated_at=now()`, [encounterId, state.dungeonMap ?? null, mapHistory, state.dungeonMap?.schemaVersion ?? 1])
   }
   await db.query('UPDATE encounters SET state=$2,updated_at=now() WHERE id=$1', [encounterId, { ...state, dungeonMap: undefined, mapRevision: undefined, mapUndoDepth: undefined, mapRedoDepth: undefined, combatants: [], battleMap: { ...state.battleMap, tokens: {} } }])
   await db.query('DELETE FROM combatants WHERE encounter_id=$1', [encounterId])
@@ -102,6 +102,7 @@ export async function execute(pool: Pool, actor: Actor, campaignId: string, data
     }
     const current = await loadState(db, encounter.id)
     let command = data.command
+    if(command.type==='map.lighting.scene.activate'||command.type==='map.lighting.scene.restore')command={...command,startedAt:Date.now()}
     let groupResult:GroupInsertionResult|undefined
     let emptyGroup=false
     if(command.type==='group.add'){const prepared=await prepareGroupInsertion(db,actor,campaignId,current,command);groupResult=prepared.report;emptyGroup=!prepared.combatants.length;command={type:'combatant.add',combatants:prepared.combatants,floorId:prepared.floorId,allowPersistentDuplicate:true}}
