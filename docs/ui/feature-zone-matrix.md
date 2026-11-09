@@ -427,3 +427,15 @@ Milestone 6.0C: C3 Map → **Lighting Scenes** owns saved-scene status/dirty fee
 | Existing controls | D3 history/fullscreen, D5 camera/quality, C3 lighting/surfaces/terrain and existing floor controls keep their owners. No new header row or floating toolbar. |
 
 See `docs/milestone-6.1-fog-of-war.md` for conservative GLB/terrain/tactical policies, masked-media grants, test evidence and remaining B/C work. Soft edges, gesture editing and cinematic transitions are not claimed in A.
+
+## Milestone 6.1B — DM fog editing
+
+| Feature | Location / contract |
+| --- | --- |
+| Reveal Brush, Conceal Brush, Rectangle, Polygon, Player Preview | D4 Fog uses the existing side Menu flyout. Settings remains an explicit entry. Choosing a painting tool activates the single `fog` EditorInteraction owner; enable remains an explicit C3 choice. |
+| Fog configuration and actions | C3 Fog of War settings: enable/disable, named active floor, operation/shape, radius in squares, grid snapping for shapes, optional editing overlay, hard edge-softness preview, whole-floor reveal/conceal, confirmed current-floor/global reset, local/online save feedback and Player Preview. Single-column form with wrapping actions. |
+| Polygon completion / repair | C3 Finish polygon, Undo vertex and Cancel polygon; vertex count and inline error. Explicit completion only; maximum 64 vertices. Escape cancels through the existing editor shortcut guard. |
+| History / camera / other painting | D3 existing Undo/Redo/History/fullscreen unchanged. One completed mask operation per history entry; no-op painting adds none. Middle/right camera input and two-touch remain with OrbitControls. Terrain and tactical tools keep their original owners. |
+| Player safety | Player and Preview use existing A projection. Preview cancels unfinished gestures and has no Fog editing controls. Server rejects player commands and stale expected masks. |
+
+Cinematic animations and rendered soft edges remain 6.1C. A's conservative GLB/terrain/tactical visibility policies remain unchanged; see the milestone report.

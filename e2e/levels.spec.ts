@@ -15,6 +15,9 @@ async function sceneLevels(page:Page){return page.locator('.battlefield-wrap can
  state.scene.traverse((object:{userData:{levelId?:string;levelInteractive?:boolean};position:{y:number};traverse:(fn:(child:{name:string;type:string;matrixWorld:{elements:number[]};scale:{x:number};rotation:{y:number}})=>void)=>void})=>{if(object.userData.levelId){let images=0,models=0;const transforms:{y:number;scale:number;rotation:number}[]=[],tokens:number[]=[];object.traverse(child=>{if(child.name==='floor-image')images++;if(child.type==='Mesh')models++;if(child.name==='scenery-placement-transform')transforms.push({y:child.matrixWorld.elements[13],scale:child.scale.x,rotation:child.rotation.y});if(child.name==='combatant-token')tokens.push(child.matrixWorld.elements[13])});result.push({id:object.userData.levelId,y:object.position.y,interactive:object.userData.levelInteractive===true,images,models,transforms,tokens})}});return result
 })}
 test('three populated levels retain images, geometry, transforms, tokens, drafts and player visibility through save/reload, transitions and fullscreen',async({page,browser})=>{
+ // Two browsers, three populated floors and native fullscreen share this budget.
+ // Individual assertions keep their existing 15-second timeout.
+ test.setTimeout(180000)
  const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message))
  await page.goto('/');await multiplayerMode(page)
  await page.getByLabel('Email',{exact:true}).fill(randomUUID()+'@example.test');await page.getByLabel('Password (12+ characters)',{exact:true}).fill('Multi Level Maps Password 2053!');await page.getByRole('button',{name:'Create account',exact:true}).click();await openSetup(page)

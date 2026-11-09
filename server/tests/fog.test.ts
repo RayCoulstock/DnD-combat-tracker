@@ -56,7 +56,15 @@ test('fog authorization, masked media, ordered snapshots, tracker compatibility,
   assert.equal((await fetch(file+'&fogFloor=missing&fogRevision=0',{headers:{Cookie:player.cookie}})).status,404)
   // Deliberately reveal only the west half of each raster row.
   const mask=Array.from({length:32},()=> 'f'.repeat(4)+'0'.repeat(4)).join('')
-  await dm.command({type:'map.fog.mask',levelId:'ground',mask});await waitFor(()=>player.snapshot!.revision===dm.snapshot!.revision)
+  await dm.command({type:'map.fog.mask',levelId:'ground',mask,expectedMask:''});await waitFor(()=>player.snapshot!.revision===dm.snapshot!.revision)
+  const oldMapRevision=dm.snapshot!.state.mapRevision!
+  await dm.command({type:'map.floor.paint',cells:[{x:1,z:1}],material:'wood'})
+  const stale=await dm.command({type:'map.fog.mask',levelId:'ground',mask:fullMask(8,8),expectedMask:mask,expectedMapRevision:oldMapRevision},false)
+  if(!stale.ok)assert.equal(stale.error.code,'CONFLICT')
+  const guardedRevision=dm.snapshot!.revision
+  await dm.command({type:'map.fog.mask',levelId:'ground',mask:fullMask(8,8),expectedMask:''},false)
+  assert.equal(dm.snapshot!.revision,guardedRevision);assert.equal(dm.snapshot!.state.dungeonMap!.fogOfWar!.floors.ground,mask)
+  await player.command({type:'map.fog.mask',levelId:'ground',mask:fullMask(8,8),expectedMask:mask},false)
   const partial=await fetch(file+'&fogFloor=ground&fogRevision=1',{headers:{Cookie:player.cookie}}),pixels=await sharp(Buffer.from(await partial.arrayBuffer())).raw().toBuffer()
   assert.equal(pixels[3],255);assert.equal(pixels[(127)*4+3],0)
   const a=dm.snapshot!.revision;await dm.command({type:'map.fog.mask',levelId:'ground',mask:fullMask(8,8)});await waitFor(()=>player.snapshot!.revision===dm.snapshot!.revision);assert.equal((await fetch(modelFile,{headers:{Cookie:player.cookie}})).status,200);await dm.command({type:'map.fog.reset',confirmed:true});await waitFor(()=>player.snapshot!.revision===dm.snapshot!.revision);assert.ok(dm.snapshot!.revision>a);assert.deepEqual(player.snapshot!.state.battleMap.tokens,{})

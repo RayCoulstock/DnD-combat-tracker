@@ -1,3 +1,4 @@
+import {sameFogMask} from './fogEditing.ts'
 import {fogSchema,initialFog} from './fog.ts'
 import {captureLighting,applyLightingSnapshot} from './lightingScenes.ts'
 import {lightingSchema,environmentSchema,environmentOverrideSchema,pointLightSchema,lightIdSchema,legacyEnvironment,lightingSceneSchema} from './lighting.ts'
@@ -142,7 +143,7 @@ export const readDungeon = (value: unknown): DungeonMap => dungeonSchema.parse(v
 export const mapCommandSchemas = [
   z.object({type:z.literal('map.fog.enabled'),enabled:z.boolean(),levelId:objectId.optional()}).strict(),
   z.object({type:z.literal('map.fog.reset'),confirmed:z.literal(true),levelId:objectId.optional()}).strict(),
-  z.object({type:z.literal('map.fog.mask'),mask:z.string().max(10000).regex(/^[0-9a-f]*$/),levelId:objectId}).strict(),
+  z.object({type:z.literal('map.fog.mask'),mask:z.string().max(10000).regex(/^[0-9a-f]*$/),expectedMask:z.string().max(10000).regex(/^[0-9a-f]*$/).optional(),expectedMapRevision:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),levelId:objectId}).strict(),
   z.object({type:z.literal('map.lighting.scene.save'),id:lightIdSchema,name:z.string().trim().min(1).max(100),description:z.string().max(1000),durationMs:z.number().int().min(0).max(10000)}).extend({levelId:objectId.optional()}).strict(),
   z.object({type:z.literal('map.lighting.scene.rename'),id:lightIdSchema,name:z.string().trim().min(1).max(100),description:z.string().max(1000),durationMs:z.number().int().min(0).max(10000)}).extend({levelId:objectId.optional()}).strict(),
   z.object({type:z.literal('map.lighting.scene.duplicate'),id:lightIdSchema,newId:lightIdSchema}).extend({levelId:objectId.optional()}).strict(),
@@ -300,6 +301,8 @@ export function editMap(frame:MapFrame,history:MapHistory,command:MapCommand):{f
     }else{
       const level=dungeonLevels(document).find(l=>l.id===command.levelId)
       if(!level||command.mask.length!==level.width*level.height*4)throw new Error('Fog mask dimensions do not match the floor.')
+      if(command.expectedMask&&command.expectedMask.length!==level.width*level.height*4)throw new Error('Expected fog mask dimensions do not match the floor.')
+      if(command.expectedMask!==undefined&&(!document.fogOfWar?.enabled||!sameFogMask(command.expectedMask,fog.floors[level.id]??'')))throw new Error('Fog changed while editing. The operation was not applied; try again on the current floor.')
       if(/^0*$/.test(command.mask))delete fog.floors[level.id];else fog.floors[level.id]=command.mask
     }
     fog.revision++

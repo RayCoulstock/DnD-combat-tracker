@@ -188,7 +188,7 @@ function LevelScene({ onPlaceSquare, combatants, map, selectedId, activeId, onSe
       const position = map.tokens[String(combatant.id)]
       return !combatant.unplaced && position && <Token key={combatant.id} assetScope={assetScope} assetContext={assetContext} combatant={combatant} position={position} map={map} selected={combatant.id === selectedId} active={combatant.id === activeId} showLabel={map.showLabels} onSelect={() => {if(tacticalInteraction.mode==='navigate'&&(!editor||editor.tool==='select'))onSelectToken(combatant.id)}} />
     })}
-    {fog?.enabled&&sceneFloorId&&(actor?.role==='player'||fogOverlay)&&<FogOfWar3D fog={fog} floorId={sceneFloorId} width={map.width} height={map.height} overlay={actor?.role!=='player'}/>}
+    {fog?.enabled&&sceneFloorId&&(actor?.role==='player'||fogOverlay&&editor?.tool!=='fog')&&<FogOfWar3D fog={fog} floorId={sceneFloorId} width={map.width} height={map.height} overlay={actor?.role!=='player'}/>}
     {toolbar&&<ToolbarProjection target={toolbarRef} position={toolbar.position}/>}
 
   </>
