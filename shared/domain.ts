@@ -1,3 +1,5 @@
+import {visibleFogLevel,fogTokenVisible,fogFloorFull} from './fogVisibility.ts'
+import {regionRevealed} from './fog.ts'
 import {resolveLight,reconcileLightParents,permittedLightSources} from './lightingState.ts'
 import {groupAddSchema,type GroupInsertionResult} from './groupPresets.ts'
 import {prepareTurnOrder,reconcileTurnOrder,nextTurn,removeFromOrder,type TurnOrder} from './combatOrder.ts'
@@ -5,7 +7,6 @@ import {transitionRoute} from './transitions.ts'
 import {reuseDungeonGeometry,dungeonLevels,composeLevels,primaryLevelId} from './dungeon.ts'
 import { z } from 'zod'
 import {tacticalCommands,tacticalRecordSchema,activeTactical,assertTacticalBounds,type TacticalRecord} from './tactical.ts'
-import { isScenery } from './scenery.ts'
 import { miniatureSchema } from './miniatures.ts'
 import { generationOptionsSchema, generateDungeon } from './generator.ts'
 import { dungeonSchema, editMap, emptyHistory, mapCommandSchemas, type DungeonMap, type MapCommand, type MapHistory } from './dungeon.ts'
@@ -200,6 +201,7 @@ export function applyMapEdit(state: EncounterState, actor: Actor, command: MapCo
     let editCommand:MapCommand=command
     if(command.type==='map.lighting.source.detach'){const source=state.dungeonMap?.lighting?.sources?.find(s=>s.id===command.id);if(!source)throw new Error('Light no longer exists.');const resolved=resolveLight(source,state),{attachment,...plain}=source;void attachment;editCommand={type:'map.lighting.source.set',source:{...plain,floorId:resolved.floorId,position:resolved.position}}}
     const result = editMap({ document: state.dungeonMap ?? null, width: state.battleMap.width, height: state.battleMap.height }, history, editCommand)
+    if(command.type.startsWith('map.fog.'))return {state:{...state,dungeonMap:result.frame.document??undefined,mapUndoDepth:result.history.undo.length,mapRedoDepth:result.history.redo.length},history:result.history}
     if (!state.dungeonMap?.level && (command.type === 'map.undo' || command.type === 'map.redo') && (state.dungeonMap?.floorImage || result.frame.document?.floorImage) && Object.values(state.battleMap.tokens).some(p => p.x >= result.frame.width || p.z >= result.frame.height)) throw new Error('Undo/redo would move combatants outside the map. Move them inside the restored bounds first.')
     let next: EncounterState = { ...state, tactical:state.tactical?.map(r=>({...r,floorId:r.floorId??primaryLevelId(state.dungeonMap)})), combatants:state.combatants.map(c=>({...c,floorId:c.floorId??primaryLevelId(state.dungeonMap)})), dungeonMap: result.frame.document ?? undefined,
       battleMap: reconcileBattleMap({ ...state.battleMap, width: result.frame.width, height: result.frame.height }, state.combatants.map(c => c.id)),
@@ -222,9 +224,10 @@ export function applyMapEdit(state: EncounterState, actor: Actor, command: MapCo
 // Explicit allowlists: never send opaque stored objects to players.
 export function projectEncounter(state: EncounterState, actor: Actor): EncounterState {
   if (actor.role === 'dm') return state
+  const mapIds=new Set(state.combatants.filter(c=>c.visible&&combatantLevelVisible(state,c)&&fogTokenVisible(state.dungeonMap,c,state.battleMap.tokens[String(c.id)])).map(c=>String(c.id)))
   const combatants = state.combatants.filter(c => c.visible&&combatantLevelVisible(state,c)).map(c => {
     const publicData = { floorId:c.floorId??primaryLevelId(state.dungeonMap), id: c.id, name: c.name, short: c.short, side: c.side, initiative: c.initiative,
-      miniature: c.miniature, miniatureStatus: c.miniatureStatus, unplaced:c.unplaced,
+      miniature: mapIds.has(String(c.id))?c.miniature:undefined, miniatureStatus:mapIds.has(String(c.id))?c.miniatureStatus:undefined, unplaced:c.unplaced,
       ownerId: c.ownerId, visible: true, hpShown: c.hpShown === true, hp: c.hpShown === true ? c.hp : 0, maxHp: c.hpShown === true ? c.maxHp : 1, ac: 0, role: '', speed: '', conditions: c.conditions,
       saves: [], actions: [], privateNotes: '' }
     if (c.ownerId !== actor.id) return publicData as Combatant
@@ -233,12 +236,12 @@ export function projectEncounter(state: EncounterState, actor: Actor): Encounter
   })
   const ids = new Set(combatants.map(c => String(c.id)))
   const owned = combatants.filter(c => c.ownerId === actor.id)
-  let dungeonMap=playerDungeon(state.dungeonMap)
-  if(dungeonMap?.lighting)dungeonMap={...dungeonMap,lighting:{environment:dungeonMap.lighting.environment,sources:permittedLightSources(state,ids),...(dungeonMap.lighting.transition?{transition:dungeonMap.lighting.transition}:{})}}
+  let dungeonMap=playerDungeon(state.dungeonMap,state.mapRevision)
+  if(dungeonMap?.lighting)dungeonMap={...dungeonMap,lighting:{environment:dungeonMap.lighting.environment,sources:permittedLightSources(state,mapIds),...(dungeonMap.lighting.transition?{transition:dungeonMap.lighting.transition}:{})}}
   const levels=dungeonMap?dungeonLevels(dungeonMap):[]
-  return { ...state, ...(state.turnOrder?{turnOrder:{...state.turnOrder,manualIds:state.turnOrder.manualIds.filter(id=>ids.has(String(id))),completedIds:state.turnOrder.completedIds.filter(id=>ids.has(String(id)))}}:{}), levelsHidden:Boolean(state.dungeonMap&&!dungeonMap), tactical:state.tactical?.filter(r=>levelVisible(state,r.floorId)).map(r=>({...r,floorId:r.floorId??primaryLevelId(state.dungeonMap)})), dungeonMap, mapUndoDepth: undefined, mapRedoDepth: undefined, combatants, selectedId: null, activeId: ids.has(String(state.activeId)) ? state.activeId : null,
+  return { ...state, ...(state.turnOrder?{turnOrder:{...state.turnOrder,manualIds:state.turnOrder.manualIds.filter(id=>ids.has(String(id))),completedIds:state.turnOrder.completedIds.filter(id=>ids.has(String(id)))}}:{}), levelsHidden:Boolean(state.dungeonMap&&!dungeonMap), tactical:state.tactical?.filter(r=>levelVisible(state,r.floorId)&&fogFloorFull(state.dungeonMap,r.floorId)).map(r=>({...r,floorId:r.floorId??primaryLevelId(state.dungeonMap)})), dungeonMap, mapUndoDepth: undefined, mapRedoDepth: undefined, combatants, selectedId: null, activeId: ids.has(String(state.activeId)) ? state.activeId : null,
     usedAbilities: Object.fromEntries(Object.entries(state.usedAbilities).filter(([key]) => owned.some(c => key.startsWith(`${c.id}:`)))),
-    battleMap: { ...state.battleMap, ...(state.dungeonMap?{width:Math.max(4,...levels.map(l=>l.width)),height:Math.max(4,...levels.map(l=>l.height))}:{}), tokens: Object.fromEntries(Object.entries(state.battleMap.tokens).filter(([id]) => ids.has(id))) } }
+    battleMap: { ...state.battleMap, ...(state.dungeonMap?{width:Math.max(4,...levels.map(l=>l.width)),height:Math.max(4,...levels.map(l=>l.height))}:{}), tokens: Object.fromEntries(Object.entries(state.battleMap.tokens).filter(([id]) => ids.has(id)&&mapIds.has(id))) } }
 }
 export interface Snapshot { mapDocumentOmitted?: boolean; campaignId: string; encounterId: string; name: string; revision: number; sessionActive: boolean; state: EncounterState; actor: Actor }
 // Retain the same document reference for combat-only updates. Missing patches require a full join snapshot.
@@ -287,13 +290,13 @@ export function reconcileLevelTokens(state:EncounterState):EncounterState{
   if(state.combatants.some(c=>!levels.some(l=>l.id===combatantFloorId(state,c))))throw new DomainError('INVALID','Combatant references an unknown level.')
   return {...state,battleMap:{...state.battleMap,width:Math.max(...levels.map(l=>l.width)),height:Math.max(...levels.map(l=>l.height)),tokens}}
 }
-export function playerDungeon(map?:DungeonMap):DungeonMap|undefined{
+export function playerDungeon(map?:DungeonMap,mapRevision?:number):DungeonMap|undefined{
   if(!map)return undefined
-  const levels=dungeonLevels(map).filter(l=>l.playerVisible).map(l=>({...l,props:l.props.filter(p=>!isScenery(p)||p.visible)}))
+  const levels=dungeonLevels(map).filter(l=>l.playerVisible).map(l=>{const level=visibleFogLevel(map,l);return level.floorImage?.fogView?{...level,floorImage:{...level.floorImage,fogView:{...level.floorImage.fogView,revision:mapRevision??level.floorImage.fogView.revision}}}:level})
   if(!levels.length)return undefined
   // Legacy maps retain their public wire format; multi-level maps expose visible levels only.
-  if(!map.level)return {...map,props:levels[0].props}
+  if(!map.level){const {elevationFeet,playerVisible,...geometry}=levels[0];void elevationFeet;void playerVisible;return {...map,...geometry,id:map.id,name:map.name}}
   const visible=new Set(levels.map(l=>l.id))
-  const transitions=map.transitions?.filter(t=>visible.has(t.source.floorId)&&visible.has(t.destination.floorId)).map(t=>{const {dmNotes,...publicTransition}=t;void dmNotes;return publicTransition})
-  return composeLevels({...map,...(transitions?{transitions}:{})},levels)
+  const transitions=map.transitions?.filter(t=>visible.has(t.source.floorId)&&visible.has(t.destination.floorId)&&[t.source,t.destination].every(p=>{const l=dungeonLevels(map).find(l=>l.id===p.floorId)!;return regionRevealed(map.fogOfWar,l.id,l.width,l.height,p.x,p.z,p.x+1,p.z+1)})).map(t=>{const {dmNotes,...publicTransition}=t;void dmNotes;return publicTransition})
+  return composeLevels({...map,...(map.fogOfWar?{fogOfWar:{...map.fogOfWar,floors:Object.fromEntries(Object.entries(map.fogOfWar.floors).filter(([id])=>visible.has(id)))}}:{}),...(transitions?{transitions}:{})},levels)
 }

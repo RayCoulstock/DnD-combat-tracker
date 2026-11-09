@@ -416,3 +416,14 @@ Milestone 6.0B: D4 **Lighting tool** owns add/select/move; C3 Editing → Select
 Milestone 6.0C: C3 Map → **Lighting Scenes** owns saved-scene status/dirty feedback and **Manage lighting scenes** modal (search, metadata, duration, save changes/as-new, duplicate/delete, activate, restore). No new B header control; D3 retains undo/redo/fullscreen. Players see permitted effective atmosphere, never scene definitions/management. Environment and source animations run locally from committed activation metadata.
 
 6.0B audit repair: D4 **Lighting tool** and DM light-gizmo selection explicitly reveal C3 → Editing → Selection, focusing **Light preset** / **Light name**. Parent assignment remains in **Attach light to** on Light properties (not the Asset Library). See `docs/milestone-6.0b-emitter-audit.md` for exact labels, disabled states, production-branch ancestry and the GLB/player acceptance workflow.
+
+## Milestone 6.1A — fog foundations
+
+| Feature | Implemented location / contract |
+| --- | --- |
+| Fog settings entry | D4 `Fog of War settings` opens C3 Fog of War. This foundation entry does not take pointer ownership; brush/shape flyout remains 6.1B. |
+| Enable, optional editing overlay, confirmed global reset | C3 Fog of War, existing InspectorSection/Button controls and connection/busy gates. Existing maps default to disabled; disable retains masks; reset enters existing map undo history. |
+| Player Preview | C3 entry; D2 clearly labelled read-only preview with explicit Exit. Uses server projection shared with players, keeps the same Canvas, disables editor callbacks/shortcuts/history and conceals map roster/selection/labels. Tracker roster stays unchanged. |
+| Existing controls | D3 history/fullscreen, D5 camera/quality, C3 lighting/surfaces/terrain and existing floor controls keep their owners. No new header row or floating toolbar. |
+
+See `docs/milestone-6.1-fog-of-war.md` for conservative GLB/terrain/tactical policies, masked-media grants, test evidence and remaining B/C work. Soft edges, gesture editing and cinematic transitions are not claimed in A.

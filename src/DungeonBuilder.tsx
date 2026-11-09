@@ -11,7 +11,7 @@ import type {FloorTransition} from '../shared/transitions'
 import DungeonLevelsPanel,{type LevelView} from './DungeonLevelsPanel'
 import {dungeonLevels,levelDocument,primaryLevelId} from '../shared/dungeon'
 import FloorSurfacePanel from './FloorSurfacePanel'
-import { applyMapEdit } from '../shared/domain'
+import { projectEncounter,applyMapEdit } from '../shared/domain'
 import Modal from './Modal'
 import { isModalOpen } from './modalState'
 import { z } from 'zod'
@@ -42,6 +42,7 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
   visible?:boolean; templatesRequest?:number; state: EncounterState; editing: boolean; send: (command: GameCommand) => Promise<void>; connected: boolean; library?: MapLibrary
   battlefield: Omit<BattleMap3DProps, 'map' | 'dungeonMap' | 'editor'>
 }) {
+  const [fogPreview,setFogPreview]=useState(false),[fogOverlay,setFogOverlay]=useState(false)
   const workspaceRef=useRef<HTMLElement>(null)
   useEffect(()=>{if(!visible)return;let frame=0;const resize=()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(()=>{const el=workspaceRef.current;if(el)el.style.setProperty('--workspace-height',`${Math.max(300,window.innerHeight-(el.getBoundingClientRect().top+window.scrollY)-14)}px`)})};const observer=new ResizeObserver(resize);observer.observe(window.document.body);window.addEventListener('resize',resize);resize();return()=>{cancelAnimationFrame(frame);observer.disconnect();window.removeEventListener('resize',resize)}},[visible])
   const [inspectorHidden,setInspectorHidden]=useWorkspacePreference('map.inspectorHidden',false)
@@ -104,7 +105,7 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
   const onActiveLevelChange=battlefield.onActiveLevelChange
   useEffect(()=>{onActiveLevelChange?.(activeId)},[activeId,onActiveLevelChange])
   const levelView:LevelView={activeId,mode:levelMode,hiddenIds:hiddenLevels,select:id=>{selectionByLevel.set(activeId,selected);setChosenLevel(id);setSelected(selectionByLevel.get(id)??null);setTool('select');setFloorPreview(null);setHiddenLevels(previous=>previous.filter(value=>value!==id))},setMode:setLevelMode,toggle:id=>setHiddenLevels(previous=>previous.includes(id)?previous.filter(value=>value!==id):[...previous,id])}
-  const sendToLevel=(command:GameCommand)=>send('levelId' in command||command.type.startsWith('map.')&&!['map.blank','map.load','map.generate','map.template.load','map.undo','map.redo','map.history.clear'].includes(command.type)&&!command.type.startsWith('map.level.')&&!command.type.startsWith('map.transition.')?{...command,levelId:activeId} as GameCommand:command)
+  const sendToLevel=(command:GameCommand)=>send('levelId' in command||command.type.startsWith('map.')&&!['map.blank','map.load','map.generate','map.template.load','map.undo','map.redo','map.history.clear'].includes(command.type)&&!command.type.startsWith('map.fog.')&&!command.type.startsWith('map.level.')&&!command.type.startsWith('map.transition.')?{...command,levelId:activeId} as GameCommand:command)
   const previewGeneration = (newSeed = seed) => {
     try {
       const options = { width, height, roomCount, minRoomSize, maxRoomSize, theme, seed: newSeed }
@@ -123,7 +124,7 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
     return () => { cancelled = true }
   }, [libraryApi, libraryCampaign, refresh])
   const run = async (fn: () => Promise<unknown>) => {
-    if (!connected || busy) return
+    if (!connected || busy||fogPreview) return
     setBusy(true);setFailed(false); setMessage('')
     try { await fn(); setRefresh(n => n + 1) } catch (error) {setFailed(true); setMessage((error as Error).message) } finally { setBusy(false) }
   }
@@ -204,16 +205,16 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
   // Cancellation must survive map-update renders and controls that consume the
   // bubbling key event. Keep ordinary shortcuts in their existing bubble handler.
   useEffect(() => {
-    if (!editing) return
+    if (!editing||fogPreview) return
     const cancel = (event: KeyboardEvent) => {
       if (!workspaceRef.current?.getClientRects().length || isModalOpen() || event.key !== 'Escape') return
       setTool('select'); setTransitionPick(null); setSelected(null); setPickingScenery(false); setArchitecturalPicker(null)
     }
     window.addEventListener('keydown', cancel, true)
     return () => window.removeEventListener('keydown', cancel, true)
-  }, [editing, setTool])
+  }, [editing,fogPreview, setTool])
   useEffect(() => {
-    if (!editing) return
+    if (!editing||fogPreview) return
     const key = (e: KeyboardEvent) => {
       if (!workspaceRef.current?.getClientRects().length || isModalOpen() || e.isComposing || e.defaultPrevented) return
       if (!e.ctrlKey&&!e.metaKey&&!e.altKey&&!e.shiftKey&&!e.repeat&&connected&&!busy&&!preview&&!pickingScenery&&!architecturalPicker&&!(e.target instanceof HTMLElement&&(e.target.isContentEditable||e.target.closest('input,textarea,select,[role=dialog]')))) {const next=({v:'select',f:'floor',w:'wall',d:'door',o:'object',e:'erase'} as const)[e.key.toLowerCase() as 'v'|'f'|'w'|'d'|'o'|'e'];if(next){e.preventDefault();if(next==='object')setPickingScenery(true);else setTool(next);return}}
@@ -222,7 +223,7 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
       if (command) { e.preventDefault(); setBusy(true); void send(command).catch(error => setMessage(error.message)).finally(() => setBusy(false)) }
     }
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key)
-  }, [editing, connected, busy, preview, pickingScenery, architecturalPicker, prop, document, send,setTool])
+  }, [editing,fogPreview, connected, busy, preview, pickingScenery, architecturalPicker, prop, document, send,setTool])
   const chooseScenery = (asset: Asset3D) => {
     const role=asset.presentation.architecture?.role
     if(role==='wall'||role==='door'){setKnownAssets(previous=>({...previous,[asset.id]:asset}));if(role==='wall')setWallAsset(asset);else setDoorAsset(asset);setPickingScenery(false);setTool(role);return}
@@ -252,10 +253,17 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
     ].map(a=>({...a,disabled:busy||!connected})),properties:<p>{w.id} · {w.material}. The logical edge stays authoritative independently of its visual model.</p>}
   }
   const editor: EditorInteraction = {...(terrainSettings.mode!=='cells'?{terrain:{disabled:busy,mode:terrainSettings.mode,brush:terrainSettings.brush,texture:terrainSettings.texture,onStroke:stroke=>{void dispatch({type:'map.terrain.stroke',stroke})}}}:{}), transitionPicking:Boolean(transitionPick), activation:toolEpoch, document:document??undefined, toolbar:objectToolbar, drawing: ['wall-line','room','corridor'].includes(tool)?{kind:tool as 'wall-line'|'room'|'corridor',width:corridorWidth,wallsOnly,floor,material:wallMaterial,visual:visualFor(wallAsset)}:undefined,onDraw:command=>{void dispatch(command)}, wallVisual:visualFor(wallAsset),doorVisual:visualFor(doorAsset), snap, scenery: tool === 'sceneryMove' && prop && isScenery(prop) ? prop : sceneryAsset ?? undefined, assetScope: battlefield.assetScope, assetContext: battlefield.assetContext, tool, selectedId: selected?.objectId, previewRotation: tool==='objectMove'&&prop&&!isScenery(prop)?prop.rotation:rotation, onHit: hit, onPaint: cells => { void dispatch({ type: 'map.floor.paint', cells, material: floor }) } }
+  const playerView=fogPreview?projectEncounter(state,{id:'fog-preview',role:'player'}):undefined
   const inspector=<>
     <aside className="builder-tools inspector" hidden={!editing} aria-label="Map inspector">
       <header className="inspector-header"><span className="eyebrow">MAP EDITOR</span><h2>{fullDocument?.name??'Flat battlefield'}</h2><p>Editing: {activeLevel?.name??'Ground Floor'} · {activeLevel?.elevationFeet??0} ft</p><p><StatusPill tone={failed?'danger':busy?'neutral':document&&JSON.stringify({document:fullDocument,name})!==savedDocument?'warning':'success'}>{busy?'Saving / applying…':failed?'Save / edit failed':!document?'No map template':JSON.stringify({document:fullDocument,name})!==savedDocument?'Unsaved template changes':'Saved template'}</StatusPill> · {state.mapRevision??0} revisions</p><button disabled={!connected||busy||Boolean(preview)} onClick={()=>void save(false)}>Save map</button><button onClick={()=>{workspaceRef.current?.querySelectorAll('.inspector details').forEach(d=>d.removeAttribute('open'))}}>Collapse all</button></header>
-      <div className="inspector-scroll"><fieldset disabled={!connected||busy||Boolean(preview)} className="inspector-fields"><legend className="visually-hidden">Map tools</legend><h3 className="inspector-group-label">Editing</h3>
+      <div className="inspector-scroll">{state.dungeonMap&&<InspectorSection title="Fog of War" sectionId="fog" defaultOpen>
+       <p>DM controlled · {activeLevel?.name}</p><label><input aria-label="Enable Fog of War" type="checkbox" disabled={!connected||busy} checked={Boolean(state.dungeonMap.fogOfWar?.enabled)} onChange={e=>void dispatch({type:'map.fog.enabled',enabled:e.target.checked})}/>Enable Fog of War</label>
+       <label><input type="checkbox" checked={fogOverlay} onChange={e=>setFogOverlay(e.target.checked)}/>Show fog editing overlay</label>
+       <Button onClick={()=>setFogPreview(true)}>Player Preview</Button>
+       <Button disabled={!connected||busy||!state.dungeonMap.fogOfWar} onClick={()=>{if(confirm('Reset Fog on every floor? All revealed areas will be concealed. Fog stays enabled and this can be undone.'))void dispatch({type:'map.fog.reset',confirmed:true})}}>Reset Fog</Button>
+       <p>Fog starts opaque black. Disabling preserves revealed areas. Reveal tools follow in 6.1B.</p>
+      </InspectorSection>}<fieldset disabled={!connected||busy||Boolean(preview)} className="inspector-fields"><legend className="visually-hidden">Map tools</legend><h3 className="inspector-group-label">Editing</h3>
       <InspectorSection title="Active tool" sectionId="active-tool" persistenceKey="active-tool" description={tool} defaultOpen><div className="builder-properties" aria-label="Tool properties">          <label><input type="checkbox" checked={snap} onChange={e => setSnap(e.target.checked)} />Snap scenery to grid</label>
 
           {tool==='scenery'&&sceneryAsset&&<fieldset><legend>Object placement settings</legend><p>{sceneryAsset.label}</p>{(['rotation','scale','verticalOffset'] as const).map(key=><label key={key}>Placement {key}<input type="number" step="any" min={key==='rotation'?0:key==='scale'?sceneryLimits.minScale:sceneryLimits.minOffset} max={key==='rotation'?360:key==='scale'?sceneryLimits.maxScale:sceneryLimits.maxOffset} value={sceneryAsset[key]} onChange={e=>{const result=scenerySchema.safeParse({...sceneryAsset,[key]:Number(e.target.value)});if(result.success)setSceneryAsset(result.data)}}/></label>)}</fieldset>}
@@ -308,10 +316,11 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
       <Menu side="right" pressed={['wall','wall-line','room','corridor'].includes(tool)} label="Wall tools" triggerContent={<>━<span>Wall ▸</span></>} items={(['wall','wall-line','room','corridor'] as const).map((t,i)=>({id:t,label:['Draw wall','Wall line','Rectangle room','Corridor'][i],onSelect:()=>setTool(t)}))}/>
       <Button aria-label="Place door" aria-pressed={tool==='door'} onClick={()=>setTool('door')}>Π<span>Door</span></Button>
       <Button aria-label="Add Object" aria-pressed={tool==='object'||tool==='scenery'} onClick={()=>setPickingScenery(true)}>❖<span>Object</span></Button>
+      <Button aria-label="Fog of War settings" onClick={()=>{setInspectorHidden(false);requestAnimationFrame(()=>{const panel=workspaceRef.current?.querySelector<HTMLDetailsElement>('[data-ui-section=fog]');if(panel){panel.open=true;panel.scrollIntoView({block:'nearest'})}})}}>◒<span>Fog</span></Button>
       <Button aria-label="Lighting tool" aria-pressed={tool==='lighting'} onClick={()=>activateLighting()}>☀<span>Lighting</span></Button>
       <Button aria-label="Transitions" aria-pressed={tool==='transition'} onClick={()=>{setTool('transition');if(!transitionDraft&&state.dungeonMap)setTransitionDraft(newTransition(state.dungeonMap));requestAnimationFrame(()=>{const panel=workspaceRef.current?.querySelector<HTMLDetailsElement>('.transitions-panel');if(panel)panel.open=true})}}>⇅<span>Link</span></Button>
       <Button aria-label="Floor image tool" onClick={()=>{setInspectorHidden(false);requestAnimationFrame(()=>{const host=workspaceRef.current?.querySelector('[data-floor-image]:not([hidden]) > div');host?.dispatchEvent(new Event('floor-image-open'));const panel=host?.querySelector<HTMLDetailsElement>('details');if(panel){panel.open=true;panel.scrollIntoView({block:'nearest'})}})}}>▣<span>Image</span></Button>
       <Button aria-label="Erase" aria-pressed={tool==='erase'} onClick={()=>setTool('erase')}>⌫<span>Erase</span></Button>
-    </fieldset>:undefined} map={preview || floorPreview ? reconcileBattleMap({ ...state.battleMap, width: Math.max(...allLevels.map(l=>l.width)), height: Math.max(...allLevels.map(l=>l.height)) }, state.combatants.map(c => c.id)) : state.battleMap} dungeonMap={fullDocument} levelView={levelView} editor={editing && connected && !preview && !floorPreview && document ? editor : undefined} canMove={!editing && battlefield.canMove} />
+    </fieldset>:undefined} fogOverlay={fogOverlay} map={preview || floorPreview ? reconcileBattleMap({ ...state.battleMap, width: Math.max(...allLevels.map(l=>l.width)), height: Math.max(...allLevels.map(l=>l.height)) }, state.combatants.map(c => c.id)) : state.battleMap} dungeonMap={fullDocument} levelView={levelView} editor={editing && connected && !preview && !floorPreview && document ? editor : undefined} canMove={!editing && battlefield.canMove} {...(playerView?{levelView:{...levelView,activeId:playerView.dungeonMap&&dungeonLevels(playerView.dungeonMap).some(l=>l.id===activeId)?activeId:primaryLevelId(playerView.dungeonMap),hiddenIds:[]},dungeonMap:playerView.dungeonMap,map:playerView.battleMap,combatants:playerView.combatants,tactical:playerView.tactical,levelsHidden:playerView.levelsHidden,actor:{id:'fog-preview',role:'player' as const},editor:undefined,editing:false,canvasTools:undefined,editorInspector:undefined,historyControls:undefined,combatantDetails:undefined,combatantActions:undefined,onAppearance:undefined,onToggleEditorMode:undefined,combatControlState:undefined,selectedId:null,onCommand:undefined,canMove:false,onPlaceSquare:undefined,onSelectToken:()=>{},onMoveToken:()=>{},showSharedControls:false,fogPreview:true,onExitFogPreview:()=>setFogPreview(false)}:{})} />
   </section>
 }

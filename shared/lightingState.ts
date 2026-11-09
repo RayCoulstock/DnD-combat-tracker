@@ -1,3 +1,5 @@
+import {regionRevealed} from './fog.ts'
+import {fogFloorFull} from './fogVisibility.ts'
 import {dungeonLevels,primaryLevelId} from './dungeon.ts'
 import type {EncounterState} from './domain.ts'
 import type {PointLightSource,LightPosition} from './lighting.ts'
@@ -32,5 +34,5 @@ export function reconcileLightParents(previous:EncounterState,next:EncounterStat
 }
 export function permittedLightSources(state:EncounterState,permittedCombatantIds:Set<string>){
  const levels=state.dungeonMap?dungeonLevels(state.dungeonMap):[]
- return (state.dungeonMap?.lighting?.sources??[]).filter(source=>{const resolved=resolveLight(source,state);if(!levels.some(l=>l.id===resolved.floorId&&l.playerVisible))return false;if(!source.attachment)return true;if(!resolved.parentExists||!resolved.parentVisible||!resolved.placed)return false;return source.attachment.kind!=='combatant'||permittedCombatantIds.has(source.attachment.id)}).map(source=>{const resolved=resolveLight(source,state);return{...source,floorId:resolved.floorId,position:resolved.position,name:'Light'}})
+ return (state.dungeonMap?.lighting?.sources??[]).filter(source=>{const resolved=resolveLight(source,state);if(!levels.some(l=>l.id===resolved.floorId&&l.playerVisible))return false;const floor=levels.find(l=>l.id===resolved.floorId)!;if(!regionRevealed(state.dungeonMap?.fogOfWar,floor.id,floor.width,floor.height,resolved.position.x,resolved.position.z,resolved.position.x+1,resolved.position.z+1))return false;if(source.attachment?.kind==='scenery'&&!fogFloorFull(state.dungeonMap,resolved.floorId))return false;if(!source.attachment)return true;if(!resolved.parentExists||!resolved.parentVisible||!resolved.placed)return false;return source.attachment.kind!=='combatant'||permittedCombatantIds.has(source.attachment.id)}).map(source=>{const resolved=resolveLight(source,state);return{...source,floorId:resolved.floorId,position:resolved.position,name:'Light'}})
 }

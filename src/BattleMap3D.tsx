@@ -1,3 +1,5 @@
+import FogOfWar3D from './FogOfWar3D'
+import type {FogOfWar} from '../shared/fog'
 import PointLights3D from './PointLights3D'
 import AtmosphericSurfaceMaterial from './AtmosphericSurfaceMaterial'
 import LightingEnvironment3D from './LightingEnvironment3D'
@@ -59,6 +61,7 @@ interface Combatant {
 }
 
 export interface BattleMap3DProps {
+ fogOverlay?:boolean;fogPreview?:boolean;onExitFogPreview?:()=>void;fog?:FogOfWar;
  onSelectLight?:(id:string)=>void;lightingQuality?:LightingQuality;lightingFlicker?:boolean;lightingReducedMotion?:boolean;
   turnOrder?:TurnOrder
   combatControlState?:EncounterState
@@ -149,7 +152,7 @@ function BattlefieldGrid({ width, height }: { width: number; height: number }) {
   </lineSegments>
 }
 
-function LevelScene({ onPlaceSquare, combatants, map, selectedId, activeId, onSelectToken, onMoveToken, canMove, dungeonMap, editor, assetScope, assetContext, tactical, tacticalDraft, tacticalSelected, tacticalInteraction, onSelectTactical, toolbar, toolbarRef, sceneTransitions,sceneFloorId,sceneFloorNames,onTransitionMarker,lit=false }: Omit<BattleMap3DProps, 'round' | 'onToggleGrid' | 'onToggleLabels' | 'onReturnToTracker'> & { controlsRef: React.RefObject<OrbitControlsImpl | null>;tacticalDraft:TacticalObject|null;tacticalSelected:string|null;tacticalInteraction:TacticalInteraction;onSelectTactical:(id:string)=>void;toolbar?:ObjectToolbarContext;toolbarRef:React.RefObject<HTMLDivElement|null>;lit?:boolean }) {
+function LevelScene({ onPlaceSquare, combatants, map, selectedId, activeId, onSelectToken, onMoveToken, canMove, dungeonMap, editor, assetScope, assetContext, tactical, tacticalDraft, tacticalSelected, tacticalInteraction, onSelectTactical, toolbar, toolbarRef, sceneTransitions,sceneFloorId,sceneFloorNames,onTransitionMarker,fog,fogOverlay,actor,lit=false }: Omit<BattleMap3DProps, 'round' | 'onToggleGrid' | 'onToggleLabels' | 'onReturnToTracker'> & { controlsRef: React.RefObject<OrbitControlsImpl | null>;tacticalDraft:TacticalObject|null;tacticalSelected:string|null;tacticalInteraction:TacticalInteraction;onSelectTactical:(id:string)=>void;toolbar?:ObjectToolbarContext;toolbarRef:React.RefObject<HTMLDivElement|null>;lit?:boolean }) {
   const handleFloorClick = (event: ThreeEvent<MouseEvent>) => {
     if (tacticalInteraction.mode!=='navigate' || editor || canMove === false || event.delta > 3) return
     const destination = {
@@ -185,6 +188,7 @@ function LevelScene({ onPlaceSquare, combatants, map, selectedId, activeId, onSe
       const position = map.tokens[String(combatant.id)]
       return !combatant.unplaced && position && <Token key={combatant.id} assetScope={assetScope} assetContext={assetContext} combatant={combatant} position={position} map={map} selected={combatant.id === selectedId} active={combatant.id === activeId} showLabel={map.showLabels} onSelect={() => {if(tacticalInteraction.mode==='navigate'&&(!editor||editor.tool==='select'))onSelectToken(combatant.id)}} />
     })}
+    {fog?.enabled&&sceneFloorId&&(actor?.role==='player'||fogOverlay)&&<FogOfWar3D fog={fog} floorId={sceneFloorId} width={map.width} height={map.height} overlay={actor?.role!=='player'}/>}
     {toolbar&&<ToolbarProjection target={toolbarRef} position={toolbar.position}/>}
 
   </>
@@ -210,7 +214,7 @@ function BattlefieldScene(props:Parameters<typeof LevelScene>[0]){
    const toolbar=active&&props.toolbar?{...props.toolbar,position:props.toolbar.position.map((v,i)=>v+offset[i]) as [number,number,number]}:undefined
    // Inactive levels are display only, including their labels; they never consume raycasts.
    return <group key={level.id} position={offset} userData={{levelInteractive:active,levelId:level.id}}>
-    <LevelScene {...props} lit={configured} onPlaceSquare={active?props.onPlaceSquare:undefined} sceneTransitions={props.dungeonMap?.transitions} sceneFloorNames={Object.fromEntries(levels.map(l=>[l.id,l.name]))} sceneFloorId={level.id} onTransitionMarker={active?props.onTransitionMarker:undefined} dungeonMap={levelDocument(level)} map={{...map,width:level.width,height:level.height}} editor={active?editor:undefined} canMove={active?props.canMove:false} combatants={props.combatants.filter(c=>(c.floorId??primaryLevelId(props.dungeonMap))===level.id)} onSelectToken={active?props.onSelectToken:()=>{}} tactical={active?props.tactical?.filter(r=>(r.floorId??primaryLevelId(props.dungeonMap))===level.id):[]} tacticalDraft={active?props.tacticalDraft:null} tacticalInteraction={active?props.tacticalInteraction:{...props.tacticalInteraction,mode:'navigate'}} toolbar={toolbar}/>
+    <LevelScene {...props} fog={props.dungeonMap?.fogOfWar} lit={configured} onPlaceSquare={active?props.onPlaceSquare:undefined} sceneTransitions={props.dungeonMap?.transitions} sceneFloorNames={Object.fromEntries(levels.map(l=>[l.id,l.name]))} sceneFloorId={level.id} onTransitionMarker={active?props.onTransitionMarker:undefined} dungeonMap={levelDocument(level)} map={{...map,width:level.width,height:level.height}} editor={active?editor:undefined} canMove={active?props.canMove:false} combatants={props.combatants.filter(c=>(c.floorId??primaryLevelId(props.dungeonMap))===level.id)} onSelectToken={active?props.onSelectToken:()=>{}} tactical={active?props.tactical?.filter(r=>(r.floorId??primaryLevelId(props.dungeonMap))===level.id):[]} tacticalDraft={active?props.tacticalDraft:null} tacticalInteraction={active?props.tacticalInteraction:{...props.tacticalInteraction,mode:'navigate'}} toolbar={toolbar}/>
    </group>
   })}
     <OrbitControls ref={controlsRef} makeDefault enableDamping dampingFactor={0.08} minDistance={7} maxDistance={Math.max(35, Math.max(map.width, map.height) * 2,(Math.max(0,...levels.map(l=>l.elevationFeet))-Math.min(0,...levels.map(l=>l.elevationFeet)))/5*2+30)} maxPolarAngle={Math.PI / 2.08} target={[0, 0, 0]} touches={{ONE:editor||tacticalInteraction.mode!=='navigate'?undefined:TOUCH.ROTATE,TWO:TOUCH.DOLLY_PAN}} mouseButtons={{ LEFT: editor||tacticalInteraction.mode!=='navigate' ? undefined : 0, MIDDLE: editor||tacticalInteraction.mode!=='navigate' ? 0 : 2, RIGHT: 2 }} />
@@ -226,9 +230,9 @@ export default function BattleMap3D(input: BattleMap3DProps) {
   const activeId=(input.levelView?levels.find(l=>l.id===input.levelView!.activeId):levels.find(l=>l.id===chosen))?.id??levels[0]?.id??primaryLevelId(input.dungeonMap)
   const view=input.levelView??{activeId,mode,hiddenIds:hidden,select:setChosen,setMode,toggle:(id:string)=>setHidden(previous=>previous.includes(id)?previous.filter(value=>value!==id):[...previous,id])}
   const activeLevel=levels.find(l=>l.id===activeId)
-  const activeCombatants=input.combatants.filter(c=>!input.dungeonMap||(c.floorId??primaryLevelId(input.dungeonMap))===activeId)
+  const activeCombatants=input.combatants.filter(c=>(!input.dungeonMap||(c.floorId??primaryLevelId(input.dungeonMap))===activeId)&&(input.actor?.role!=='player'||Boolean(input.map.tokens[String(c.id)])))
   const activeVisible=!view.hiddenIds.includes(activeId)
-  const props={...input,lightingQuality:quality,lightingFlicker:flicker&&!reducedMotion,lightingReducedMotion:reducedMotion,levelView:view,canMove:activeVisible?input.canMove:false,editor:activeVisible?input.editor:undefined,combatants:input.combatants}
+  const props={...input,lightingQuality:quality,lightingFlicker:flicker&&!reducedMotion,lightingReducedMotion:reducedMotion,levelView:view,canMove:activeVisible?input.canMove:false,editor:activeVisible?input.editor:undefined,combatants:input.actor?.role==='player'?input.combatants.filter(c=>Boolean(input.map.tokens[String(c.id)])):input.combatants}
   const onTransitionMarker=(id:string)=>{if(input.editor&&input.onSelectTransition&&(input.editor.tool==='select'||input.editor.tool==='transition'))input.onSelectTransition(id);else if(input.actor?.role!=='player'){const t=input.dungeonMap?.transitions?.find(t=>t.id===id);if(t&&(t.source.floorId===activeId||t.directionality==='two-way'&&t.destination.floorId===activeId))setTravelId(id)}}
   const levelSend=input.onCommand?async(command:GameCommand)=>input.onCommand!((command.type==='tactical.create'||command.type==='tactical.update'||command.type==='map.floorImage.set')?(command.type==='map.floorImage.set'?{...command,levelId:activeId}:{...command,floorId:activeId}) as GameCommand:command):undefined
 
@@ -294,7 +298,7 @@ export default function BattleMap3D(input: BattleMap3DProps) {
       </details>:null}
 
       </CanvasDock>
-      <CanvasDock slot={2} label="Active tool hint" className="battlefield-help">{props.placementHint??props.toolHint??(tools.mode!=='navigate'?'Tactical tool · Left: target · Middle: rotate · Escape: cancel':props.editor?`${props.editor.tool} · Left: edit · Middle: rotate · Right: pan · Esc: cancel`:props.canMove===false?'Select a token to inspect · camera remains available':'Select a token, then click a square to move')}</CanvasDock>
+      <CanvasDock slot={2} label="Active tool hint" className="battlefield-help">{props.fogPreview&&<><strong>Player Preview · Read only</strong><Button onClick={props.onExitFogPreview}>Exit Player Preview</Button></>}{props.placementHint??props.toolHint??(tools.mode!=='navigate'?'Tactical tool · Left: target · Middle: rotate · Escape: cancel':props.editor?`${props.editor.tool} · Left: edit · Middle: rotate · Right: pan · Esc: cancel`:props.canMove===false?'Select a token to inspect · camera remains available':'Select a token, then click a square to move')}</CanvasDock>
       <CanvasDock slot={3} label="History and map view controls">
        {props.historyControls}
        <Menu label="Map view" triggerContent={<span aria-hidden="true">⛶ ▾</span>} items={[

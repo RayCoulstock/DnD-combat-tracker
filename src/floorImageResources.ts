@@ -1,7 +1,7 @@
 import { Texture, SRGBColorSpace, LinearFilter } from 'three'
 import { AssetResourceCache } from './assetResourceCache'
-export function floorImageUrl(imageId:string,scope?:string,context?:{campaignId:string;encounterId:string}) {
-  const query=context?`?${new URLSearchParams(context)}`:''
+export function floorImageUrl(imageId:string,scope?:string,context?:{campaignId:string;encounterId:string},fogView?:{floorId:string;revision:number}) {
+  const params=new URLSearchParams(context);if(fogView){params.set('fogFloor',fogView.floorId);params.set('fogRevision',String(fogView.revision))}const query=params.size?`?${params}`:''
   return `/api/floor-images/${encodeURIComponent(imageId)}/file${query}#${encodeURIComponent(scope??'signed-out')}`
 }
 export async function loadFloorTexture(key:string,signal:AbortSignal) {

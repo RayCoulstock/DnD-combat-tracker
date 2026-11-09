@@ -292,7 +292,7 @@ export function createApplication({ pool, secret, origin, production = false, al
     const map = data.snapshot
     if (map) {
       const previous = sentMaps.get(socket.id)
-      if (!full && map.state.dungeonMap && previous?.encounterId === map.encounterId && previous.revision === map.state.mapRevision) {
+      if (!full && !(actor.role==='player'&&map.state.dungeonMap?.fogOfWar?.enabled) && map.state.dungeonMap && previous?.encounterId === map.encounterId && previous.revision === map.state.mapRevision) {
         data.snapshot = { ...map, mapDocumentOmitted: true, state: { ...map.state, dungeonMap: undefined } }
       }
       sentMaps.set(socket.id, { encounterId: map.encounterId, revision: map.state.mapRevision ?? 0 })

@@ -8,7 +8,7 @@ import { floorImageUrl, floorTextures } from './floorImageResources'
 
 export default function FloorImage3D({image,width,height,scope,context,lit=false}:{lit?:boolean;image:FloorImage;width:number;height:number;scope?:string;context?:{campaignId:string;encounterId:string}}){
   const limit=useThree(state=>Math.min(4096,state.gl.capabilities.maxTextureSize))
-  const key=JSON.stringify([floorImageUrl(image.imageId,scope,context),limit])
+  const key=JSON.stringify([floorImageUrl(image.imageId,scope,context,image.fogView),limit])
   const [loaded,setLoaded]=useState<{key:string;texture?:Texture;error?:string}|null>(null),[retry,setRetry]=useState(0)
   useEffect(()=>{
     if(!scope)return
