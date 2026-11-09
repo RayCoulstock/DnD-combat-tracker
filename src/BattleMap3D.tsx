@@ -213,7 +213,7 @@ function BattlefieldScene(props:Parameters<typeof LevelScene>[0]){
    const offset:[number,number,number]=[(level.width-map.width)/2,elevationToWorld(level.elevationFeet),(level.height-map.height)/2]
    const toolbar=active&&props.toolbar?{...props.toolbar,position:props.toolbar.position.map((v,i)=>v+offset[i]) as [number,number,number]}:undefined
    // Inactive levels are display only, including their labels; they never consume raycasts.
-   return <group key={level.id} position={offset} userData={{levelInteractive:active,levelId:level.id}}>
+   return <group key={level.id} position={offset} userData={{levelInteractive:active,levelId:level.id,editorTool:active?editor?.tool:undefined,mapRevision:props.combatControlState?.mapRevision}}>
     <LevelScene {...props} fog={props.dungeonMap?.fogOfWar} lit={configured} onPlaceSquare={active?props.onPlaceSquare:undefined} sceneTransitions={props.dungeonMap?.transitions} sceneFloorNames={Object.fromEntries(levels.map(l=>[l.id,l.name]))} sceneFloorId={level.id} onTransitionMarker={active?props.onTransitionMarker:undefined} dungeonMap={levelDocument(level)} map={{...map,width:level.width,height:level.height}} editor={active?editor:undefined} canMove={active?props.canMove:false} combatants={props.combatants.filter(c=>(c.floorId??primaryLevelId(props.dungeonMap))===level.id)} onSelectToken={active?props.onSelectToken:()=>{}} tactical={active?props.tactical?.filter(r=>(r.floorId??primaryLevelId(props.dungeonMap))===level.id):[]} tacticalDraft={active?props.tacticalDraft:null} tacticalInteraction={active?props.tacticalInteraction:{...props.tacticalInteraction,mode:'navigate'}} toolbar={toolbar}/>
    </group>
   })}

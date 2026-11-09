@@ -5,11 +5,11 @@ import {test,expect,type Page} from '@playwright/test'
 import {randomUUID} from 'node:crypto'
 import {makeFloorImage} from '../test-fixtures/floor-image'
 import {makeTexturedGlb} from '../test-fixtures/glb'
-import {expandEditor,projectBattlefield,clickSceneryTriangle} from './workspace-helpers'
+import {expandEditor,clickBattlefield,clickSceneryTriangle,type BattlefieldReadiness} from './workspace-helpers'
 async function api(page:Page,path:string,body?:unknown){return page.evaluate(async({path,body})=>{
  const{csrf}=await(await fetch('/api/session')).json();const result=await fetch('/api'+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:body===undefined?undefined:JSON.stringify(body)});if(!result.ok)throw Error(await result.text());return result.json()
 },{path,body})}
-async function clickCell(page:Page,x:number,z:number,y=0){const point=await projectBattlefield(page,{x:x-10,y:y+.002,z:z-10});await page.mouse.click(point.x,point.y)}
+async function clickCell(page:Page,x:number,z:number,y=0,ready:BattlefieldReadiness={}){await clickBattlefield(page,{x:x-10,y:y+.002,z:z-10},ready)}
 async function sceneLevels(page:Page){return page.locator('.battlefield-wrap canvas:visible').evaluate(async node=>{
  const resource=performance.getEntriesByType('resource').find(e=>e.name.includes('/@react-three_fiber.js'))!,{_roots}=await import(/* @vite-ignore */resource.name),state=_roots.get(node).store.getState(),result:{id:string;y:number;interactive:boolean;images:number;models:number;transforms:{y:number;scale:number;rotation:number}[];tokens:number[]}[]=[]
  state.scene.traverse((object:{userData:{levelId?:string;levelInteractive?:boolean};position:{y:number};traverse:(fn:(child:{name:string;type:string;matrixWorld:{elements:number[]};scale:{x:number};rotation:{y:number}})=>void)=>void})=>{if(object.userData.levelId){let images=0,models=0;const transforms:{y:number;scale:number;rotation:number}[]=[],tokens:number[]=[];object.traverse(child=>{if(child.name==='floor-image')images++;if(child.type==='Mesh')models++;if(child.name==='scenery-placement-transform')transforms.push({y:child.matrixWorld.elements[13],scale:child.scale.x,rotation:child.rotation.y});if(child.name==='combatant-token')tokens.push(child.matrixWorld.elements[13])});result.push({id:object.userData.levelId,y:object.position.y,interactive:object.userData.levelInteractive===true,images,models,transforms,tokens})}});return result
@@ -31,7 +31,10 @@ test('three populated levels retain images, geometry, transforms, tokens, drafts
   await settings.getByLabel('Floor image file',{exact:true}).setInputFiles({name:'map.png',mimeType:'image/png',buffer:await makeFloorImage()});await expect(settings.getByText('Image uploaded.',{exact:false})).toBeVisible();await settings.getByRole('button',{name:'Apply floor image',exact:true}).click();await expect(page.locator('[data-floor-image-state=ready]')).toHaveCount(1)
   await mapAction(page,'Draw wall');await clickCell(page,4.5,4.02)
   await expect.poll(async()=>(await api(page,path+'/snapshot')).state.dungeonMap.walls.length).toBe(1)
-  await editor.getByRole('button',{name:'Place door',exact:true}).click();await clickCell(page,4.5,4.02)
+  const wallRevision=(await api(page,path+'/snapshot')).state.mapRevision
+  await editor.getByRole('button',{name:'Place door',exact:true}).click()
+  // Hit the wall face only after Fiber has its saved geometry and door handlers.
+  await clickCell(page,4.5,4,.8,{editorTool:'door',mapRevision:wallRevision})
   await expect.poll(async()=>(await api(page,path+'/snapshot')).state.dungeonMap.doors.length).toBe(1)
   const asset=await page.evaluate(async bytes=>{const{csrf}=await(await fetch('/api/session')).json(),form=new FormData();form.set('metadata',JSON.stringify({name:'Level barrel',category:'furniture'}));form.set('file',new Blob([new Uint8Array(bytes)]),'barrel.glb');const result=await fetch('/api/assets',{method:'POST',headers:{'X-CSRF-Token':csrf},body:form});if(!result.ok)throw Error(await result.text());return result.json()},Array.from(await makeTexturedGlb()))
   await editor.getByRole('button',{name:'Add Object',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Add Object',exact:true});await dialog.locator('.asset-card').filter({hasText:'Level barrel'}).click();await dialog.getByRole('button',{name:'Use this model',exact:true}).click();await clickCell(page,12.5,6.5)

@@ -28,11 +28,12 @@ export async function mapAction(page:Page,name:string){
 export async function openTactical(page:Page){const panel=page.getByRole('complementary',{name:'Contextual inspector',exact:true});if(!await panel.isVisible())await page.getByRole('button',{name:'Show inspector «',exact:true}).click();const summary=panel.locator('.ledger-inspector-section>summary').filter({hasText:'Tactical tools'});if(!(await summary.locator('..').evaluate(el=>(el as HTMLDetailsElement).open)))await summary.click()}
 // UI panels resize the canvas and cameras remain independent. Project through the
 // actual mounted camera, rather than reconstructing its initial pose in tests.
-export async function projectBattlefield(page:Page,point:{x:number;y:number;z:number}):Promise<{x:number;y:number}>{
+export interface BattlefieldReadiness {editorTool?:string;mapRevision?:number}
+export async function projectBattlefield(page:Page,point:{x:number;y:number;z:number},ready:BattlefieldReadiness={}):Promise<{x:number;y:number}>{
  const canvas=page.locator('.battlefield-wrap canvas:visible');await canvas.scrollIntoViewIfNeeded()
  let projected:{x:number;y:number}|null=null
  await expect.poll(async()=>{
-  projected=await canvas.evaluate(async(node,point)=>{
+  projected=await canvas.evaluate(async(node,{point,ready})=>{
    // Canvas visibility precedes asynchronous renderer/root initialization. Vite
    // can also retain resource entries for older optimized module instances.
    const resources=[...new Set(performance.getEntriesByType('resource').map(e=>e.name).filter(name=>name.includes('/@react-three_fiber.js')))].reverse()
@@ -40,15 +41,22 @@ export async function projectBattlefield(page:Page,point:{x:number;y:number;z:nu
     const module=await import(/* @vite-ignore */resource),state=module._roots.get(node)?.store.getState()
     const box=node.getBoundingClientRect()
     if(!node.isConnected||!state?.internal.active||!state.controls||!box.width||!box.height||Math.abs(state.size.width-box.width)>1||Math.abs(state.size.height-box.height)>1)continue
+    // The DOM tool button and server snapshot can update before Fiber commits
+    // the matching handlers/geometry. Read metadata from that same scene commit.
+    if(ready.editorTool!==undefined||ready.mapRevision!==undefined){
+     const level=state.scene?.children.find((child:{userData:Record<string,unknown>})=>child.userData.levelInteractive===true)
+     if(!level||ready.editorTool!==undefined&&level.userData.editorTool!==ready.editorTool||ready.mapRevision!==undefined&&level.userData.mapRevision!==ready.mapRevision)continue
+    }
+    state.scene?.updateMatrixWorld?.(true)
     const camera=state.camera;camera.updateMatrixWorld();const view=camera.matrixWorldInverse.elements,projection=camera.projectionMatrix.elements
     const multiply=(m:number[],v:number[])=>[0,1,2,3].map(row=>m[row]*v[0]+m[row+4]*v[1]+m[row+8]*v[2]+m[row+12]*v[3])
     const clip=multiply(projection,multiply(view,[point.x,point.y,point.z,1]))
     return{x:box.x+(clip[0]/clip[3]+1)*box.width/2,y:box.y+(1-clip[1]/clip[3])*box.height/2}
    }
    return null
-  },point)
+  },{point,ready})
   return projected!==null
- },{message:'Wait for the visible battlefield renderer, controls and canvas size to be ready',timeout:15000}).toBe(true)
+ },{message:'Wait for the visible battlefield renderer, controls, canvas size and requested scene commit',timeout:15000}).toBe(true)
  return projected!
 }
 
@@ -56,8 +64,8 @@ export async function projectBattlefield(page:Page,point:{x:number;y:number;z:nu
 // receives input (no picker/backdrop or workspace overlay in front of the map).
 // Keep the position relative to the canvas so Playwright's scroll handling cannot
 // turn a correct projection into an unrelated viewport click.
-export async function clickBattlefield(page:Page,point:{x:number;y:number;z:number}){
- const position=await projectBattlefield(page,point),canvas=page.locator('.battlefield-wrap canvas:visible'),box=(await canvas.boundingBox())!
+export async function clickBattlefield(page:Page,point:{x:number;y:number;z:number},ready:BattlefieldReadiness={}){
+ const position=await projectBattlefield(page,point,ready),canvas=page.locator('.battlefield-wrap canvas:visible'),box=(await canvas.boundingBox())!
  await canvas.click({position:{x:position.x-box.x,y:position.y-box.y}})
 }
 
