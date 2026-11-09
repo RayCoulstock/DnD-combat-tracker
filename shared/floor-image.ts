@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 export const floorImageSchema = z.object({
   imageId: z.uuid(),
+  fogView:z.object({floorId:z.string().min(1).max(100),revision:z.number().int().nonnegative()}).strict().optional(),
   mode: z.enum(['gridded', 'gridless']).default('gridless'),
   fit: z.enum(['contain', 'cover']).default('contain'),
   alignment: z.enum(['center', 'top-left']).default('center'),

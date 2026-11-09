@@ -1,3 +1,9 @@
+import {maskedFloorImage} from './fog-image.ts'
+import {dungeonLevels} from '../shared/dungeon.ts'
+import {projectEncounter} from '../shared/domain.ts'
+import {loadState} from './game.ts'
+import {surfaceMode,customTextureIds} from '../shared/floor-surface.ts'
+import {terrainImageIds} from '../shared/terrain.ts'
 import type { Express, Request, Response } from 'express'
 import { randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
@@ -19,14 +25,14 @@ export async function recoverFloorImages(pool:Pool,storage:AssetStorage) {
   }
 }
 export function registerFloorImageRoutes(app:Express,pool:Pool,storage:AssetStorage,requireDM:(req:Request)=>Actor,requireActor:(req:Request)=>Actor){
-  const limits=floorImageLimits(), owners=new Set<string>();let active=0
+  const limits=floorImageLimits(), owners=new Set<string>();let active=0,masking=0
   const uploadLimit=rateLimit({windowMs:15*60000,limit:20,standardHeaders:'draft-8',legacyHeaders:false,message:{error:{code:'RATE_LIMIT',message:'Too many floor image uploads. Try again later.'}}})
   app.get('/api/floor-images/:imageId/file',async(req,res)=>{
     const actor=requireActor(req),id=z.uuid().parse(req.params.imageId)
     let row
     if(actor.role==='dm')row=(await pool.query("SELECT * FROM floor_images WHERE id=$1 AND owner_id=$2 AND upload_status='ready'",[id,actor.id])).rows[0]
     else {
-      const context=z.object({campaignId:z.uuid(),encounterId:z.uuid()}).strict().parse(req.query)
+      const context=z.object({campaignId:z.uuid(),encounterId:z.uuid(),fogFloor:z.string().min(1).max(100).optional(),fogRevision:z.coerce.number().int().nonnegative().optional()}).strict().parse(req.query)
       row=(await pool.query(`SELECT i.* FROM floor_images i
         JOIN encounter_floor_image_references r ON r.image_id=i.id AND r.current
         JOIN encounters e ON e.id=r.encounter_id JOIN campaigns c ON c.id=e.campaign_id AND c.owner_id=i.owner_id
@@ -34,6 +40,25 @@ export function registerFloorImageRoutes(app:Express,pool:Pool,storage:AssetStor
         WHERE i.id=$1 AND c.id=$3 AND e.id=$4 AND c.active_encounter_id=e.id AND c.session_active AND i.upload_status='ready'`,[id,actor.id,context.campaignId,context.encounterId])).rows[0]
     }
     if(!row)throw new AssetError(404,'Floor image is unavailable or access has ended.')
+    if(actor.role==='player'||req.query.fogFloor){
+      const context=z.object({campaignId:z.uuid(),encounterId:z.uuid(),fogFloor:z.string().min(1).max(100).optional(),fogRevision:z.coerce.number().int().nonnegative().optional()}).strict().parse(req.query)
+      if(actor.role==='dm'&&!(await pool.query('SELECT e.id FROM encounters e JOIN campaigns c ON c.id=e.campaign_id WHERE e.id=$1 AND c.id=$2 AND c.owner_id=$3',[context.encounterId,context.campaignId,actor.id])).rowCount)throw new AssetError(404,'Floor image is unavailable.')
+      const state=await transaction(pool,db=>loadState(db,context.encounterId)),map=projectEncounter(state,{...actor,role:'player'}).dungeonMap
+      const levels=map?dungeonLevels(map):[]
+      if(context.fogFloor){
+        const level=levels.find(l=>l.id===context.fogFloor),original=state.dungeonMap&&dungeonLevels(state.dungeonMap).find(l=>l.id===context.fogFloor)
+        if(!level||!original?.floorImage||original.floorImage.imageId!==id||surfaceMode(original)!=='image'||!state.dungeonMap?.fogOfWar?.enabled)throw new AssetError(404,'Floor image is unavailable.')
+        if(masking>=2)throw new AssetError(429,'Map images are busy. Retry shortly.')
+        masking++
+        try{
+          const chunks:Buffer[]=[];for await(const chunk of await storage.read(row.storage_key))chunks.push(Buffer.from(chunk))
+          const buffer=await maskedFloorImage(Buffer.concat(chunks),original.floorImage,state.dungeonMap.fogOfWar,level.id,level.width,level.height)
+          res.set({'Content-Type':'image/png','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Cross-Origin-Resource-Policy':'same-origin'});res.send(buffer);return
+        }finally{masking--}
+      }
+      const allowed=levels.some(l=>(surfaceMode(l)==='image'&&l.floorImage?.imageId===id&&!l.floorImage.fogView)||(surfaceMode(l)==='texture'&&customTextureIds(l.floorSurface).includes(id))||terrainImageIds(l.terrainPaint).includes(id))
+      if(!allowed)throw new AssetError(404,'Floor image is unavailable.')
+    }
     let stream
     try{stream=await storage.read(row.storage_key)}catch{throw new AssetError(503,'Floor image storage is unavailable. Restore storage and retry.')}
     res.set({'Content-Type':'image/webp','Content-Length':String(row.file_size),'Content-Disposition':`inline; filename="${row.id}.webp"`,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Cross-Origin-Resource-Policy':'same-origin','Content-Security-Policy':"sandbox; default-src 'none'"})
