@@ -470,3 +470,14 @@ See the milestone report for GLB bounds limits, emitter/shadow policy, measured 
 | Account and cross-campaign safety | Revoking one member retains the account, ownership references and other campaign tabs; only that campaign loses API/socket access. Player lists never include private member emails. |
 
 Synthetic [phone](milestone-6.2/my-campaigns-phone.png) and [tablet](milestone-6.2/my-campaigns-tablet.png) captures show the implemented dashboard.
+
+## Milestone 6.2C — session recovery
+
+| Feature | Zone | Behaviour |
+| --- | --- | --- |
+| Verify identity on online entry | C2 beneath existing B bar | Checking authentication status; previous campaign concealed until verified. |
+| Recoverable map failure / rejoin | C2, A4 entry | Explicit loading/error and Retry connection; retained map hidden/inert on failure. |
+| Connection and expiry feedback | A4, E5 | Bounded reconnect, truthful status, normal sign-in after expiry; no duplicate retry toolbar. |
+| Campaign metadata loading | C2 My Campaigns | Accessible loading state and existing refresh action. |
+
+Existing D3 canvas controls, C3 inspectors, floor-image recovery and phone A4 navigation are preserved. No permanent header row or floating toolbar was added.

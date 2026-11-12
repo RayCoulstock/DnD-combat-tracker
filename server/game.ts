@@ -69,6 +69,7 @@ export async function snapshot(db: PoolClient, actor: Actor, campaignId: string)
   if (!campaign.active_encounter_id) throw new DomainError('NOT_FOUND', 'Open an encounter first.')
   if (actor.role === 'player' && !campaign.session_active) throw new DomainError('SESSION_ENDED', 'The session has ended.')
   const encounter = (await db.query('SELECT id,name,revision FROM encounters WHERE id=$1 AND campaign_id=$2', [campaign.active_encounter_id, campaignId])).rows[0]
+  if(!encounter)throw new DomainError('NOT_FOUND','The active encounter is unavailable. Ask the DM to open it again, then retry.')
   return { campaignId, encounterId: encounter.id, name: encounter.name, revision: encounter.revision,
     sessionActive: campaign.session_active, actor, state: projectEncounter(await loadState(db, encounter.id), actor) }
 }
