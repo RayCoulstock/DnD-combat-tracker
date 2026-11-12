@@ -8,7 +8,7 @@ export interface TableChrome {
  visible?:boolean; sessionState?:string; context?:ReactNode; players?:ReactNode; sessionItems?:MenuEntry[]
  templatesRequest?:number; libraryOpen?:boolean; closeLibrary?:()=>void
 }
-export function AppBar({mode,player,signedIn,status,count,onMode,onTable,onAssets,onCombatants,onGroups,onTemplates,onRejoin,onSignOut}:{mode:'local'|'online';player:boolean;signedIn:boolean;status:string;count:number;onMode:(mode:'local'|'online')=>void;onTable:()=>void;onAssets?:()=>void;onCombatants?:()=>void;onGroups?:()=>void;onTemplates?:()=>void;onRejoin:()=>void;onSignOut:()=>void}){
+export function AppBar({mode,player,signedIn,status,count,onMode,onTable,onAssets,onCombatants,onGroups,onTemplates,onRejoin,onSignOut,onAccount}:{mode:'local'|'online';player:boolean;signedIn:boolean;status:string;count:number;onMode:(mode:'local'|'online')=>void;onTable:()=>void;onAssets?:()=>void;onCombatants?:()=>void;onGroups?:()=>void;onTemplates?:()=>void;onRejoin:()=>void;onSignOut:()=>void;onAccount?:()=>void}){
  const[help,setHelp]=useState(false)
  const modes:MenuEntry[]=[{id:'local',label:'Local tracker',onSelect:()=>onMode('local')},{id:'online',label:'Multiplayer',onSelect:()=>onMode('online')}]
  return <><header className="ledger-appbar" data-ui-zone="A" aria-label="Application bar">
@@ -19,6 +19,7 @@ export function AppBar({mode,player,signedIn,status,count,onMode,onTable,onAsset
    <Button className="ledger-help" aria-label="Help and keyboard shortcuts" onClick={()=>setHelp(true)}><HelpCircle size={18}/></Button>
    <Menu label="Account" triggerContent={<><UserRound size={18}/><span className="ledger-account-label">{signedIn?(player?'Player':'DM'):'Account'}</span></>} items={[
     ...(player?modes:[]),{id:'help',label:'Help and keyboard shortcuts',onSelect:()=>setHelp(true)},
+    ...(onAccount?[{id:'account',label:'Link player account',onSelect:onAccount}]:[]),
     ...(signedIn?[{id:'rejoin',label:'Refresh / rejoin',onSelect:onRejoin},{id:'logout',label:'Sign out',onSelect:onSignOut,group:'Account'}]:[{id:'signin',label:'Sign in',onSelect:()=>onMode('online')}])
    ]}/>
   </div>

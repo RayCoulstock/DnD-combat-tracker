@@ -450,3 +450,12 @@ Cinematic animations and rendered soft edges remain 6.1C. A's conservative GLB/t
 | Existing tools and navigation | D4 brush/rectangle/polygon gestures, D3 history/fullscreen and D5 camera/rendering quality stay unchanged. No new permanent header, dock or toolbar. |
 
 See the milestone report for GLB bounds limits, emitter/shadow policy, measured resources and manual acceptance.
+
+## Milestone 6.2A — invited accounts
+
+| Feature | Zone / contract |
+| --- | --- |
+| Existing Sign in and invitation account entry | A4 Account / existing authentication stage below B. Shared username/password controls, invitation validation, Create Account / Sign In, explicit legacy browser-only compatibility entry. No third header. |
+| Legacy member linking | A4 Account → Link player account → existing E4 Modal. Verified current legacy session or targeted DM claim invitation; original member/ownership IDs and mounted camera retained. |
+| Normal returning-player login | Existing Sign in entry; server chooses an authorized campaign context. No original invitation required. My Campaigns and richer lifecycle states are subsequent B/C increments. |
+| Recovery status | Authentication form clearly states recovery is unavailable pending email delivery; no insecure fallback or completed-delivery claim. |

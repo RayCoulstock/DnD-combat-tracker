@@ -1,3 +1,4 @@
+import {credentials,authenticateAccount,accountId,actorForCampaign,sessionView,beginAccountSession,registerAccountRoutes,requestActors} from './accounts.ts'
 import {registerGroupPresetRoutes} from './group-presets.ts'
 import { registerCombatantLibraryRoutes } from './combatant-library.ts'
 import { registerFloorImageRoutes } from './floor-images.ts'
@@ -28,7 +29,6 @@ import { DomainError, emptyEncounter, envelopeSchema, importEncounter, type Acto
 interface Options { pool: Pool; secret: string; origin: string; production?: boolean; allowDMRegistration?: boolean; trustProxy?: 0 | 1 | 'loopback'; assetStorage?: AssetStorage; assetValidationLimits?: AssetLimits }
 const uuid = z.uuid()
 const nameSchema = z.object({ name: z.string().trim().min(1).max(150) }).strict()
-const credentials = z.object({ email: z.email().max(254).transform(s => s.toLowerCase()), password: z.string().min(12).max(128) }).strict()
 const freshToken = () => randomBytes(32).toString('base64url')
 const saveSession = (req: Request) => new Promise<void>((resolve, reject) => req.session.save(e => e ? reject(e) : resolve()))
 const rotateSession = (req: Request) => new Promise<void>((resolve, reject) => req.session.regenerate(e => e ? reject(e) : resolve()))
@@ -52,14 +52,12 @@ export function createApplication({ pool, secret, origin, production = false, al
   const passport = new Passport()
   passport.use(new Strategy({ usernameField: 'email' }, async (email, password, done) => {
     try {
-      const user = (await pool.query('SELECT id,password_hash FROM users WHERE email=$1', [email.toLowerCase()])).rows[0]
-      // Always perform a password hash check, including unknown accounts.
-      const valid = await argon2.verify(user?.password_hash ?? dummyHash, password)
-      done(null, valid && user ? { id: user.id } : false)
+      done(null,await authenticateAccount(pool,email,password))
     } catch (e) { done(e) }
   }))
   app.use(passport.initialize())
-  const authLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: 'draft-8', legacyHeaders: false })
+  const authLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, message:{error:{code:'RATE_LIMIT',message:'Too many authentication attempts. Try again in 15 minutes.'}}, standardHeaders: 'draft-8', legacyHeaders: false })
+  const invitationLimit=rateLimit({windowMs:15*60*1000,limit:60,standardHeaders:'draft-8',legacyHeaders:false,message:{error:{code:'RATE_LIMIT',message:'Too many invitation requests. Try again in 15 minutes.'}}})
   app.use('/api', (req, res, next) => {
     res.setHeader('Cache-Control', 'no-store')
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && (!req.session.csrf || req.headers.origin !== origin || !equal(req.headers['x-csrf-token'], req.session.csrf ?? ''))) return res.status(403).json({ error: { code: 'CSRF', message: 'Refresh the page and try again.' } })
@@ -73,7 +71,7 @@ export function createApplication({ pool, secret, origin, production = false, al
   app.get('/api/session', async (req, res) => {
     req.session.csrf ??= freshToken()
     await saveSession(req)
-    res.json({ allowDMRegistration, csrf: req.session.csrf, actor: req.session.actor ?? null, campaignId: req.session.campaignId ?? null })
+    res.json({ allowDMRegistration, csrf: req.session.csrf, ...await sessionView(pool,req) })
   })
   app.post('/api/auth/register', (_req, res, next) => {
     if (!allowDMRegistration) return res.status(403).json({ error: { code: 'REGISTRATION_DISABLED', message: 'DM registration is closed for the private beta. Existing DMs can sign in; players can join using an invitation.' } })
@@ -85,7 +83,7 @@ export function createApplication({ pool, secret, origin, production = false, al
     try { await pool.query('INSERT INTO users(id,email,password_hash) VALUES($1,$2,$3)', [id, data.email, hash]) }
     catch (e) { if ((e as { code?: string }).code === '23505') throw new DomainError('INVALID', 'Unable to create this account. Try signing in.'); throw e }
     await rotateSession(req); req.session.actor = { role: 'dm', id }; req.session.csrf = freshToken(); await saveSession(req)
-    res.status(201).json({ actor: req.session.actor, csrf: req.session.csrf })
+    res.status(201).json({...await sessionView(pool,req),csrf:req.session.csrf})
   })
   app.post('/api/auth/login', authLimit, (req, res, next) => {
     const data = credentials.safeParse(req.body)
@@ -95,8 +93,7 @@ export function createApplication({ pool, secret, origin, production = false, al
       try {
         if (error) throw error
         if (!user) throw new DomainError('UNAUTHENTICATED', 'Invalid email or password.')
-        await rotateSession(req); req.session.actor = { role: 'dm', id: user.id }; req.session.csrf = freshToken(); await saveSession(req)
-        res.json({ actor: req.session.actor, csrf: req.session.csrf })
+        res.json(await beginAccountSession(pool,req,user.id))
       } catch (e) { next(e) }
     })(req, res, next)
   })
@@ -106,11 +103,13 @@ export function createApplication({ pool, secret, origin, production = false, al
     for (const socket of io.sockets.sockets.values()) if ((socket.request as Request).sessionID === sid) { socket.emit('access.revoked'); socket.disconnect(true) }
     res.clearCookie('ledger.sid', { httpOnly: true, sameSite: 'lax', secure: production }).json({ ok: true })
   })
+  registerAccountRoutes(app,pool,authLimit,invitationLimit)
   app.post('/api/invitations/redeem', authLimit, async (req, res) => {
+    if(accountId(req))throw new DomainError('INVALID','Use account invitation acceptance while signed in.')
     const data = z.object({ token: z.string().min(40).max(100), displayName: z.string().trim().min(1).max(80) }).strict().parse(req.body)
     const member = await transaction(pool, async db => {
       const invitation = (await db.query('SELECT * FROM invitations WHERE token_hash=$1 FOR UPDATE', [hashSecret(data.token)])).rows[0]
-      if (!invitation || invitation.revoked_at || invitation.redeemed_at || new Date(invitation.expires_at).getTime() <= Date.now()) throw new DomainError('FORBIDDEN', 'Invitation is invalid or expired.')
+      if (!invitation || invitation.membership_id || invitation.revoked_at || invitation.redeemed_at || new Date(invitation.expires_at).getTime() <= Date.now()) throw new DomainError('FORBIDDEN', 'Invitation is invalid or expired.')
       const id = randomUUID()
       await db.query('INSERT INTO memberships(id,campaign_id,display_name) VALUES($1,$2,$3)', [id, invitation.campaign_id, data.displayName])
       await db.query('UPDATE invitations SET redeemed_at=now() WHERE id=$1', [invitation.id])
@@ -121,9 +120,11 @@ export function createApplication({ pool, secret, origin, production = false, al
   })
   const requireActor = (req: Request): Actor => {
     if (!req.session.actor) throw new DomainError('UNAUTHENTICATED', 'Sign in or redeem an invitation.')
-    return req.session.actor
+    return requestActors.get(req)??req.session.actor
   }
   const requireDM = (req: Request) => { const actor = requireActor(req); if (actor.role !== 'dm') throw new DomainError('FORBIDDEN', 'Dungeon Master access required.'); return actor }
+  app.use('/api',async(req,res,next)=>{try{if(req.session.actor||accountId(req)){const match=req.path.match(/^\/campaigns\/([0-9a-f-]{36})(?:\/|$)/i),campaign=match?.[1]??(typeof req.query.campaignId==='string'?req.query.campaignId:undefined);requestActors.set(req,await actorForCampaign(pool,req,campaign))}next()}catch(e){if(e instanceof DomainError&&e.code==='FORBIDDEN'&&/^\/(assets|floor-images)\/[^/]+\/file$/.test(req.path)){res.status(404).json({error:{code:'NOT_FOUND',message:'File unavailable.'}});return}next(e)}})
+  app.post('/api/campaigns/:campaignId/enter',async(req,res)=>{const id=uuid.parse(req.params.campaignId),actor=requireActor(req);await transaction(pool,db=>authorize(db,actor,id));req.session.campaignId=id;await saveSession(req);res.json({actor,campaignId:id})})
   registerCombatantLibraryRoutes(app,pool,requireDM)
   registerGroupPresetRoutes(app,pool,requireDM)
   registerMapRoutes(app, pool, requireDM)
@@ -131,6 +132,8 @@ export function createApplication({ pool, secret, origin, production = false, al
   registerAssetRoutes(app, pool, assetStorage, requireDM, assetValidationLimits, requireActor)
   app.get('/api/campaigns', async (req, res) => {
     const actor = requireActor(req)
+    const user=accountId(req)
+    if(user){res.json((await pool.query(`SELECT DISTINCT c.id,c.name,c.session_active FROM campaigns c LEFT JOIN memberships m ON m.campaign_id=c.id AND m.account_id=$1 AND m.revoked_at IS NULL WHERE c.owner_id=$1 OR m.id IS NOT NULL ORDER BY c.name`,[user])).rows);return}
     const query = actor.role === 'dm' ? 'SELECT id,name,session_active FROM campaigns WHERE owner_id=$1 ORDER BY created_at' : 'SELECT c.id,c.name,c.session_active FROM campaigns c JOIN memberships m ON m.campaign_id=c.id WHERE m.id=$1 AND m.revoked_at IS NULL'
     res.json((await pool.query(query, [actor.id])).rows)
   })
@@ -192,11 +195,13 @@ export function createApplication({ pool, secret, origin, production = false, al
     })
     await broadcast(campaignId); res.json({ ok: true })
   })
-  app.post('/api/campaigns/:campaignId/invitations', async (req, res) => {
+  app.post('/api/campaigns/:campaignId/invitations', invitationLimit, async (req, res) => {
     const actor = requireDM(req); const campaignId = uuid.parse(req.params.campaignId); const token = freshToken(); const id = randomUUID()
+    const {membershipId}=z.object({membershipId:uuid.optional()}).strict().parse(req.body??{})
     await transaction(pool, async db => {
-      await authorize(db, actor, campaignId)
-      await db.query("INSERT INTO invitations(id,campaign_id,token_hash,expires_at) VALUES($1,$2,$3,now()+interval '30 minutes')", [id, campaignId, hashSecret(token)])
+      await db.query('SELECT id FROM campaigns WHERE id=$1 FOR UPDATE',[campaignId]);await authorize(db, actor, campaignId)
+      if(membershipId&&!(await db.query('SELECT 1 FROM memberships WHERE id=$1 AND campaign_id=$2 AND account_id IS NULL AND revoked_at IS NULL',[membershipId,campaignId])).rowCount)throw new DomainError('INVALID','Choose an active legacy membership in this campaign.')
+      await db.query("INSERT INTO invitations(id,campaign_id,token_hash,expires_at,membership_id) VALUES($1,$2,$3,now()+interval '30 minutes',$4)", [id, campaignId, hashSecret(token),membershipId??null])
     })
     // Fragment avoids referral/server access logs. Redeem once within 30 minutes.
     res.status(201).json({ id, url: `${origin}/#invite=${token}` })
@@ -252,10 +257,12 @@ export function createApplication({ pool, secret, origin, production = false, al
   app.get('/api/artwork/:id', async (req, res) => {
     const actor = requireActor(req); const id = z.string().regex(/^[a-f0-9]{64}$/).parse(req.params.id)
     const data = await transaction(pool, async db => {
-      const rows = await db.query(`SELECT e.id AS encounter_id FROM combatants b JOIN encounters e ON e.id=b.encounter_id JOIN campaigns c ON c.id=e.campaign_id
-        WHERE b.data->>'artwork'=$1 AND (($2='dm' AND c.owner_id=$3) OR ($2='player' AND c.session_active AND c.active_encounter_id=e.id AND b.visible AND b.owner_id=$3 AND EXISTS(SELECT 1 FROM memberships m WHERE m.id=$3 AND m.campaign_id=c.id AND m.revoked_at IS NULL)))`, [`/api/artwork/${id}`, actor.role, actor.id])
-      if (!rows.rowCount && !(actor.role==='dm'&&(await db.query("SELECT 1 FROM combatant_library WHERE owner_id=$1 AND definition->>'artwork'=$2",[actor.id,`/api/artwork/${id}`])).rowCount)) throw new DomainError('FORBIDDEN', 'Artwork access denied.')
-      if(actor.role==='player'){let allowed=false;for(const row of rows.rows){const state=projectEncounter(await loadState(db,row.encounter_id),actor);if(state.combatants.some(c=>c.artwork===`/api/artwork/${id}`))allowed=true}if(!allowed)throw new DomainError('FORBIDDEN','Artwork access denied.')}
+      const account=accountId(req)
+      const rows = await db.query(`SELECT e.id AS encounter_id,e.campaign_id FROM combatants b JOIN encounters e ON e.id=b.encounter_id JOIN campaigns c ON c.id=e.campaign_id
+        WHERE b.data->>'artwork'=$1 AND (($2='dm' AND c.owner_id=$3) OR (c.session_active AND c.active_encounter_id=e.id AND b.visible AND EXISTS(SELECT 1 FROM memberships m WHERE m.id=b.owner_id AND m.campaign_id=c.id AND m.revoked_at IS NULL AND (($2='player' AND m.id=$3) OR m.account_id=$4))))`, [`/api/artwork/${id}`, actor.role, actor.id,account??null])
+      let allowed=actor.role==='dm'&&Boolean((await db.query("SELECT 1 FROM combatant_library WHERE owner_id=$1 AND definition->>'artwork'=$2",[actor.id,`/api/artwork/${id}`])).rowCount)
+      for(const row of rows.rows){const viewer=account?await actorForCampaign(db,req,row.campaign_id):actor;const state=projectEncounter(await loadState(db,row.encounter_id),viewer);if(state.combatants.some(c=>c.artwork===`/api/artwork/${id}`))allowed=true}
+      if(!allowed)throw new DomainError('FORBIDDEN','Artwork access denied.')
       return artworkStorage.get(db, id)
     }); if (!data) throw new DomainError('NOT_FOUND', 'Artwork not found.')
     res.setHeader('Content-Security-Policy', "sandbox; default-src 'none'; style-src 'unsafe-inline'")
@@ -274,10 +281,10 @@ export function createApplication({ pool, secret, origin, production = false, al
     res.status(500).json({ error: { code: 'INTERNAL', message: 'Unable to complete the request.' } })
   })
   io.engine.use(sessionMiddleware)
-  async function socketActor(socket: Socket<ClientEvents, ServerEvents>): Promise<Actor> {
+  async function socketActor(socket: Socket<ClientEvents, ServerEvents>,campaignId=rooms.get(socket.id)): Promise<Actor> {
     const req = socket.request as Request
     await new Promise<void>((resolve, reject) => req.session.reload(e => e ? reject(new DomainError('UNAUTHENTICATED', 'Session expired.')) : resolve()))
-    return requireActor(req)
+    return actorForCampaign(pool,req,campaignId)
   }
   io.use(async (socket, next) => {
     try { const req = socket.request as Request; await socketActor(socket); if (!req.session.csrf || !equal(socket.handshake.auth.csrf, req.session.csrf ?? '')) throw new Error(); next() }
@@ -286,7 +293,7 @@ export function createApplication({ pool, secret, origin, production = false, al
   const rooms = new Map<string, string>()
   const sentMaps = new Map<string, { encounterId: string; revision: number }>()
   async function publishState(socket: Socket<ClientEvents, ServerEvents>, campaignId: string, full = false) {
-    const actor = await socketActor(socket)
+    const actor = await socketActor(socket,campaignId)
     const data = await transaction(pool, db => sessionState(db, actor, campaignId))
     if (rooms.get(socket.id) !== campaignId || !socket.connected) return data
     const map = data.snapshot
@@ -297,6 +304,7 @@ export function createApplication({ pool, secret, origin, production = false, al
       }
       sentMaps.set(socket.id, { encounterId: map.encounterId, revision: map.state.mapRevision ?? 0 })
     }
+    socket.data.actor=actor
     socket.emit('session.state', data)
     // Retain the existing snapshot/termination events for older consumers.
     if (data.snapshot) socket.emit('encounter.snapshot', data.snapshot)
@@ -313,7 +321,7 @@ export function createApplication({ pool, secret, origin, production = false, al
   }
   async function presence(campaignId: string) {
     const members = (await pool.query('SELECT id,display_name AS "displayName" FROM memberships WHERE campaign_id=$1 AND revoked_at IS NULL ORDER BY created_at', [campaignId])).rows
-    const connected = new Set([...io.sockets.sockets.values()].filter(s => rooms.get(s.id) === campaignId).map(s => (s.request as Request).session.actor?.id))
+    const connected = new Set([...io.sockets.sockets.values()].filter(s => rooms.get(s.id) === campaignId).map(s => s.data.actor?.id))
     io.to(campaignId).emit('presence.changed', members.map(m => ({ ...m, connected: connected.has(m.id) })))
   }
   io.on('connection', socket => {
@@ -324,7 +332,7 @@ export function createApplication({ pool, secret, origin, production = false, al
       try {
         if (Date.now() - windowStart > 1000) { count = 0; windowStart = Date.now() }
         if (++count > 30) throw new DomainError('INVALID', 'Too many commands.')
-        const actor = await socketActor(socket); const campaignId = uuid.parse(input)
+        const campaignId = uuid.parse(input); const actor = await socketActor(socket,campaignId)
         await transaction(pool, db => authorize(db, actor, campaignId))
         const old = rooms.get(socket.id); if (old) await socket.leave(old)
         rooms.set(socket.id, campaignId); await socket.join(campaignId); subscribed = true
@@ -374,5 +382,3 @@ export function createApplication({ pool, secret, origin, production = false, al
 function commandError(error: unknown) {
   return { ok: false as const,...(error instanceof DomainError&&error.groupResult?{groupResult:error.groupResult}:{}), error: error instanceof DomainError ? { code: error.code, message: error.message } : { code: 'INVALID', message: 'Unable to apply command.' } }
 }
-// Precomputed valid Argon2id hash, used only for timing equalisation (not an account credential).
-const dummyHash = await argon2.hash(randomBytes(32), { type: argon2.argon2id })

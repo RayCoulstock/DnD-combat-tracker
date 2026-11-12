@@ -43,3 +43,7 @@ For compiled production deployment use `npm run build`, `npm run db:migrate:prod
 ## Validation result
 
 The complete suite passed: six existing map tests, five shared-domain tests, 20 PostgreSQL integration checks (including the parent lifecycle test), and both Chromium browser scenarios. ESLint, frontend/backend type checks, production build, repeated source/compiled migrations and `git diff --check` also passed. The existing nonfatal Three.js bundle-size warning remains unchanged.
+
+## 6.2 investigation: authentication expiry is separate
+
+The Phase 0 two-session test reproduces successful waiting/reactivation and active encounter replacement with a valid legacy cookie. Expiring that cookie's server-side record removes identity while leaving membership and character ownership intact. Reinvitation historically created a different membership UUID; it did not prove the session-start stream was broken. This is a reproduced explanation, not a confirmed diagnosis of the live incident without production evidence. Linked player accounts restore the same membership after login. The existing subscribe-before-read, authoritative campaign revisions and full rejoin snapshots remain the synchronization mechanism; see [Milestone 6.2](milestone-6.2-player-accounts.md).

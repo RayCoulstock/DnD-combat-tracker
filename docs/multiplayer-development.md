@@ -99,3 +99,7 @@ For builds behind a TLS-inspecting corporate proxy, the Dockerfile accepts an op
 On this cloud machine, the optional full application image build encountered Docker builder DNS `EAI_AGAIN` during npm dependency installation even with proxy/CA configuration. Native installation/build and the PostgreSQL Compose service were verified. Recheck the image on your hosting builder; native Node deployment does not require that image.
 
 The [session activation fix](session-start-synchronisation.md) documents the waiting-room subscription, authoritative lifecycle event, campaign ordering migration and regression coverage.
+
+## Player accounts (6.2A)
+
+Apply additive migration 014 before starting matching frontend/backend binaries. Keep ALLOW_DM_REGISTRATION=false in production; invitation-only player creation uses the existing account/session security, not that bootstrap flag. Use isolated PostgreSQL schemas for `server/tests/player-return.test.ts` and `player-accounts.test.ts`; the former reproduces the legacy expiry/reinvitation problem without claiming a confirmed production cause. Follow [6.2 rollout/rollback and manual acceptance](milestone-6.2-player-accounts.md). Do not test by expiring production sessions. There is no configured email adapter and password recovery remains disabled.

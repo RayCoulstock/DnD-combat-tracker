@@ -1,5 +1,6 @@
 import type {Actor} from '../shared/domain'
 export interface SessionBootstrap {
+  account?:{id:string;email:string;displayName:string}|null
   csrf:string
   actor:Actor|null
   campaignId?:string|null
