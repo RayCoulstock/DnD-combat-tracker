@@ -24,6 +24,7 @@ test('cinematic masks reuse textures, animate authorized reveals, immediately co
  await api(page,path+'/encounters',{name:'Warehouse',file:{version:1,round:3,dungeonMap:map,combatants:[{id:'hero',name:'Warehouse hero',side:'hero',hp:10,maxHp:10,ac:12,initiative:14,conditions:[],saves:[],actions:[]}],battleMap:{width:12,height:8,tokens:{hero:{x:3,z:3}}}}});await api(page,path+'/session',{active:true});const invite=await api(page,path+'/invitations',{})
  await multiplayerMode(page);await page.getByRole('combobox',{name:'Campaign',exact:true}).selectOption(campaign.id);await expect(page.locator('.connection')).toHaveText('Connected');await page.getByRole('button',{name:'Map editor',exact:true}).click()
  await page.getByLabel('Fog edge softness',{exact:true}).selectOption('1');await page.getByLabel('Fog reveal duration (seconds)',{exact:true}).fill('2');await page.getByRole('button',{name:'Apply fog appearance',exact:true}).click();await expect.poll(async()=>(await api(page,path+'/snapshot')).state.dungeonMap.fogOfWar.cinematic.durationMs).toBe(2000)
+ await page.getByRole('group',{name:'Appearance and reveal animation',exact:true}).screenshot({path:test.info().outputPath('fog-cinematic-controls.png')})
  const context=await browser.newContext(),player=await context.newPage();player.on('pageerror',e=>errors.push(e.message));let socket:ReturnType<typeof io>|undefined
  try{
   await player.goto(invite.url);await player.getByLabel('Display name').fill('Cinematic explorer');await player.getByRole('button',{name:'Join campaign',exact:true}).click();await expect.poll(()=>fogView(player)).not.toBeNull()
@@ -62,4 +63,5 @@ test('soft boundaries darken the revealed side while bright lighting leaves unex
   expect(await pixel(hidden)).toEqual([0,0,0]);expect((await pixel(far))[0]).toBeGreaterThan((await pixel(edge))[0]+20)
   const current=(await fogView(page))!;expect(current.texture).toBe(baseline.texture);expect(current.root).toBe(baseline.root);expect(current.camera).toBe(baseline.camera)
  }
+ await page.screenshot({path:test.info().outputPath('soft-fog-player-preview.png')})
 })
