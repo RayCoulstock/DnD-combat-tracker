@@ -1,3 +1,5 @@
+import FogEditorSurface from './FogEditorSurface'
+import type {FogInteraction} from './fogEditor'
 import TerrainBrushSurface from './TerrainBrushSurface'
 import type {TerrainBrush,TerrainStroke} from '../shared/terrain'
 import type {RepeatingTexture} from '../shared/floor-surface'
@@ -14,8 +16,9 @@ import { isScenery, sceneryAtPoint, type SceneryProp } from '../shared/scenery'
 import { canonicalWall, type Cell, type DungeonMap, type ProceduralProp, type Wall } from '../shared/dungeon'
 export interface EditorHit { edgeDistance?: number; position?: Cell; cell: Cell; wall: Wall; objectId?: string; kind?: 'prop' | 'wall' | 'door' }
 export interface EditorInteraction {
+  fog?:FogInteraction
   terrain?:{disabled?:boolean;mode:'paint'|'erase';brush:TerrainBrush;texture:RepeatingTexture;onStroke:(stroke:TerrainStroke)=>void}
-  tool: 'lighting' | 'transition' | 'select' | 'floor' | 'wall' | 'door' | 'object' | 'erase' | 'scenery' | 'sceneryMove' | 'wall-line' | 'room' | 'corridor' | 'objectMove'
+  tool: 'fog' | 'lighting' | 'transition' | 'select' | 'floor' | 'wall' | 'door' | 'object' | 'erase' | 'scenery' | 'sceneryMove' | 'wall-line' | 'room' | 'corridor' | 'objectMove'
   transitionPicking?:boolean
   activation?:number
   document?:DungeonMap
@@ -120,4 +123,4 @@ function CellEditorSurface({ width, height, editor }: { width: number; height: n
   </>
 }
 
-export function EditorSurface(props:{width:number;height:number;editor:EditorInteraction}){return props.editor.tool==='floor'&&props.editor.terrain?<TerrainBrushSurface key={props.editor.activation} {...props}/>:props.editor.drawing&&props.editor.onDraw?<DrawingSurface key={props.editor.tool} width={props.width} height={props.height} document={props.editor.document} settings={props.editor.drawing} onCommit={props.editor.onDraw}/>:<CellEditorSurface key={props.editor.tool} {...props}/> }
+export function EditorSurface(props:{width:number;height:number;editor:EditorInteraction}){return props.editor.tool==='fog'&&props.editor.fog?<FogEditorSurface key={JSON.stringify([props.editor.activation,props.width,props.height,props.editor.fog.floorId,props.editor.fog.revision,props.editor.fog.shape,props.editor.fog.mode,props.editor.fog.radius,props.editor.fog.snap,props.editor.fog.disabled,props.editor.fog.mask])} {...props}/>:props.editor.tool==='floor'&&props.editor.terrain?<TerrainBrushSurface key={props.editor.activation} {...props}/>:props.editor.drawing&&props.editor.onDraw?<DrawingSurface key={props.editor.tool} width={props.width} height={props.height} document={props.editor.document} settings={props.editor.drawing} onCommit={props.editor.onDraw}/>:<CellEditorSurface key={props.editor.tool} {...props}/> }

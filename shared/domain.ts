@@ -196,6 +196,7 @@ function applyCommandCore(state: EncounterState, actor: Actor, command: GameComm
 export const isMapEdit = (command: GameCommand): command is MapCommand => mapCommandSchemas.some(s => s.shape.type.value === command.type)
 export function applyMapEdit(state: EncounterState, actor: Actor, command: MapCommand, history: MapHistory) {
   if (actor.role !== 'dm') throw new DomainError('FORBIDDEN', 'Only the DM may edit maps.')
+  if(command.type==='map.fog.mask'&&command.expectedMapRevision!==undefined&&command.expectedMapRevision!==(state.mapRevision??0))throw new DomainError('CONFLICT','The map changed while editing. The operation was not applied; try again on the current floor.')
   try {
     if (!state.dungeonMap?.level && command.type === 'map.floorImage.set' && Object.values(state.battleMap.tokens).some(p => p.x >= command.width || p.z >= command.height)) throw new Error('Resize would move combatants outside the map. Move them inside the new bounds first.')
     let editCommand:MapCommand=command
