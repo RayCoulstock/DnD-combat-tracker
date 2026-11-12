@@ -152,7 +152,7 @@ function BattlefieldGrid({ width, height }: { width: number; height: number }) {
   </lineSegments>
 }
 
-function LevelScene({ onPlaceSquare, combatants, map, selectedId, activeId, onSelectToken, onMoveToken, canMove, dungeonMap, editor, assetScope, assetContext, tactical, tacticalDraft, tacticalSelected, tacticalInteraction, onSelectTactical, toolbar, toolbarRef, sceneTransitions,sceneFloorId,sceneFloorNames,onTransitionMarker,fog,fogOverlay,actor,lit=false }: Omit<BattleMap3DProps, 'round' | 'onToggleGrid' | 'onToggleLabels' | 'onReturnToTracker'> & { controlsRef: React.RefObject<OrbitControlsImpl | null>;tacticalDraft:TacticalObject|null;tacticalSelected:string|null;tacticalInteraction:TacticalInteraction;onSelectTactical:(id:string)=>void;toolbar?:ObjectToolbarContext;toolbarRef:React.RefObject<HTMLDivElement|null>;lit?:boolean }) {
+function LevelScene({ onPlaceSquare, combatants, map, selectedId, activeId, onSelectToken, onMoveToken, canMove, dungeonMap, editor, assetScope, assetContext, tactical, tacticalDraft, tacticalSelected, tacticalInteraction, onSelectTactical, toolbar, toolbarRef, sceneTransitions,sceneFloorId,sceneFloorNames,onTransitionMarker,fog,fogOverlay,actor,lightingReducedMotion,levelView,lit=false }: Omit<BattleMap3DProps, 'round' | 'onToggleGrid' | 'onToggleLabels' | 'onReturnToTracker'> & { controlsRef: React.RefObject<OrbitControlsImpl | null>;tacticalDraft:TacticalObject|null;tacticalSelected:string|null;tacticalInteraction:TacticalInteraction;onSelectTactical:(id:string)=>void;toolbar?:ObjectToolbarContext;toolbarRef:React.RefObject<HTMLDivElement|null>;lit?:boolean }) {
   const handleFloorClick = (event: ThreeEvent<MouseEvent>) => {
     if (tacticalInteraction.mode!=='navigate' || editor || canMove === false || event.delta > 3) return
     const destination = {
@@ -188,7 +188,7 @@ function LevelScene({ onPlaceSquare, combatants, map, selectedId, activeId, onSe
       const position = map.tokens[String(combatant.id)]
       return !combatant.unplaced && position && <Token key={combatant.id} assetScope={assetScope} assetContext={assetContext} combatant={combatant} position={position} map={map} selected={combatant.id === selectedId} active={combatant.id === activeId} showLabel={map.showLabels} onSelect={() => {if(tacticalInteraction.mode==='navigate'&&(!editor||editor.tool==='select'))onSelectToken(combatant.id)}} />
     })}
-    {fog?.enabled&&sceneFloorId&&(actor?.role==='player'||fogOverlay&&editor?.tool!=='fog')&&<FogOfWar3D fog={fog} floorId={sceneFloorId} width={map.width} height={map.height} overlay={actor?.role!=='player'}/>}
+    {fog?.enabled&&sceneFloorId&&(actor?.role==='player'||fogOverlay&&editor?.tool!=='fog')&&<FogOfWar3D fog={fog} floorId={sceneFloorId} width={map.width} height={map.height} overlay={actor?.role!=='player'} reduced={lightingReducedMotion} context={`${assetScope}:${assetContext?.campaignId}:${assetContext?.encounterId}:${dungeonMap?.id}:${levelView?.activeId}`}/>}
     {toolbar&&<ToolbarProjection target={toolbarRef} position={toolbar.position}/>}
 
   </>

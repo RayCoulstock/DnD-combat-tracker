@@ -72,7 +72,7 @@ export default function FogEditorSurface({width,height,editor}:{width:number;hei
     }
     update(p);commit(d.mask.serialize(),d.expected)
    }}><planeGeometry args={[width,height]}/><meshBasicMaterial transparent opacity={0} depthWrite={false}/></mesh>
-  {settings.overlay&&<FogOfWar3D fog={{...initialFog(),floors:{[settings.floorId]:preview??settings.mask}}} floorId={settings.floorId} width={width} height={height} overlay/>}
+  {settings.overlay&&<FogOfWar3D fog={{...initialFog(),appearance:{colour:'#000000',edgeSoftness:settings.edgeSoftness},floors:{[settings.floorId]:preview??settings.mask}}} floorId={settings.floorId} width={width} height={height} overlay/>}
   {cursor&&!settings.disabled&&settings.shape==='brush'&&<mesh name="fog-brush-cursor" position={[cursor.x-width/2,.045,cursor.z-height/2]} rotation={[-Math.PI/2,0,0]} raycast={()=>null}><ringGeometry args={[Math.max(0,settings.radius-.035),settings.radius,64]}/><meshBasicMaterial color={colour} transparent opacity={.9} depthWrite={false}/></mesh>}
   {outline.length>1&&<Line name="fog-shape-outline" points={outline} color={colour} lineWidth={2} raycast={()=>null}/>}
   {points.map((p,i)=><mesh key={i} position={[p.x-width/2,.047,p.z-height/2]} rotation={[-Math.PI/2,0,0]} raycast={()=>null}><circleGeometry args={[.065,12]}/><meshBasicMaterial color={colour} depthWrite={false}/></mesh>)}
