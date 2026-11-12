@@ -10,7 +10,8 @@ export class Browser {
   cookie = ''; csrf = ''; actor: { id: string; role: string } | null = null
   constructor(public base: string) {}
   async request(path: string, body?: unknown, expected:number|number[] = 200, headers: Record<string, string> = {}) {
-    const response = await fetch(`${this.base}/api${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Cookie: this.cookie, Origin: origin, 'Content-Type': 'application/json', 'X-CSRF-Token': this.csrf, ...headers }, body: body === undefined ? undefined : JSON.stringify(body) })
+    // Restart fixtures must not reuse an Undici keep-alive socket from the closed server.
+    const response = await fetch(`${this.base}/api${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Connection: 'close', Cookie: this.cookie, Origin: origin, 'Content-Type': 'application/json', 'X-CSRF-Token': this.csrf, ...headers }, body: body === undefined ? undefined : JSON.stringify(body) })
     const cookies = response.headers.getSetCookie(); if (cookies.length) this.cookie = cookies.map(c => c.split(';')[0]).join('; ')
     const data = await response.json()
     assert.ok(Array.isArray(expected)?expected.includes(response.status):response.status===expected,`HTTP ${response.status}: ${data.error?.code??'unexpected response'}`)

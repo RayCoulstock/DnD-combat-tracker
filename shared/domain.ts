@@ -265,7 +265,8 @@ export interface ServerEvents {
   'encounter.snapshot': (snapshot: Snapshot) => void
   'presence.changed': (members: Member[]) => void
   'session.ended': () => void
-  'access.revoked': () => void
+  'access.revoked': (reason?:{code:'UNAUTHENTICATED'|'FORBIDDEN'}) => void
+  'session.error': (error:{campaignId:string;code:'LOAD_FAILED';message:string}) => void
 }
 export interface ClientEvents {
   'campaign.join': (campaignId: string, ack: (result: CommandResult) => void) => void

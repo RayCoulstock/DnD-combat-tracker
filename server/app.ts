@@ -100,7 +100,7 @@ export function createApplication({ pool, secret, origin, production = false, al
   app.post('/api/auth/logout', async (req, res) => {
     const sid = req.sessionID
     await new Promise<void>((resolve, reject) => req.session.destroy(e => e ? reject(e) : resolve()))
-    for (const socket of io.sockets.sockets.values()) if ((socket.request as Request).sessionID === sid) { socket.emit('access.revoked'); socket.disconnect(true) }
+    for (const socket of io.sockets.sockets.values()) if ((socket.request as Request).sessionID === sid) { socket.emit('access.revoked',{code:'UNAUTHENTICATED'}); socket.disconnect(true) }
     res.clearCookie('ledger.sid', { httpOnly: true, sameSite: 'lax', secure: production }).json({ ok: true })
   })
   registerAccountRoutes(app,pool,authLimit,invitationLimit)
@@ -283,19 +283,20 @@ export function createApplication({ pool, secret, origin, production = false, al
   io.engine.use(sessionMiddleware)
   async function socketActor(socket: Socket<ClientEvents, ServerEvents>,campaignId=rooms.get(socket.id)): Promise<Actor> {
     const req = socket.request as Request
-    await new Promise<void>((resolve, reject) => req.session.reload(e => e ? reject(new DomainError('UNAUTHENTICATED', 'Session expired.')) : resolve()))
+    await new Promise<void>((resolve, reject) => req.session.reload(e => e ? reject(e.message==='failed to load session'?new DomainError('UNAUTHENTICATED', 'Session expired.'):e) : resolve()))
     return actorForCampaign(pool,req,campaignId)
   }
   io.use(async (socket, next) => {
-    try { const req = socket.request as Request; await socketActor(socket); if (!req.session.csrf || !equal(socket.handshake.auth.csrf, req.session.csrf ?? '')) throw new Error(); next() }
-    catch { next(new Error('Authentication required.')) }
+    try { const req = socket.request as Request; await socketActor(socket); if (!req.session.csrf || !equal(socket.handshake.auth.csrf, req.session.csrf ?? '')) throw new DomainError('UNAUTHENTICATED','Authentication required.'); next() }
+    catch(e) { const error=Object.assign(new Error(e instanceof DomainError?'Authentication required.':'Connection unavailable.'),{data:{code:e instanceof DomainError&&e.code==='FORBIDDEN'?'FORBIDDEN':e instanceof DomainError?'UNAUTHENTICATED':'UNAVAILABLE'}});next(error) }
   })
   const rooms = new Map<string, string>()
   const sentMaps = new Map<string, { encounterId: string; revision: number }>()
   async function publishState(socket: Socket<ClientEvents, ServerEvents>, campaignId: string, full = false) {
+    const joinGeneration=socket.data.joinGeneration
     const actor = await socketActor(socket,campaignId)
     const data = await transaction(pool, db => sessionState(db, actor, campaignId))
-    if (rooms.get(socket.id) !== campaignId || !socket.connected) return data
+    if (rooms.get(socket.id) !== campaignId || !socket.connected || joinGeneration!==socket.data.joinGeneration) return data
     const map = data.snapshot
     if (map) {
       const previous = sentMaps.get(socket.id)
@@ -311,11 +312,16 @@ export function createApplication({ pool, secret, origin, production = false, al
     else if (!data.sessionActive) socket.emit('session.ended')
     return data
   }
+  function reportSocketFailure(socket:Socket<ClientEvents,ServerEvents>,campaignId:string,error:unknown){
+    if(rooms.get(socket.id)!==campaignId||!socket.connected)return
+    if(error instanceof DomainError&&(error.code==='UNAUTHENTICATED'||error.code==='FORBIDDEN')){socket.emit('access.revoked',{code:error.code});socket.disconnect(true)}
+    else socket.emit('session.error',{campaignId,code:'LOAD_FAILED',message:error instanceof DomainError?error.message:'Unable to load the current encounter. Retry when the connection returns.'})
+  }
   async function broadcast(campaignId: string) {
     for (const socket of io.sockets.sockets.values()) {
       if (rooms.get(socket.id) !== campaignId) continue
       try { await publishState(socket, campaignId) }
-      catch { socket.emit('access.revoked'); socket.disconnect(true) }
+      catch(e) { reportSocketFailure(socket,campaignId,e) }
     }
     await presence(campaignId)
   }
@@ -329,17 +335,21 @@ export function createApplication({ pool, secret, origin, production = false, al
     socket.on('campaign.join', async (input, ack) => {
       if (typeof ack !== 'function') return
       let subscribed = false
+      const generation=(socket.data.joinGeneration??0)+1;socket.data.joinGeneration=generation
       try {
         if (Date.now() - windowStart > 1000) { count = 0; windowStart = Date.now() }
         if (++count > 30) throw new DomainError('INVALID', 'Too many commands.')
         const campaignId = uuid.parse(input); const actor = await socketActor(socket,campaignId)
         await transaction(pool, db => authorize(db, actor, campaignId))
+        if(generation!==socket.data.joinGeneration||!socket.connected)throw new DomainError('CONFLICT','Campaign subscription changed. Retry the selected campaign.')
         const old = rooms.get(socket.id); if (old) await socket.leave(old)
+        if(generation!==socket.data.joinGeneration||!socket.connected)throw new DomainError('CONFLICT','Campaign subscription changed. Retry the selected campaign.')
         rooms.set(socket.id, campaignId); await socket.join(campaignId); subscribed = true
         // Subscribe before reading so activation during the join cannot be missed.
         const data = await publishState(socket, campaignId, true)
+        if(generation!==socket.data.joinGeneration||!socket.connected)throw new DomainError('CONFLICT','Campaign subscription changed. Retry the selected campaign.')
         ack({ ok: true, revision: data.snapshot?.revision ?? 0, duplicate: false }); if (old) await presence(old); await presence(campaignId)
-      } catch (e) { ack(commandError(e)); if (subscribed) { socket.emit('access.revoked'); socket.disconnect(true) } }
+      } catch (e) { ack(e instanceof DomainError?commandError(e):{ok:false,error:{code:'INVALID',message:'Unable to load the current encounter. Please retry.'}}); if (subscribed&&generation===socket.data.joinGeneration) {reportSocketFailure(socket,rooms.get(socket.id)!,e)} }
     })
     socket.on('game.command', async (input, ack) => {
       if (typeof ack !== 'function') return
@@ -360,7 +370,7 @@ export function createApplication({ pool, secret, origin, production = false, al
         await broadcast(campaignId); ack({ ok: true, ...result })
       } catch (e) {
         ack(commandError(e))
-        if (campaignId) { try { await publishState(socket, campaignId) } catch { socket.emit('access.revoked'); socket.disconnect(true) } }
+        if (campaignId) { try { await publishState(socket, campaignId) } catch(e) { reportSocketFailure(socket,campaignId,e) } }
       }
     })
     socket.on('disconnect', () => { sentMaps.delete(socket.id); const c = rooms.get(socket.id); rooms.delete(socket.id); if (c) void presence(c).catch(() => {}) })
@@ -372,7 +382,7 @@ export function createApplication({ pool, secret, origin, production = false, al
       const campaignId = rooms.get(socket.id)
       if (campaignId) void (async () => {
         try { const actor = await socketActor(socket); await transaction(pool, db => authorize(db, actor, campaignId)) }
-        catch { socket.emit('access.revoked'); socket.disconnect(true) }
+        catch(e) { reportSocketFailure(socket,campaignId,e) }
       })()
     }
   }, 15000)
