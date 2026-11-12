@@ -1,7 +1,9 @@
 import {z} from 'zod'
 export const fogResolution=4
 const floorId=z.string().min(1).max(100).regex(/^[A-Za-z0-9_:-]+$/).refine(s=>!['__proto__','constructor','prototype'].includes(s))
-export const fogSchema=z.object({version:z.literal(1),enabled:z.boolean(),appearance:z.object({colour:z.literal('#000000'),edgeSoftness:z.number().finite().min(0).max(1)}).strict(),floors:z.record(floorId,z.string().max(10000).regex(/^[0-9a-f]*$/)).refine(f=>Object.keys(f).length<=12),revision:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)}).strict()
+export const fogCinematicSchema=z.object({enabled:z.boolean(),durationMs:z.number().int().min(0).max(2000)}).strict()
+export const fogCinematicDefaults={enabled:true,durationMs:750}
+export const fogSchema=z.object({version:z.literal(1),enabled:z.boolean(),appearance:z.object({colour:z.literal('#000000'),edgeSoftness:z.number().finite().min(0).max(1)}).strict(),cinematic:fogCinematicSchema.optional(),transition:z.object({startedAt:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)}).strict().optional(),floors:z.record(floorId,z.string().max(10000).regex(/^[0-9a-f]*$/)).refine(f=>Object.keys(f).length<=12),revision:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)}).strict()
 export type FogOfWar=z.infer<typeof fogSchema>
 export const initialFog=():FogOfWar=>({version:1,enabled:true,appearance:{colour:'#000000',edgeSoftness:0},floors:{},revision:0})
 export const maskLength=(width:number,height:number)=>Math.ceil(width*height*fogResolution*fogResolution/4)

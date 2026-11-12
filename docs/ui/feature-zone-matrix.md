@@ -439,3 +439,14 @@ See `docs/milestone-6.1-fog-of-war.md` for conservative GLB/terrain/tactical pol
 | Player safety | Player and Preview use existing A projection. Preview cancels unfinished gestures and has no Fog editing controls. Server rejects player commands and stale expected masks. |
 
 Cinematic animations and rendered soft edges remain 6.1C. A's conservative GLB/terrain/tactical visibility policies remain unchanged; see the milestone report.
+
+## Milestone 6.1C — cinematic fog
+
+| Feature | Location / contract |
+| --- | --- |
+| Black fog and Off / Subtle / Soft boundaries | C3 existing Fog of War → Appearance and reveal animation. Preview depicts the draft. Softening darkens only revealed space; concealed samples stay opaque. |
+| Enable animations, reveal duration 0–2 seconds (default 0.75), Apply fog appearance | Same C3 fieldset, existing Button/input/select styling and map history/save feedback. Explicit Apply commits one revision; controls remain a single column. Reduced motion and zero duration snap immediately. |
+| Secure concealment / visibility | Existing authoritative player projection; concealment is immediate. Newly authorized objects/labels appear at commit while the floor mask withdraws. Player Preview shares this policy; entry to preview shows the current target. |
+| Existing tools and navigation | D4 brush/rectangle/polygon gestures, D3 history/fullscreen and D5 camera/rendering quality stay unchanged. No new permanent header, dock or toolbar. |
+
+See the milestone report for GLB bounds limits, emitter/shadow policy, measured resources and manual acceptance.

@@ -1,5 +1,5 @@
 import {sameFogMask} from './fogEditing.ts'
-import {fogSchema,initialFog} from './fog.ts'
+import {fogSchema,initialFog,fogCinematicSchema} from './fog.ts'
 import {captureLighting,applyLightingSnapshot} from './lightingScenes.ts'
 import {lightingSchema,environmentSchema,environmentOverrideSchema,pointLightSchema,lightIdSchema,legacyEnvironment,lightingSceneSchema} from './lighting.ts'
 import {terrainPaintSchema,terrainStrokeSchema} from './terrain.ts'
@@ -141,6 +141,7 @@ export function blankDungeon(id: string, name: string, width = 20, height = 20):
 // Legacy versions remain valid; scenery uses 2, architectural visuals 3, and floor images 4. Never downgrade a document.
 export const readDungeon = (value: unknown): DungeonMap => dungeonSchema.parse(value)
 export const mapCommandSchemas = [
+  z.object({type:z.literal('map.fog.settings'),edgeSoftness:z.union([z.literal(0),z.literal(0.5),z.literal(1)]),cinematic:fogCinematicSchema}).strict(),
   z.object({type:z.literal('map.fog.enabled'),enabled:z.boolean(),levelId:objectId.optional()}).strict(),
   z.object({type:z.literal('map.fog.reset'),confirmed:z.literal(true),levelId:objectId.optional()}).strict(),
   z.object({type:z.literal('map.fog.mask'),mask:z.string().max(10000).regex(/^[0-9a-f]*$/),expectedMask:z.string().max(10000).regex(/^[0-9a-f]*$/).optional(),expectedMapRevision:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),levelId:objectId}).strict(),
@@ -292,9 +293,12 @@ export function editMap(frame:MapFrame,history:MapHistory,command:MapCommand):{f
   if(command.type==='map.undo'||command.type==='map.redo'||command.type==='map.history.clear'||command.type==='map.blank'||command.type==='map.load'||command.type==='map.template.load')return editSingleMap(frame,history,command)
   const document=frame.document
   if(!document)throw new Error('Create or load a dungeon map first.')
-  if(command.type==='map.fog.enabled'||command.type==='map.fog.reset'||command.type==='map.fog.mask'){
+  if(command.type==='map.fog.settings'||command.type==='map.fog.enabled'||command.type==='map.fog.reset'||command.type==='map.fog.mask'){
+    if(command.type==='map.fog.settings'&&!document.fogOfWar)throw new Error('Enable fog before changing its appearance.')
     const fog=structuredClone(document.fogOfWar??initialFog())
-    if(command.type==='map.fog.enabled')fog.enabled=command.enabled
+    delete fog.transition
+    if(command.type==='map.fog.settings'){fog.appearance.edgeSoftness=command.edgeSoftness;fog.cinematic=command.cinematic}
+    else if(command.type==='map.fog.enabled')fog.enabled=command.enabled
     else if(command.type==='map.fog.reset'){
       if(command.levelId){if(!dungeonLevels(document).some(l=>l.id===command.levelId))throw new Error('Floor no longer exists.');delete fog.floors[command.levelId]}
       else fog.floors={}
@@ -304,6 +308,7 @@ export function editMap(frame:MapFrame,history:MapHistory,command:MapCommand):{f
       if(command.expectedMask&&command.expectedMask.length!==level.width*level.height*4)throw new Error('Expected fog mask dimensions do not match the floor.')
       if(command.expectedMask!==undefined&&(!document.fogOfWar?.enabled||!sameFogMask(command.expectedMask,fog.floors[level.id]??'')))throw new Error('Fog changed while editing. The operation was not applied; try again on the current floor.')
       if(/^0*$/.test(command.mask))delete fog.floors[level.id];else fog.floors[level.id]=command.mask
+      fog.transition={startedAt:Date.now()}
     }
     fog.revision++
     const next=reuseDungeonGeometry(document,readDungeon({...document,fogOfWar:fog}))

@@ -67,6 +67,17 @@ test('fog authorization, masked media, ordered snapshots, tracker compatibility,
   await player.command({type:'map.fog.mask',levelId:'ground',mask:fullMask(8,8),expectedMask:mask},false)
   const partial=await fetch(file+'&fogFloor=ground&fogRevision=1',{headers:{Cookie:player.cookie}}),pixels=await sharp(Buffer.from(await partial.arrayBuffer())).raw().toBuffer()
   assert.equal(pixels[3],255);assert.equal(pixels[(127)*4+3],0)
+  const cinematic={enabled:true,durationMs:1250}
+  await player.command({type:'map.fog.settings',edgeSoftness:1,cinematic},false)
+  const lighting=structuredClone(dm.snapshot!.state.dungeonMap!.lighting)
+  await dm.command({type:'map.fog.settings',edgeSoftness:1,cinematic});await waitFor(()=>player.snapshot!.revision===dm.snapshot!.revision)
+  assert.deepEqual(player.snapshot!.state.dungeonMap!.fogOfWar!.cinematic,cinematic)
+  assert.deepEqual(dm.snapshot!.state.dungeonMap!.lighting,lighting)
+  // Completed operations carry a single server stamp; no animation history/frames.
+  await dm.command({type:'map.fog.mask',levelId:'ground',mask:fullMask(8,8),expectedMask:mask,expectedMapRevision:dm.snapshot!.state.mapRevision});await waitFor(()=>player.snapshot!.revision===dm.snapshot!.revision)
+  const transition=player.snapshot!.state.dungeonMap!.fogOfWar!.transition!
+  assert.ok(Math.abs(transition.startedAt-Date.now())<5000);assert.deepEqual(Object.keys(transition),['startedAt'])
+  await late.connect(campaign.id);assert.deepEqual(late.snapshot!.state.dungeonMap!.fogOfWar,player.snapshot!.state.dungeonMap!.fogOfWar)
   const a=dm.snapshot!.revision;await dm.command({type:'map.fog.mask',levelId:'ground',mask:fullMask(8,8)});await waitFor(()=>player.snapshot!.revision===dm.snapshot!.revision);assert.equal((await fetch(modelFile,{headers:{Cookie:player.cookie}})).status,200);await dm.command({type:'map.fog.reset',confirmed:true});await waitFor(()=>player.snapshot!.revision===dm.snapshot!.revision);assert.ok(dm.snapshot!.revision>a);assert.deepEqual(player.snapshot!.state.battleMap.tokens,{})
   await late.connect(campaign.id);assert.deepEqual(late.snapshot!.state.dungeonMap,player.snapshot!.state.dungeonMap)
   assert.equal(player.omitted,0)
