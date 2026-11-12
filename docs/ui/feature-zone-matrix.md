@@ -459,3 +459,14 @@ See the milestone report for GLB bounds limits, emitter/shadow policy, measured 
 | Legacy member linking | A4 Account → Link player account → existing E4 Modal. Verified current legacy session or targeted DM claim invitation; original member/ownership IDs and mounted camera retained. |
 | Normal returning-player login | Existing Sign in entry; server chooses an authorized campaign context. No original invitation required. My Campaigns and richer lifecycle states are subsequent B/C increments. |
 | Recovery status | Authentication form clearly states recovery is unavailable pending email delivery; no insecure fallback or completed-delivery claim. |
+
+## Milestone 6.2B — My Campaigns and member management
+
+| Feature | Zone / contract |
+| --- | --- |
+| My Campaigns navigation | A3 button / A4 Account menu; phone uses A4. Existing dark shell and two rows remain. |
+| Account campaign dashboard | C2 under B context: campaign/host name, host or active-member status, Live/Waiting, Join/Wait/Open and explicit refresh. Authoritatively scoped entry; old campaign data clears on switch. |
+| Member status and targeted claiming | Existing E3 DM campaign setup Players card: linked/legacy/revoked status, online/offline, Claim link, refresh, history and confirmed revoke. Names/actions wrap without vertical letter layouts; active assignment/presence stays separate from revoked audit rows. |
+| Account and cross-campaign safety | Revoking one member retains the account, ownership references and other campaign tabs; only that campaign loses API/socket access. Player lists never include private member emails. |
+
+Synthetic [phone](milestone-6.2/my-campaigns-phone.png) and [tablet](milestone-6.2/my-campaigns-tablet.png) captures show the implemented dashboard.
