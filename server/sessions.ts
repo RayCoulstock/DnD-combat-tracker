@@ -4,7 +4,7 @@ import type { Pool } from './db.ts'
 import type { Actor } from '../shared/domain.ts'
 export const hashSecret = (value: string) => createHash('sha256').update(value).digest('hex')
 declare module 'express-session' {
-  interface SessionData { csrf: string; actor: Actor; campaignId?: string }
+  interface SessionData { csrf: string; actor: Actor; accountId?:string; campaignId?: string }
 }
 export class PgSessionStore extends session.Store {
   constructor(private pool: Pool) { super() }

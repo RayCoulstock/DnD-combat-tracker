@@ -1,3 +1,5 @@
+import Modal from './Modal'
+import AccountEntry,{type Account} from './AccountEntry'
 import GroupPresets from './GroupPresets'
 import type {GroupAdd,GroupInsertionResult} from '../shared/groupPresets'
 import PlayerTracker,{PlayerCombatantDetails} from './PlayerTracker'
@@ -27,6 +29,8 @@ export default function Multiplayer() {
   useEffect(() => { localStorage.setItem('ledger.playMode', mode) }, [mode])
   const [inviteToken, setInviteToken] = useState(() => new URLSearchParams(location.hash.slice(1)).get('invite') ?? '')
   const [bootstrapSession] = useState(()=>createSessionBootstrap())
+  const [account,setAccount]=useState<Account|null>(null),[claimOpen,setClaimOpen]=useState(false)
+  const campaignChoice=useRef(0)
   const [actor, setActor] = useState<Actor | null>(null)
   const [csrf, setCsrf] = useState('')
   const [allowDMRegistration, setAllowDMRegistration] = useState<boolean | null>(null)
@@ -56,7 +60,7 @@ export default function Multiplayer() {
       if (response.status === 401 || data.error?.code === 'CSRF') {
         const current = await (await fetch('/api/session')).json()
         setCsrf(current.csrf); setAllowDMRegistration(current.allowDMRegistration === true)
-        if (!current.actor) { sessionRef.current = null; setSessionState(null); setActor(null); setSnapshot(null); snapshotRef.current = null; setDetails(null); setCampaignId(''); socketRef.current?.disconnect() }
+        if (!current.actor) { setAccount(null);setCampaigns([]);sessionRef.current = null; setSessionState(null); setActor(null); setSnapshot(null); snapshotRef.current = null; setDetails(null); setCampaignId(''); socketRef.current?.disconnect() }
       }
       throw new Error(data.error?.message ?? 'Request failed.')
     }
@@ -67,7 +71,7 @@ export default function Multiplayer() {
     if (mode !== 'online') return
     let cancelled = false
     bootstrapSession().then(data => {
-      if (!cancelled) { setAllowDMRegistration(data.allowDMRegistration === true); setCsrf(data.csrf); setActor(data.actor); if (data.campaignId) setCampaignId(data.campaignId) }
+      if (!cancelled) { setAllowDMRegistration(data.allowDMRegistration === true); setCsrf(data.csrf); setActor(data.actor);setAccount(data.account??null); if (data.campaignId) setCampaignId(data.campaignId) }
     }).catch(e => { if (!cancelled) setError(e.message) })
     return () => { cancelled = true }
   }, [mode, bootstrapSession])
@@ -119,7 +123,7 @@ export default function Multiplayer() {
     socket.on('connect_error', () => { setStatus('Reconnecting'); setError('Connection unavailable or session expired. Sign in again if reconnection fails.') })
     const clear = (message: string) => { sessionRef.current = null; setSessionState(null); snapshotRef.current = null; setSnapshot(null); setStatus('Disconnected'); setError(message); socket.disconnect() }
     socket.on('access.revoked', () => {
-      clear('Your access ended. Sign in or request a new invitation.')
+      clear('Your access ended. Sign in again or contact the campaign host.');setAccount(null);setCampaigns([])
       setActor(null); setCampaignId(''); setDetails(null)
       void fetch('/api/session').then(r => r.json()).then(data => { setCsrf(data.csrf); setAllowDMRegistration(data.allowDMRegistration === true) }).catch(() => {})
     })
@@ -154,12 +158,19 @@ export default function Multiplayer() {
     } finally { pending.current = false }
   }
   const sendGroup=async(command:GroupAdd,encounterId:string)=>{if(snapshotRef.current?.encounterId!==encounterId)throw new Error('The encounter changed. Reopen group review.');let report:GroupInsertionResult|undefined;await send(command,result=>{report=result});if(!report)throw new Error('Group result unavailable. Retry the original request.');return report}
-  const chooseCampaign = (id: string) => { sessionRef.current = null; setSessionState(null); setCampaignId(id); setDetails(null); setMembers([]); setSnapshot(null); snapshotRef.current = null; setInviteURL(''); setSelected(null) }
+  const chooseCampaign = (id:string,verifiedActor?:Actor) => {
+    const generation=++campaignChoice.current
+    socketRef.current?.disconnect();sessionRef.current=null;setSessionState(null);setCampaignId('');setDetails(null);setMembers([]);setSnapshot(null);snapshotRef.current=null;setInviteURL('');setSelected(null)
+    if(!id)return
+    if(verifiedActor){setActor(verifiedActor);setCampaignId(id);return}
+    void api(`/campaigns/${id}/enter`,{}).then(data=>{if(campaignChoice.current===generation){setActor(data.actor);setCampaignId(id)}}).catch(e=>{if(campaignChoice.current===generation)setError(e.message)})
+  }
+  const authenticated=(data:{actor:Actor;account?:Account|null;campaignId?:string})=>{setAccount(data.account??null);setActor(data.actor);if(!(claimOpen&&actor?.id===data.actor.id&&campaignId===data.campaignId))chooseCampaign(data.campaignId??'',data.actor);setInviteToken('');setClaimOpen(false);history.replaceState(null,'',location.pathname)}
   const online = status === 'Connected'
   const selectedCombatant = snapshot?.state.combatants.find(c => c.id === selected) ?? snapshot?.state.combatants[0]
   const player = actor?.role === 'player'
   const refresh=()=>void run(async()=>{socketRef.current?.disconnect().connect()})
-  const signOut=()=>void run(async()=>{await api('/auth/logout',{});setActor(null);setGroupsOpen(false);chooseCampaign('');setCampaigns([]);setLibraryOpen(false);setCombatantLibraryOpen(false);setSetupOpen(false);socketRef.current?.disconnect()})
+  const signOut=()=>void run(async()=>{await api('/auth/logout',{});setAccount(null);setClaimOpen(false);setActor(null);setGroupsOpen(false);chooseCampaign('');setCampaigns([]);setLibraryOpen(false);setCombatantLibraryOpen(false);setSetupOpen(false);socketRef.current?.disconnect()})
   const goTable=()=>{setGroupsOpen(false);setLibraryOpen(false);setCombatantLibraryOpen(false)}
   const context=<>
     <label className="ledger-campaign-select">Campaign<select aria-label="Campaign" title={details?.name} value={campaignId} disabled={busy||!actor} onChange={e=>chooseCampaign(e.target.value)}><option value="">Select campaign</option>{campaigns.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
@@ -176,24 +187,17 @@ export default function Multiplayer() {
   const presence=<Presence members={members} onManage={!player?()=>openSetup('players'):undefined}/>
   const chrome={visible:mode==='online'&&!libraryOpen,templatesRequest:templateRequests.online,context,players:presence,sessionItems,sessionState:details?.sessionActive?'Live':'Inactive',libraryOpen:combatantLibraryOpen,closeLibrary:()=>setCombatantLibraryOpen(false)}
   return <>
-    <AppBar mode={mode} player={player} signedIn={Boolean(actor)} status={status} count={members.filter(m=>m.connected).length} onMode={setMode} onTable={goTable} onAssets={mode==='online'&&actor?.role==='dm'?()=>{setSetupOpen(false);setLibraryOpen(true)}:undefined} onCombatants={mode==='online'&&actor?.role==='dm'?()=>{setSetupOpen(false);setLibraryOpen(false);setCombatantLibraryOpen(true)}:undefined} onGroups={mode==='online'&&actor?.role==='dm'?()=>{setGroupsOpen(true);setSetupOpen(false)}:undefined} onTemplates={mode==='local'||actor?.role==='dm'&&snapshot?()=>{setLibraryOpen(false);setTemplateRequests(previous=>({...previous,[mode]:previous[mode]+1}))}:undefined} onRejoin={refresh} onSignOut={signOut}/>
+    <AppBar onAccount={actor?.role==='player'&&!account?()=>{setMode('online');setClaimOpen(true)}:undefined} mode={mode} player={player} signedIn={Boolean(actor)} status={status} count={members.filter(m=>m.connected).length} onMode={setMode} onTable={goTable} onAssets={mode==='online'&&actor?.role==='dm'?()=>{setSetupOpen(false);setLibraryOpen(true)}:undefined} onCombatants={mode==='online'&&actor?.role==='dm'?()=>{setSetupOpen(false);setLibraryOpen(false);setCombatantLibraryOpen(true)}:undefined} onGroups={mode==='online'&&actor?.role==='dm'?()=>{setGroupsOpen(true);setSetupOpen(false)}:undefined} onTemplates={mode==='local'||actor?.role==='dm'&&snapshot?()=>{setLibraryOpen(false);setTemplateRequests(previous=>({...previous,[mode]:previous[mode]+1}))}:undefined} onRejoin={refresh} onSignOut={signOut}/>
     {groupsOpen&&actor?.role==='dm'&&mode==='online'&&<GroupPresets api={api} campaignId={campaignId} onClose={()=>setGroupsOpen(false)}/>}
     <div hidden={mode !== 'local'}><App assetScope={actor?.id} chrome={{visible:mode==='local',templatesRequest:templateRequests.local}} /></div>
+    {claimOpen&&actor&&<Modal label="Link player account" onClose={()=>setClaimOpen(false)}><AccountEntry token="" account={account} legacyClaim allowDMRegistration={allowDMRegistration} csrf={csrf} busy={busy} api={api} onAuthenticated={authenticated} onCancel={()=>setClaimOpen(false)}/></Modal>}
     {mode === 'online' && <>
       {combatantLibraryOpen&&actor?.role==='dm'&&!snapshot&&<CombatantLibrary api={api} csrf={csrf} snapshot={null} onClose={()=>setCombatantLibraryOpen(false)} onAdd={async()=>{throw new Error('Open an encounter first.')}} send={send}/>}
       {libraryOpen && actor?.role === 'dm' && <><SessionBar state={details?.sessionActive?'Live':'Inactive'}><strong className="ledger-context-name">3D Asset Library</strong><Button onClick={goTable}>Return to Table</Button></SessionBar><AssetLibrary key={actor.id} api={api} csrf={csrf} onClose={() => setLibraryOpen(false)} /></>}
       <div hidden={libraryOpen && actor?.role === 'dm'}>
       {error && <p className="online-message ledger-floating-message" role="alert">{error}</p>}
       {!actor&&<SessionBar state="Sign in"><strong className="ledger-context-name">{inviteToken?'Join a campaign':'Multiplayer table'}</strong></SessionBar>}
-      {!actor ? <section className="online-card"><h1>{inviteToken ? 'Join a campaign' : 'Dungeon Master account'}</h1>
-        {inviteToken ? <form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); void run(async () => { const data = await api('/invitations/redeem', { token: inviteToken, displayName: form.get('displayName') }); setActor(data.actor); chooseCampaign(data.campaignId); setInviteToken(''); history.replaceState(null, '', location.pathname) }) }}>
-          <label>Display name<input name="displayName" required maxLength={80} autoComplete="nickname" /></label><button disabled={!csrf || busy}>Join campaign</button><p>Invitation links expire after 30 minutes and work once. This browser keeps your player session for up to seven days.</p>
-        </form> : <form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); const action = (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') ?? 'login'; void run(async () => { const data = await api(`/auth/${action}`, { email: form.get('email'), password: form.get('password') }); setActor(data.actor) }) }}>
-          <label>Email<input name="email" type="email" required autoComplete="username" /></label><label>Password (12+ characters)<input name="password" type="password" minLength={12} maxLength={128} required autoComplete="current-password" /></label>
-          <button name="action" value="login" disabled={!csrf || busy}>Sign in</button>{allowDMRegistration === true && <button name="action" value="register" disabled={!csrf || busy}>Create account</button>}
-          {allowDMRegistration === false && <p>DM registration is closed for the private beta. Existing DMs can sign in; players can join using an invitation.</p>}
-        </form>}
-      </section> : <>
+      {(!actor||inviteToken) ? <AccountEntry token={inviteToken} account={account} legacyClaim={claimOpen} allowDMRegistration={allowDMRegistration} csrf={csrf} busy={busy} api={api} onAuthenticated={authenticated} onCancel={actor?()=>{setClaimOpen(false);setInviteToken('');history.replaceState(null,'',location.pathname)}:undefined}/> : <>
         {(!snapshot||player)&&<SessionBar round={snapshot?.state.round} state={details?.sessionActive?'Live':'Inactive'} players={presence} view={playerView} onView={player&&snapshot?setPlayerView:undefined} editorAllowed={false} player={player} items={!player?sessionItems:undefined}>{context}{!player&&<Button onClick={()=>openSetup()}>Campaign setup</Button>}</SessionBar>}
         {!player&&<Drawer open={setupOpen} title="Campaign setup" className="ledger-setup-drawer" onClose={()=>setSetupOpen(false)}>
           <DMSetupPanel key={campaignId} campaigns={campaigns} campaignId={campaignId} details={details} members={members} snapshot={snapshot} online={online} busy={busy} inviteURL={inviteURL} checkpoints={checkpoints} chooseCampaign={chooseCampaign} api={api} run={run} send={send} setInviteURL={setInviteURL} section={setupSection} open={setupOpen}/>
