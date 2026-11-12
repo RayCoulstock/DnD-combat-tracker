@@ -133,9 +133,8 @@ export function createApplication({ pool, secret, origin, production = false, al
   app.get('/api/campaigns', async (req, res) => {
     const actor = requireActor(req)
     const user=accountId(req)
-    if(user){res.json((await pool.query(`SELECT DISTINCT c.id,c.name,c.session_active FROM campaigns c LEFT JOIN memberships m ON m.campaign_id=c.id AND m.account_id=$1 AND m.revoked_at IS NULL WHERE c.owner_id=$1 OR m.id IS NOT NULL ORDER BY c.name`,[user])).rows);return}
-    const query = actor.role === 'dm' ? 'SELECT id,name,session_active FROM campaigns WHERE owner_id=$1 ORDER BY created_at' : 'SELECT c.id,c.name,c.session_active FROM campaigns c JOIN memberships m ON m.campaign_id=c.id WHERE m.id=$1 AND m.revoked_at IS NULL'
-    res.json((await pool.query(query, [actor.id])).rows)
+    const rows=user?await pool.query(`SELECT c.id,c.name,c.session_active,h.display_name AS "hostName",CASE WHEN c.owner_id=$1 THEN 'dm' ELSE 'player' END AS role,CASE WHEN c.owner_id=$1 THEN 'host' ELSE 'active' END AS "membershipStatus" FROM campaigns c JOIN users h ON h.id=c.owner_id LEFT JOIN memberships m ON m.campaign_id=c.id AND m.account_id=$1 AND m.revoked_at IS NULL WHERE c.owner_id=$1 OR m.id IS NOT NULL ORDER BY c.name`,[user]):await pool.query(`SELECT c.id,c.name,c.session_active,h.display_name AS "hostName",'player' AS role,'active' AS "membershipStatus" FROM campaigns c JOIN users h ON h.id=c.owner_id JOIN memberships m ON m.campaign_id=c.id WHERE m.id=$1 AND m.revoked_at IS NULL ORDER BY c.name`,[actor.id])
+    res.json(rows.rows)
   })
   app.post('/api/campaigns', async (req, res) => {
     const actor = requireDM(req); const data = nameSchema.parse(req.body); const id = randomUUID()
@@ -154,8 +153,8 @@ export function createApplication({ pool, secret, origin, production = false, al
     const result = await transaction(pool, async db => {
       const campaign = await authorize(db, actor, campaignId)
       const encounters = actor.role === 'dm' ? (await db.query('SELECT id,name,revision FROM encounters WHERE campaign_id=$1 ORDER BY created_at', [campaignId])).rows : []
-      const members = (await db.query('SELECT id,display_name AS "displayName" FROM memberships WHERE campaign_id=$1 AND revoked_at IS NULL ORDER BY created_at', [campaignId])).rows
-      const invitations = actor.role === 'dm' ? (await db.query('SELECT id,expires_at,redeemed_at,revoked_at FROM invitations WHERE campaign_id=$1 ORDER BY created_at DESC LIMIT 30', [campaignId])).rows : []
+      const members = (await db.query(actor.role==='dm'?`SELECT id,display_name AS "displayName",(account_id IS NOT NULL) AS "accountLinked",CASE WHEN revoked_at IS NULL THEN 'active' ELSE 'revoked' END AS status FROM memberships WHERE campaign_id=$1 ORDER BY created_at`:'SELECT id,display_name AS "displayName" FROM memberships WHERE campaign_id=$1 AND revoked_at IS NULL ORDER BY created_at', [campaignId])).rows
+      const invitations = actor.role === 'dm' ? (await db.query('SELECT id,expires_at,redeemed_at,revoked_at,membership_id AS "membershipId" FROM invitations WHERE campaign_id=$1 ORDER BY created_at DESC LIMIT 30', [campaignId])).rows : []
       return { id: campaignId, name: campaign.name, activeEncounterId: campaign.active_encounter_id, sessionActive: campaign.session_active, encounters, members, invitations }
     })
     res.json(result)
@@ -214,7 +213,8 @@ export function createApplication({ pool, secret, origin, production = false, al
     const campaignId = uuid.parse(req.params.campaignId); const memberId = uuid.parse(req.params.id)
     await transaction(pool, async db => {
       await db.query('SELECT id FROM campaigns WHERE id=$1 FOR UPDATE', [campaignId]); await authorize(db, requireDM(req), campaignId)
-      await db.query('UPDATE memberships SET revoked_at=now() WHERE id=$1 AND campaign_id=$2', [memberId, campaignId])
+      if(!(await db.query('UPDATE memberships SET revoked_at=COALESCE(revoked_at,now()) WHERE id=$1 AND campaign_id=$2 RETURNING id', [memberId, campaignId])).rowCount)throw new DomainError('NOT_FOUND','Member unavailable.')
+      await db.query('UPDATE invitations SET revoked_at=COALESCE(revoked_at,now()) WHERE membership_id=$1 AND campaign_id=$2 AND redeemed_at IS NULL',[memberId,campaignId])
       await db.query("DELETE FROM auth_sessions WHERE data->'actor'->>'id'=$1", [memberId])
     }); await broadcast(campaignId); res.json({ ok: true })
   })

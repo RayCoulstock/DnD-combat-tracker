@@ -1,0 +1,11 @@
+.my-campaigns{box-sizing:border-box;width:min(100%,1100px);margin:0 auto;padding:24px;max-height:calc(100dvh - 120px);overflow:auto;color:var(--ledger-ink);background:var(--ledger-bg)}
+.my-campaigns header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px}
+.my-campaigns h1{margin:0;font-family:Georgia,serif}.my-campaigns p{line-height:1.5}
+.campaign-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr));gap:16px;list-style:none;padding:0}
+.campaign-cards li{min-width:0;padding:20px;border-radius:12px;border:1px solid var(--ledger-control-line);background:var(--ledger-card);overflow-wrap:anywhere}
+.campaign-cards h2{font-size:18px;margin:0 0 12px}.my-campaigns button,.my-campaigns input{min-height:40px;box-sizing:border-box}
+.my-campaigns form{display:flex;flex-wrap:wrap;align-items:end;gap:12px;padding:16px 0}.my-campaigns label{display:grid;gap:6px;min-width:0}.my-campaigns input{max-width:100%;padding:8px;border:1px solid var(--ledger-control-line);border-radius:8px}
+.my-campaigns :focus-visible{outline:2px solid var(--ledger-accent);outline-offset:3px}
+@media(max-width:600px){.my-campaigns{padding:16px}.my-campaigns form label{width:100%}}
+@media(max-width:650px){.ledger-appbar .ledger-campaigns-link{display:none}}
+.ledger-account-label{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
