@@ -1,3 +1,5 @@
+import {PortalEffect3D,CircleEffect3D,CorruptionEffect3D,LiquidEffect3D} from './effects/SurfaceEffect3D'
+import EnergyEffect3D from './effects/EnergyEffect3D'
 import FireEffect3D from './effects/FireEffect3D'
 import ParticleEffect3D from './effects/ParticleEffect3D'
 import {useEffect,useMemo,useRef} from 'react'
@@ -34,7 +36,7 @@ function Motes({effect,quality,reduced}:{effect:EnvironmentalEffect;quality:Ligh
  useFrame(state=>{if(!ref.current)return;(ref.current.material as ShaderMaterial).uniforms.time.value=reduced?0:state.clock.elapsedTime*effect.speed;if(animate)state.invalidate()})
  return <points dispose={null} ref={ref} name={`environmental-effect:${effect.id}`} geometry={geometry} material={material} raycast={()=>null}/>
 }
-const renderers={motes:Motes,fire:FireEffect3D,atmosphere:ParticleEffect3D,sparks:ParticleEffect3D}
+const renderers={motes:Motes,fire:FireEffect3D,atmosphere:ParticleEffect3D,sparks:ParticleEffect3D,portal:PortalEffect3D,circle:CircleEffect3D,corruption:CorruptionEffect3D,liquid:LiquidEffect3D,energy:EnergyEffect3D}
 export default function EnvironmentalEffects3D({effects,width,height,quality='medium',reduced=false,select,onSelect}:{effects:EnvironmentalEffect[];width:number;height:number;quality?:LightingQuality;reduced?:boolean;select:boolean;onSelect?:(id:string)=>void}){
  return <>{effects.map(effect=>{const Renderer=renderers[effectRegistry[effect.presetId].renderer];return <group key={effect.id} position={[effect.position.x+.5-width/2,effect.position.heightFeet/5,effect.position.z+.5-height/2]} rotation={[0,effect.rotation*Math.PI/180,0]} scale={effect.scale}>
  {effect.enabled&&effect.intensity>0&&effect.opacity>0&&<Renderer effect={effect} quality={quality} reduced={reduced}/>}

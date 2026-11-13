@@ -41,14 +41,14 @@ function particleGeometry(id:string,count:number,spread:number,height:number){
  const geometry=new InstancedBufferGeometry();geometry.setAttribute('position',new Float32BufferAttribute([-.5,-.5,0,.5,-.5,0,.5,.5,0,-.5,.5,0],3));geometry.setAttribute('uv',new Float32BufferAttribute([0,0,1,0,1,1,0,1],2));geometry.setIndex([0,1,2,0,2,3]);geometry.setAttribute('seed',new InstancedBufferAttribute(Float32Array.from({length:count*4},random),4));geometry.instanceCount=count
  geometry.boundingSphere=new Sphere(new Vector3(0,height/2,0),height+spread*4);return geometry
 }
-const styles={smoke:0,steam:1,burst:2,mist:3,embers:4,falling:5,electrical:6,fire:4,motes:4}
+const styles:Record<string,number>={smoke:0,steam:1,burst:2,mist:3,embers:4,falling:5,electrical:6,fire:4,motes:4}
 export default function ParticleEffect3D({effect,quality,reduced,secondary=false}:{secondary?:boolean}&EffectRendererProps){
  const p=effectParticles(effect),count=secondary?Math.max(4,Math.floor(effectParticleCount(effect,quality)/2)):effectParticleCount(effect,quality),preset=effectPreset(effect.presetId),ref=useRef<Mesh>(null),invalidate=useThree(s=>s.invalidate)
  const geometry=useMemo(()=>particleGeometry(effect.id,count,p.spread,p.height),[effect.id,count,p.spread,p.height])
  const material=useMemo(()=>new ShaderMaterial({vertexShader,fragmentShader,transparent:true,depthTest:true,depthWrite:false,side:DoubleSide,uniforms:{time:{value:0},lifetime:{value:1},spread:{value:1},height:{value:1},style:{value:0},drift:{value:[0,0]},colour:{value:new Color()},alpha:{value:1},detail:{value:1}}}),[])
  useEffect(()=>()=>geometry.dispose(),[geometry]);useEffect(()=>()=>material.dispose(),[material])
  useEffect(()=>{const m=ref.current?.material as ShaderMaterial|undefined;if(!m)return
- m.uniforms.lifetime.value=p.lifetime;m.uniforms.spread.value=p.spread;m.uniforms.height.value=p.height;m.uniforms.drift.value=[p.direction.x,p.direction.z];m.uniforms.style.value=secondary?4:styles[preset.style];m.uniforms.detail.value=quality==='low'?0:1;m.uniforms.colour.value.set(effect.color).multiplyScalar(effect.intensity);m.uniforms.alpha.value=effect.opacity*Math.min(1,effect.intensity);invalidate()
+ m.uniforms.lifetime.value=p.lifetime;m.uniforms.spread.value=p.spread;m.uniforms.height.value=p.height;m.uniforms.drift.value=[p.direction.x,p.direction.z];m.uniforms.style.value=secondary?4:styles[preset.style]??4;m.uniforms.detail.value=quality==='low'?0:1;m.uniforms.colour.value.set(effect.color).multiplyScalar(effect.intensity);m.uniforms.alpha.value=effect.opacity*Math.min(1,effect.intensity);invalidate()
  },[effect,p,preset,quality,secondary,invalidate])
  useFrame(state=>{if(!ref.current)return;(ref.current.material as ShaderMaterial).uniforms.time.value=reduced?p.lifetime*.3:state.clock.elapsedTime*effect.speed;if(!reduced&&effect.speed>0)state.invalidate()})
  return <mesh ref={ref} dispose={null} name={`${secondary?'effect-secondary':'environmental-effect'}:${effect.id}`} geometry={geometry} material={material} raycast={()=>null} userData={{effectParticles:count,renderer:preset.renderer,style:preset.style}}/>

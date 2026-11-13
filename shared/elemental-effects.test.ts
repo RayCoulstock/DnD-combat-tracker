@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {createEffect,effectPresetIds,effectPreset,effectSchema,effectRadius,effectParticleCount} from './environmentalEffects.ts'
+import {createEffect,effectPresetIds,magicalEffectPresetIds,effectPreset,effectSchema,effectRadius,effectParticleCount} from './environmentalEffects.ts'
 import {effectEmitterId,effectiveEffectLight,effectVisible,effectLightTransition} from './effectLighting.ts'
 import {blankDungeon,readDungeon,emptyHistory,dungeonLevels,type MapCommand} from './dungeon.ts'
 import {applyMapEdit,importEncounter,projectEncounter} from './domain.ts'
@@ -10,8 +10,8 @@ const dm={id:'dm',role:'dm' as const},player={id:'p',role:'player' as const}
 const fire=()=>createEffect('fire','campfire','ground',{x:10,z:10,heightFeet:0})
 const fixture=()=>importEncounter({version:1,round:4,combatants:[],dungeonMap:blankDungeon('warehouse','Warehouse',30,30)})
 test('all elemental/atmospheric presets load, preserve validated parameters and scale bounded work',()=>{
- assert.equal(effectPresetIds.length,17)
- for(const presetId of effectPresetIds){
+ const bPresetIds=effectPresetIds.filter(id=>!magicalEffectPresetIds.includes(id));assert.equal(bPresetIds.length,17)
+ for(const presetId of bPresetIds){
   const e=createEffect(presetId,presetId,'ground',{x:10,z:10,heightFeet:0})
   const map=readDungeon({...blankDungeon('m','M',30,30),environmentalEffects:{version:1,effects:[e]}})
   assert.deepEqual(readDungeon(JSON.parse(JSON.stringify(map))),map)
