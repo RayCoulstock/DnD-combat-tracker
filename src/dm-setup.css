@@ -8,3 +8,5 @@
 @media(prefers-reduced-motion:reduce){.dm-switch-track:after{transition:none}}
 .dm-setup-header{background:transparent;border:0;padding:0;min-height:0}.dm-token-header{background:white;border:0;min-height:0;border-radius:14px 14px 0 0}
 .dm-table-hint{font-size:10px;color:var(--dm-muted);padding:0 22px 10px;margin:10px 0 0}
+/* Membership status and claim/revoke actions wrap without crushing display names. */
+.dm-player-list li{flex-wrap:wrap}.dm-player-list .dm-player-name{min-width:min(110px,100%);flex:1 1 110px}

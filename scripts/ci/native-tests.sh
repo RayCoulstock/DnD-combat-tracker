@@ -32,19 +32,27 @@ mkdir -p "$ASSET_STORAGE_DIR" ci-results
 npm run test:integration
 npm run db:migrate:production
 node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5173 --strictPort > "$work/frontend.log" 2>&1 & frontend=$!
-# Authentication limits are intentionally unchanged. Each serial shard gets its
-# own disposable API process so independent fixtures do not share an IP budget.
-# Keep the same disposable database/storage; no API reset/bypass route is needed.
+# Authentication limits are intentionally unchanged. Each spec gets a fresh
+# disposable API process so unrelated fixtures do not share an IP budget as the
+# suite grows. Keep the same DB/storage/secret; no API reset/bypass route.
+shopt -s nullglob globstar
+specs=(e2e/**/*.spec.ts)
+((${#specs[@]} > 0)) || { echo 'No browser specs found.' >&2; exit 1; }
 status=0
-for shard in 1 2; do
-  node dist-server/server/index.js > "$work/backend-$shard.log" 2>&1 & backend=$!
+batch=0
+reports=()
+for spec in "${specs[@]}"; do
+  batch=$((batch + 1))
+  report="$work/playwright-$batch.json"
+  reports+=("$report")
+  node dist-server/server/index.js > "$work/backend-$batch.log" 2>&1 & backend=$!
   node scripts/ci/wait-ready.mjs
   kill -0 "$backend" "$frontend"
   # No screenshots, traces or real GLBs are uploaded; reports reduce to counts.
-  PLAYWRIGHT_JSON_OUTPUT_FILE="$work/playwright-$shard.json" npm run test:e2e -- --shard="$shard/2" --reporter=line,json || status=$?
+  PLAYWRIGHT_JSON_OUTPUT_FILE="$report" npm run test:e2e -- "$spec" --reporter=line,json || status=$?
   kill -TERM "$backend"
   wait "$backend" || true
   backend=
 done
-node scripts/ci/browser-summary.mjs "$work/playwright-1.json" "$work/playwright-2.json" > ci-results/browser-summary.json
+node scripts/ci/browser-summary.mjs "${reports[@]}" > ci-results/browser-summary.json
 exit "$status"

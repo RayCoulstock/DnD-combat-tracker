@@ -8,17 +8,18 @@ export interface TableChrome {
  visible?:boolean; sessionState?:string; context?:ReactNode; players?:ReactNode; sessionItems?:MenuEntry[]
  templatesRequest?:number; libraryOpen?:boolean; closeLibrary?:()=>void
 }
-export function AppBar({mode,player,signedIn,status,count,onMode,onTable,onAssets,onCombatants,onGroups,onTemplates,onRejoin,onSignOut,onAccount}:{mode:'local'|'online';player:boolean;signedIn:boolean;status:string;count:number;onMode:(mode:'local'|'online')=>void;onTable:()=>void;onAssets?:()=>void;onCombatants?:()=>void;onGroups?:()=>void;onTemplates?:()=>void;onRejoin:()=>void;onSignOut:()=>void;onAccount?:()=>void}){
+export function AppBar({mode,player,signedIn,status,count,onMode,onTable,onAssets,onCombatants,onGroups,onTemplates,onRejoin,onSignOut,onAccount,onCampaigns,accountName}:{mode:'local'|'online';player:boolean;signedIn:boolean;status:string;count:number;onMode:(mode:'local'|'online')=>void;onTable:()=>void;onAssets?:()=>void;onCombatants?:()=>void;onGroups?:()=>void;onTemplates?:()=>void;onRejoin:()=>void;onSignOut:()=>void;onAccount?:()=>void;onCampaigns?:()=>void;accountName?:string}){
  const[help,setHelp]=useState(false)
  const modes:MenuEntry[]=[{id:'local',label:'Local tracker',onSelect:()=>onMode('local')},{id:'online',label:'Multiplayer',onSelect:()=>onMode('online')}]
  return <><header className="ledger-appbar" data-ui-zone="A" aria-label="Application bar">
   <Button className="ledger-brand" aria-label="Encounter Ledger — Table" onClick={onTable}><Swords aria-hidden="true" size={20}/><span>Encounter <b>Ledger</b></span></Button>
   {!player&&<Menu label="Table mode" className="ledger-mode" triggerContent={<>{mode==='local'?'Local tracker':'Multiplayer'} ▾</>} items={modes}/>}
-  <nav aria-label="Application navigation"><Button className="ledger-table-link" onClick={onTable}>Table</Button>{(onAssets||onCombatants||onGroups||onTemplates)&&<Menu label="Libraries" items={[...(onCombatants?[{id:'combatants',label:'Combatant Library',onSelect:onCombatants}]:[]),...(onGroups?[{id:'groups',label:'Group Presets',onSelect:onGroups}]:[]),...(onAssets?[{id:'assets',label:'3D Asset Library',onSelect:onAssets}]:[]),...(onTemplates?[{id:'templates',label:'Map templates · current table',onSelect:onTemplates}]:[])]}/>}</nav>
+  <nav aria-label="Application navigation"><Button className="ledger-table-link" onClick={onTable}>Table</Button>{onCampaigns&&<Button className="ledger-campaigns-link" onClick={onCampaigns}>My Campaigns</Button>}{(onAssets||onCombatants||onGroups||onTemplates)&&<Menu label="Libraries" items={[...(onCombatants?[{id:'combatants',label:'Combatant Library',onSelect:onCombatants}]:[]),...(onGroups?[{id:'groups',label:'Group Presets',onSelect:onGroups}]:[]),...(onAssets?[{id:'assets',label:'3D Asset Library',onSelect:onAssets}]:[]),...(onTemplates?[{id:'templates',label:'Map templates · current table',onSelect:onTemplates}]:[])]}/>}</nav>
   <div className="ledger-account"><span className={`connection ${mode==='local'?'local':status.toLowerCase()} ledger-connection`} role="status">{mode==='local'?'Local only':status}</span>{mode==='online'&&signedIn&&status==='Connected'&&<span className="ledger-online-count">{count} players online</span>}
    <Button className="ledger-help" aria-label="Help and keyboard shortcuts" onClick={()=>setHelp(true)}><HelpCircle size={18}/></Button>
-   <Menu label="Account" triggerContent={<><UserRound size={18}/><span className="ledger-account-label">{signedIn?(player?'Player':'DM'):'Account'}</span></>} items={[
+   <Menu label="Account" triggerContent={<><UserRound size={18}/><span className="ledger-account-label">{signedIn?(accountName??(player?'Player':'DM')):'Account'}</span></>} items={[
     ...(player?modes:[]),{id:'help',label:'Help and keyboard shortcuts',onSelect:()=>setHelp(true)},
+    ...(onCampaigns?[{id:'campaigns',label:'My Campaigns',onSelect:onCampaigns}]:[]),
     ...(onAccount?[{id:'account',label:'Link player account',onSelect:onAccount}]:[]),
     ...(signedIn?[{id:'rejoin',label:'Refresh / rejoin',onSelect:onRejoin},{id:'logout',label:'Sign out',onSelect:onSignOut,group:'Account'}]:[{id:'signin',label:'Sign in',onSelect:()=>onMode('online')}])
    ]}/>
