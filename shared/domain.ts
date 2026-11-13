@@ -1,4 +1,4 @@
-import {effectRegistry} from './environmentalEffects.ts'
+import {effectVisible} from './effectLighting.ts'
 import {visibleFogLevel,fogTokenVisible,fogFloorFull} from './fogVisibility.ts'
 import {regionRevealed} from './fog.ts'
 import {resolveLight,reconcileLightParents,permittedLightSources} from './lightingState.ts'
@@ -297,13 +297,7 @@ export function playerDungeon(map?:DungeonMap,mapRevision?:number):DungeonMap|un
   if(!map)return undefined
   const levels=dungeonLevels(map).filter(l=>l.playerVisible).map(l=>{const level=visibleFogLevel(map,l);return level.floorImage?.fogView?{...level,floorImage:{...level.floorImage,fogView:{...level.floorImage.fogView,revision:mapRevision??level.floorImage.fogView.revision}}}:level})
   if(!levels.length)return undefined
-  const environmentalEffects=map.environmentalEffects?{version:1 as const,effects:map.environmentalEffects.effects.filter(effect=>{
-    const floor=levels.find(l=>l.id===effect.floorId)
-    if(!floor)return false
-    const r=effectRegistry[effect.presetId].radius*effect.scale,x=effect.position.x+.5,z=effect.position.z+.5
-    if(map.fogOfWar?.enabled&&(x-r<0||z-r<0||x+r>floor.width||z+r>floor.height))return false
-    return regionRevealed(map.fogOfWar,floor.id,floor.width,floor.height,x-r,z-r,x+r,z+r)
-  })}:undefined
+  const environmentalEffects=map.environmentalEffects?{version:1 as const,effects:map.environmentalEffects.effects.filter(e=>effectVisible(map,e))}:undefined
   // Legacy maps retain their public wire format; multi-level maps expose visible levels only.
   if(!map.level){const {elevationFeet,playerVisible,...geometry}=levels[0];void elevationFeet;void playerVisible;return {...map,...geometry,...(environmentalEffects?{environmentalEffects}:{}),id:map.id,name:map.name}}
   const visible=new Set(levels.map(l=>l.id))

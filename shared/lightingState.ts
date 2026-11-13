@@ -1,3 +1,4 @@
+import {linkedEffect,effectVisible,effectiveEffectLight} from './effectLighting.ts'
 import {regionRevealed} from './fog.ts'
 import {dungeonLevels,primaryLevelId} from './dungeon.ts'
 import type {EncounterState} from './domain.ts'
@@ -34,6 +35,7 @@ export function reconcileLightParents(previous:EncounterState,next:EncounterStat
 export function permittedLightSources(state:EncounterState,permittedCombatantIds:Set<string>){
  const levels=state.dungeonMap?dungeonLevels(state.dungeonMap):[],fog=state.dungeonMap?.fogOfWar
  return (state.dungeonMap?.lighting?.sources??[]).filter(source=>{
+  const effect=linkedEffect(state.dungeonMap,source.id);if(effect)return Boolean(state.dungeonMap&&effectVisible(state.dungeonMap,effect))
   const resolved=resolveLight(source,state),floor=levels.find(l=>l.id===resolved.floorId&&l.playerVisible)
   if(!floor||!regionRevealed(fog,floor.id,floor.width,floor.height,resolved.position.x,resolved.position.z,resolved.position.x+1,resolved.position.z+1))return false
   if(!source.attachment)return true
@@ -41,7 +43,8 @@ export function permittedLightSources(state:EncounterState,permittedCombatantIds
   // A revealed offset emitter is legitimate even when its parent is fog-hidden.
   // The player receives a detached resolved source, never that hidden parent's ID.
   return fog?.enabled||source.attachment.kind!=='combatant'||permittedCombatantIds.has(source.attachment.id)
- }).map(source=>{
+ }).map(stored=>{
+  const source=effectiveEffectLight(state.dungeonMap,stored)
   const resolved=resolveLight(source,state)
   if(fog?.enabled){const{attachment,...plain}=source;void attachment;return{...plain,floorId:resolved.floorId,position:resolved.position,name:'Light'}}
   return{...source,floorId:resolved.floorId,position:resolved.position,name:'Light'}

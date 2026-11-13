@@ -1,3 +1,4 @@
+import {lightAppearanceSchema} from '../../shared/lighting.ts'
 import {dungeonLevels} from '../../shared/dungeon.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -35,7 +36,7 @@ class Client{
     assert.equal(result.ok,accepted,JSON.stringify(result));if(result.ok)await waitFor(()=>this.snapshot!.revision>=result.revision);return result
   }
 }
-import {createEffect} from '../../shared/environmentalEffects.ts'
+import {createEffect,effectPresetIds} from '../../shared/environmentalEffects.ts'
 import {initialFog,fullMask} from '../../shared/fog.ts'
 test('effects use authoritative receipts, privacy, reconnect and persisted snapshots',{timeout:90000},async()=>{
  const admin=new pg.Pool({connectionString:process.env.DATABASE_URL}),schema='effects_'+randomUUID().replaceAll('-',''),directory=await mkdtemp(join(tmpdir(),'ledger-effects-'));await admin.query(`CREATE SCHEMA ${schema}`)
@@ -72,5 +73,29 @@ test('effects use authoritative receipts, privacy, reconnect and persisted snaps
   await Promise.all([dm.connect(campaign.id),player.connect(campaign.id)])
   assert.equal(dm.snapshot!.state.dungeonMap!.environmentalEffects!.effects.length,2);assert.equal(player.snapshot!.state.dungeonMap!.environmentalEffects!.effects.length,1)
   assert.equal(dungeonLevels(dm.snapshot!.state.dungeonMap!).length,2)
+  // B uses the same command protocol for real emitters and every new rendering preset.
+  for(const id of effectPresetIds.filter(id=>id!=='magical-motes'))await dm.command({type:'map.effect.set',effect:createEffect('b-'+id,id,'ground',{x:10,z:10,heightFeet:0})})
+  await dm.command({type:'map.effect.light.set',id:'b-campfire',appearance:lightAppearanceSchema.parse({intensity:12,radius:4,flicker:{enabled:true}})})
+  await waitFor(()=>player.snapshot!.revision===dm.snapshot!.revision)
+  const emitterId=dm.snapshot!.state.dungeonMap!.environmentalEffects!.effects.find(e=>e.id==='b-campfire')!.light!.emitterId
+  assert.equal(player.snapshot!.state.dungeonMap!.lighting!.sources!.find(s=>s.id===emitterId)!.intensity,12)
+  await player.command({type:'map.effect.light.set',id:'b-campfire',appearance:null},false)
+  await dm.command({type:'map.lighting.source.remove',id:emitterId},false)
+  await dm.command({type:'map.effect.duplicate',id:'b-campfire',newId:'b-copy'})
+  assert.equal(dm.snapshot!.state.dungeonMap!.lighting!.sources!.length,2)
+  await dm.command({type:'map.effect.remove',id:'b-copy'});await dm.command({type:'map.undo'});assert.equal(dm.snapshot!.state.dungeonMap!.lighting!.sources!.length,2);await dm.command({type:'map.redo'})
+  await dm.command({type:'map.fog.reset',confirmed:true,levelId:'ground'});await waitFor(()=>player.snapshot!.revision===dm.snapshot!.revision)
+  assert.equal(player.snapshot!.state.dungeonMap!.environmentalEffects!.effects.length,0);assert.equal(player.snapshot!.state.dungeonMap!.lighting!.sources!.length,0);assert.equal(JSON.stringify(player.snapshot).includes(emitterId),false)
+  await dm.command({type:'map.fog.mask',levelId:'ground',mask:fullMask(20,20)})
+  const fire=dm.snapshot!.state.dungeonMap!.environmentalEffects!.effects.find(e=>e.id==='b-campfire')!
+  await dm.command({type:'map.effect.set',effect:{...fire,enabled:false}});await waitFor(()=>player.snapshot!.revision===dm.snapshot!.revision)
+  assert.equal(player.snapshot!.state.dungeonMap!.lighting!.sources!.find(s=>s.id===emitterId)!.enabled,false)
+  await dm.command({type:'map.effect.set',effect:fire})
+  player.socket!.disconnect();await player.connect(campaign.id);assert.equal(player.snapshot!.state.dungeonMap!.lighting!.sources!.find(s=>s.id===emitterId)!.enabled,true)
+  const exported=await dm.api(path+'/export');assert.equal(exported.dungeonMap.environmentalEffects.effects.length,18)
+  const finalRevision=dm.snapshot!.revision;await new Promise(r=>setTimeout(r,150));assert.equal(dm.snapshot!.revision,finalRevision)
+  for(const c of clients)c.socket?.disconnect();await app.close();app=createApplication(options);await new Promise<void>(r=>app.http.listen(port,'127.0.0.1',r));await Promise.all([dm.connect(campaign.id),player.connect(campaign.id)])
+  assert.equal(dm.snapshot!.state.dungeonMap!.environmentalEffects!.effects.length,18);assert.equal(player.snapshot!.state.dungeonMap!.lighting!.sources!.length,1)
+
  }finally{for(const c of clients)c.socket?.disconnect();await app.close();await pool.end();await admin.query(`DROP SCHEMA ${schema} CASCADE`);await admin.end();await rm(directory,{recursive:true,force:true})}
 })
