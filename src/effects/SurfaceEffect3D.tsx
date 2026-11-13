@@ -1,5 +1,6 @@
-import {useEffect,useMemo,useRef} from 'react'
-import {useFrame,useThree} from '@react-three/fiber'
+import {useEffectAnimation} from './effectClock'
+import {useEffect,useLayoutEffect,useMemo,useRef} from 'react'
+import {useThree} from '@react-three/fiber'
 import {CircleGeometry,ShaderMaterial,Color,DoubleSide,Mesh,Sphere,Vector3} from 'three'
 import {effectPreset,effectSurface,type EnvironmentalEffect} from '../../shared/environmentalEffects'
 import ParticleEffect3D,{type EffectRendererProps} from './ParticleEffect3D'
@@ -14,8 +15,8 @@ function SurfaceEffect3D({effect,quality,reduced,kind}:EffectRendererProps&{kind
  const geometry=useMemo(()=>{const g=new CircleGeometry(1.1,segments);g.boundingSphere=new Sphere(new Vector3(0,kind==='portal'?p.radius:0,0),p.radius*2.3);return g},[segments,kind,p.radius])
  const material=useMemo(()=>new ShaderMaterial({vertexShader,fragmentShader:fragments[kind],side:DoubleSide,transparent:true,depthTest:true,depthWrite:false,uniforms:{time:{value:0},radius:{value:1},upright:{value:kind==='portal'?1:0},variant:{value:0},alpha:{value:1},pulse:{value:0},detail:{value:1},secondary:{value:0},colour:{value:new Color()},accent:{value:new Color()}}}),[kind])
  useEffect(()=>()=>geometry.dispose(),[geometry]);useEffect(()=>()=>material.dispose(),[material])
- useEffect(()=>{const m=ref.current?.material as ShaderMaterial|undefined;if(!m)return;m.uniforms.radius.value=p.radius;m.uniforms.variant.value=variants[preset.style]??0;m.uniforms.alpha.value=effect.opacity*Math.min(1,effect.intensity);m.uniforms.pulse.value=p.pulse;m.uniforms.detail.value=quality==='low'?0:1;m.uniforms.secondary.value=p.particles?1:0;m.uniforms.colour.value.set(effect.color).multiplyScalar(effect.intensity);m.uniforms.accent.value.set(p.secondaryColor).multiplyScalar(effect.intensity);invalidate()},[effect,p,preset,quality,invalidate])
- useFrame(state=>{if(!ref.current)return;(ref.current.material as ShaderMaterial).uniforms.time.value=reduced?0:state.clock.elapsedTime*effect.speed;if(!reduced&&effect.speed>0)state.invalidate()})
+ useLayoutEffect(()=>{const m=ref.current?.material as ShaderMaterial|undefined;if(!m)return;m.uniforms.radius.value=p.radius;m.uniforms.variant.value=variants[preset.style]??0;m.uniforms.alpha.value=effect.opacity*Math.min(1,effect.intensity);m.uniforms.pulse.value=p.pulse;m.uniforms.detail.value=quality==='low'?0:1;m.uniforms.secondary.value=p.particles?1:0;m.uniforms.colour.value.set(effect.color).multiplyScalar(effect.intensity);m.uniforms.accent.value.set(p.secondaryColor).multiplyScalar(effect.intensity);invalidate()},[effect,p,preset,quality,invalidate])
+ useEffectAnimation(()=>ref.current,effect,reduced,0)
  const secondary:EnvironmentalEffect={...effect,parameters:{density:.5,lifetime:5,spread:p.radius*.25,height:kind==='portal'?p.radius*2:p.radius*.5,direction:{x:0,z:0},embers:false}}
  return <><mesh ref={ref} dispose={null} name={`environmental-effect:${effect.id}`} geometry={geometry} material={material} raycast={()=>null} userData={{renderer:kind,style:preset.style,effectParticles:0}}/>{preset.secondary==='motes'&&p.particles&&quality!=='low'&&<ParticleEffect3D effect={secondary} quality={quality} reduced={reduced} secondary/>}</>
 }

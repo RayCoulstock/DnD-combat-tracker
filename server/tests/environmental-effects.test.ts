@@ -1,3 +1,5 @@
+import {defaultPlaybackSettings} from '../../shared/effectPlayback.ts'
+import {combatantSchema} from '../../shared/domain.ts'
 import {lightAppearanceSchema} from '../../shared/lighting.ts'
 import {dungeonLevels} from '../../shared/dungeon.ts'
 import test from 'node:test'
@@ -113,6 +115,41 @@ test('effects use authoritative receipts, privacy, reconnect and persisted snaps
   const cFile=await dm.api(path+'/export');assert.equal(cFile.dungeonMap.environmentalEffects.effects.length,36)
   for(const c of clients)c.socket?.disconnect();await app.close();app=createApplication(options);await new Promise<void>(r=>app.http.listen(port,'127.0.0.1',r));await Promise.all([dm.connect(campaign.id),player.connect(campaign.id)])
   assert.equal(dm.snapshot!.state.dungeonMap!.environmentalEffects!.effects.find(e=>e.id==='c-fey-portal')!.surface!.radius,2);assert.equal(player.snapshot!.state.dungeonMap!.lighting!.sources!.length,2)
+  // D lifecycle commands are server-timed, per-effect revision guarded and reconnect safe.
+  await dm.command({type:'map.effect.playback.configure',id:'c-fey-portal',settings:{...defaultPlaybackSettings(),mode:'manual',transition:{kind:'immediate',durationMs:0}},expectedRevision:0,at:1})
+  const at=Date.now(),activate={type:'map.effect.playback.control' as const,id:'c-fey-portal',action:'activate' as const,expectedRevision:1,at:1},current=dm.snapshot!
+  const activationEnvelope={commandId:randomUUID(),encounterId:current.encounterId,revision:current.revision,command:activate}
+  const sendActivation=()=>new Promise<CommandResult>(r=>dm.socket!.emit('game.command',activationEnvelope,r))
+  const activated=await sendActivation();assert.equal(activated.ok,true);const repeated=await sendActivation();assert.equal(repeated.ok,true);if(repeated.ok)assert.equal(repeated.duplicate,true)
+  await waitFor(()=>dm.snapshot!.revision>current.revision)
+  let dEffect=dm.snapshot!.state.dungeonMap!.environmentalEffects!.effects.find(e=>e.id==='c-fey-portal')!
+  assert.ok(dEffect.playback!.startedAt!>=at)
+  await player.command({...activate,expectedRevision:2},false)
+  await dm.command({type:'map.effect.playback.control',id:dEffect.id,action:'deactivate',expectedRevision:1},false)
+  await dm.command({type:'map.effect.playback.control',id:dEffect.id,action:'pause',expectedRevision:2})
+  await dm.command({type:'map.effect.playback.control',id:dEffect.id,action:'resume',expectedRevision:3})
+  await dm.command({type:'map.effect.playback.control',id:dEffect.id,action:'deactivate',expectedRevision:4})
+  await dm.command({type:'map.effect.playback.control',id:dEffect.id,action:'activate',expectedRevision:5})
+  player.socket!.disconnect();await player.connect(campaign.id);assert.equal(player.snapshot!.state.dungeonMap!.environmentalEffects!.effects.find(e=>e.id===dEffect.id)!.playback!.state,'active')
+  // Attached combatant motion changes the projection but deliberately leaves persisted positions/map revision alone.
+  await dm.command({type:'map.fog.enabled',enabled:false})
+  await dm.command({type:'combatant.add',allowPersistentDuplicate:false,combatants:[combatantSchema.parse({id:'fx-bearer',name:'Bearer',side:'hero',initiative:12,hp:8,maxHp:12,ac:15,conditions:[],saves:[],actions:[]})]})
+  dEffect=dm.snapshot!.state.dungeonMap!.environmentalEffects!.effects.find(e=>e.id==='c-fey-portal')!
+  await dm.command({type:'map.effect.set',effect:{...dEffect,attachment:{kind:'combatant',id:'fx-bearer',offset:{x:1,z:0,heightFeet:5}}}})
+  const mapRevision=dm.snapshot!.state.mapRevision,fallback=dm.snapshot!.state.dungeonMap!.environmentalEffects!.effects.find(e=>e.id===dEffect.id)!.position
+  await dm.command({type:'token.move',combatantId:'fx-bearer',destination:{x:6,z:7}});await waitFor(()=>player.snapshot!.revision===dm.snapshot!.revision)
+  let publicEffect=player.snapshot!.state.dungeonMap!.environmentalEffects!.effects.find(e=>e.id===dEffect.id)!
+  assert.equal(publicEffect.attachment,undefined);assert.equal(publicEffect.position.x,7);assert.equal(dm.snapshot!.state.mapRevision,mapRevision);assert.deepEqual(dm.snapshot!.state.dungeonMap!.environmentalEffects!.effects.find(e=>e.id===dEffect.id)!.position,fallback)
+  await dm.command({type:'token.move',combatantId:'fx-bearer',destination:{x:8,z:9}});await waitFor(()=>player.snapshot!.revision===dm.snapshot!.revision);publicEffect=player.snapshot!.state.dungeonMap!.environmentalEffects!.effects.find(e=>e.id===dEffect.id)!;assert.equal(publicEffect.position.x,9)
+  await dm.command({type:'combatant.visibility',combatantId:'fx-bearer',visible:false});await waitFor(()=>player.snapshot!.revision===dm.snapshot!.revision);assert.equal(JSON.stringify(player.snapshot).includes('c-fey-portal'),false);assert.equal(JSON.stringify(player.snapshot).includes(cLight),false)
+  await dm.command({type:'combatant.visibility',combatantId:'fx-bearer',visible:true});await dm.command({type:'map.effect.detach',id:dEffect.id})
+  assert.equal(dm.snapshot!.state.dungeonMap!.environmentalEffects!.effects.find(e=>e.id===dEffect.id)!.position.x,9)
+  await dm.command({type:'map.effect.playback.configure',id:dEffect.id,settings:{mode:'once',durationMs:250,transition:{kind:'immediate',durationMs:0}},expectedRevision:6})
+  await dm.command({type:'map.effect.playback.control',id:dEffect.id,action:'activate',expectedRevision:7})
+  const onceRevision=dm.snapshot!.revision;await new Promise(r=>setTimeout(r,300));assert.equal(dm.snapshot!.revision,onceRevision)
+  for(const c of clients)c.socket?.disconnect();await app.close();app=createApplication(options);await new Promise<void>(r=>app.http.listen(port,'127.0.0.1',r));await Promise.all([dm.connect(campaign.id),player.connect(campaign.id)])
+  assert.equal(dm.snapshot!.state.dungeonMap!.environmentalEffects!.effects.find(e=>e.id===dEffect.id)!.playback!.mode,'once');assert.equal(player.snapshot!.state.dungeonMap!.lighting!.sources!.find(s=>s.id===cLight)!.enabled,false)
+
 
 
  }finally{for(const c of clients)c.socket?.disconnect();await app.close();await pool.end();await admin.query(`DROP SCHEMA ${schema} CASCADE`);await admin.end();await rm(directory,{recursive:true,force:true})}

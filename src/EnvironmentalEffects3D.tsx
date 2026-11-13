@@ -1,9 +1,11 @@
+import {EffectRuntime} from './effects/effectRuntime'
+import {useEffectAnimation} from './effects/effectClock'
 import {PortalEffect3D,CircleEffect3D,CorruptionEffect3D,LiquidEffect3D} from './effects/SurfaceEffect3D'
 import EnergyEffect3D from './effects/EnergyEffect3D'
 import FireEffect3D from './effects/FireEffect3D'
 import ParticleEffect3D from './effects/ParticleEffect3D'
-import {useEffect,useMemo,useRef} from 'react'
-import {useFrame,useThree} from '@react-three/fiber'
+import {useEffect,useLayoutEffect,useMemo,useRef} from 'react'
+import {useThree} from '@react-three/fiber'
 import {BufferGeometry,Float32BufferAttribute,ShaderMaterial,Color,Sphere,Vector3,Points} from 'three'
 import {effectRegistry,type EnvironmentalEffect} from '../shared/environmentalEffects'
 import type {LightingQuality} from '../shared/lighting'
@@ -30,16 +32,16 @@ function Motes({effect,quality,reduced}:{effect:EnvironmentalEffect;quality:Ligh
  const material=useMemo(()=>new ShaderMaterial({vertexShader,fragmentShader,transparent:true,depthTest:true,depthWrite:false,uniforms:{time:{value:0},pointScale:{value:1},colour:{value:new Color()},alpha:{value:1}}}),[])
  useEffect(()=>()=>geometry.dispose(),[geometry])
  useEffect(()=>()=>material.dispose(),[material])
- useEffect(()=>{const m=ref.current?.material as ShaderMaterial|undefined;if(!m)return;m.uniforms.colour.value.set(effect.color).multiplyScalar(effect.intensity);m.uniforms.alpha.value=effect.opacity*Math.min(1,effect.intensity);m.uniforms.pointScale.value=height*.08*effect.scale;invalidate()},[effect,material,height,invalidate])
+ useLayoutEffect(()=>{const m=ref.current?.material as ShaderMaterial|undefined;if(!m)return;m.uniforms.colour.value.set(effect.color).multiplyScalar(effect.intensity);m.uniforms.alpha.value=effect.opacity*Math.min(1,effect.intensity);m.uniforms.pointScale.value=height*.08*effect.scale;invalidate()},[effect,material,height,invalidate])
  const animate=!reduced&&effect.speed>0&&effect.intensity>0&&effect.opacity>0
  useEffect(()=>{invalidate()},[animate,invalidate])
- useFrame(state=>{if(!ref.current)return;(ref.current.material as ShaderMaterial).uniforms.time.value=reduced?0:state.clock.elapsedTime*effect.speed;if(animate)state.invalidate()})
+ useEffectAnimation(()=>ref.current,effect,reduced)
  return <points dispose={null} ref={ref} name={`environmental-effect:${effect.id}`} geometry={geometry} material={material} raycast={()=>null}/>
 }
 const renderers={motes:Motes,fire:FireEffect3D,atmosphere:ParticleEffect3D,sparks:ParticleEffect3D,portal:PortalEffect3D,circle:CircleEffect3D,corruption:CorruptionEffect3D,liquid:LiquidEffect3D,energy:EnergyEffect3D}
-export default function EnvironmentalEffects3D({effects,width,height,quality='medium',reduced=false,select,onSelect}:{effects:EnvironmentalEffect[];width:number;height:number;quality?:LightingQuality;reduced?:boolean;select:boolean;onSelect?:(id:string)=>void}){
+export default function EnvironmentalEffects3D({effects,width,height,quality='medium',reduced=false,select,onSelect,available=()=>true}:{available?:(id:string)=>boolean;effects:EnvironmentalEffect[];width:number;height:number;quality?:LightingQuality;reduced?:boolean;select:boolean;onSelect?:(id:string)=>void}){
  return <>{effects.map(effect=>{const Renderer=renderers[effectRegistry[effect.presetId].renderer];return <group key={effect.id} position={[effect.position.x+.5-width/2,effect.position.heightFeet/5,effect.position.z+.5-height/2]} rotation={[0,effect.rotation*Math.PI/180,0]} scale={effect.scale}>
- {effect.enabled&&effect.intensity>0&&effect.opacity>0&&<Renderer effect={effect} quality={quality} reduced={reduced}/>}
+ {available(effect.id)&&effect.enabled&&effect.intensity>0&&effect.opacity>0&&<EffectRuntime effect={effect} quality={quality} reduced={reduced}><Renderer effect={effect} quality={quality} reduced={reduced}/></EffectRuntime>}
  {select&&<mesh name={`effect-gizmo:${effect.id}`} onPointerUp={e=>{if(e.button===0&&e.delta<=3){e.stopPropagation();onSelect?.(effect.id)}}}><sphereGeometry args={[.2,8,6]}/><meshBasicMaterial color={effect.color} wireframe depthTest={true}/></mesh>}
  </group>})}</>
 }

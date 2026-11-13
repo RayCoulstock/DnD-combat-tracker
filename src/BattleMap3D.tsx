@@ -1,3 +1,4 @@
+import {resolveEffect} from '../shared/effectState'
 import EnvironmentalEffects3D from './EnvironmentalEffects3D'
 import FogOfWar3D from './FogOfWar3D'
 import type {FogOfWar} from '../shared/fog'
@@ -204,6 +205,7 @@ function BattlefieldScene(props:Parameters<typeof LevelScene>[0]){
  const activeId=props.levelView?.activeId??primaryLevelId(props.dungeonMap)
  const activeLevel=levels.find(l=>l.id===activeId),configured=Boolean(props.dungeonMap?.lighting||activeLevel?.lightingOverride)
  const environment=useMemo(()=>effectiveEnvironment(props.dungeonMap?.lighting,activeLevel?.lightingOverride),[props.dungeonMap?.lighting,activeLevel?.lightingOverride])
+ const resolvedEffects=(props.dungeonMap?.environmentalEffects?.effects??[]).map(e=>resolveEffect(e,{dungeonMap:props.dungeonMap,combatants:props.combatants,battleMap:{tokens:map.tokens}}))
  const visible=levels.filter(l=>!props.levelView?.hiddenIds.includes(l.id)&&(props.levelView?.mode==='stacked'||l.id===activeId))
  return <>
   <color attach="background" args={['#171a19']}/><LightingEnvironment3D transition={props.dungeonMap?.lighting?.transition} reduced={props.lightingReducedMotion} context={activeId} environment={environment} configured={configured} quality={props.lightingQuality} width={activeLevel?.width??map.width} height={activeLevel?.height??map.height} offset={[(activeLevel?.width??map.width)-map.width,0,(activeLevel?.height??map.height)-map.height].map((n,i)=>i===1?elevation:n/2) as [number,number,number]}/>
@@ -215,7 +217,7 @@ function BattlefieldScene(props:Parameters<typeof LevelScene>[0]){
    const toolbar=active&&props.toolbar?{...props.toolbar,position:props.toolbar.position.map((v,i)=>v+offset[i]) as [number,number,number]}:undefined
    // Inactive levels are display only, including their labels; they never consume raycasts.
    return <group key={level.id} position={offset} userData={{levelInteractive:active,levelId:level.id,editorTool:active?editor?.tool:undefined,mapRevision:props.combatControlState?.mapRevision}}>
-    <EnvironmentalEffects3D effects={props.dungeonMap?.environmentalEffects?.effects.filter(e=>e.floorId===level.id)??[]} width={level.width} height={level.height} quality={props.lightingQuality} reduced={props.lightingReducedMotion} select={Boolean(active&&props.editing&&props.actor?.role!=='player'&&['select','effects'].includes(editor?.tool??''))} onSelect={props.onSelectEffect}/>
+    <EnvironmentalEffects3D available={id=>resolvedEffects.find(e=>e.effect.id===id)?.available!==false} effects={resolvedEffects.filter(e=>e.effect.floorId===level.id).map(e=>e.effect)} width={level.width} height={level.height} quality={props.lightingQuality} reduced={props.lightingReducedMotion} select={Boolean(active&&props.editing&&props.actor?.role!=='player'&&['select','effects'].includes(editor?.tool??''))} onSelect={props.onSelectEffect}/>
     <LevelScene {...props} fog={props.dungeonMap?.fogOfWar} lit={configured} onPlaceSquare={active?props.onPlaceSquare:undefined} sceneTransitions={props.dungeonMap?.transitions} sceneFloorNames={Object.fromEntries(levels.map(l=>[l.id,l.name]))} sceneFloorId={level.id} onTransitionMarker={active?props.onTransitionMarker:undefined} dungeonMap={levelDocument(level)} map={{...map,width:level.width,height:level.height}} editor={active?editor:undefined} canMove={active?props.canMove:false} combatants={props.combatants.filter(c=>(c.floorId??primaryLevelId(props.dungeonMap))===level.id)} onSelectToken={active?props.onSelectToken:()=>{}} tactical={active?props.tactical?.filter(r=>(r.floorId??primaryLevelId(props.dungeonMap))===level.id):[]} tacticalDraft={active?props.tacticalDraft:null} tacticalInteraction={active?props.tacticalInteraction:{...props.tacticalInteraction,mode:'navigate'}} toolbar={toolbar}/>
    </group>
   })}

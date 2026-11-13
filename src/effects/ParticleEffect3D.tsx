@@ -1,5 +1,6 @@
-import {useEffect,useMemo,useRef} from 'react'
-import {useFrame,useThree} from '@react-three/fiber'
+import {useEffectAnimation} from './effectClock'
+import {useEffect,useLayoutEffect,useMemo,useRef} from 'react'
+import {useThree} from '@react-three/fiber'
 import {InstancedBufferGeometry,InstancedBufferAttribute,Float32BufferAttribute,ShaderMaterial,Color,Mesh,Sphere,Vector3,DoubleSide} from 'three'
 import {effectParticles,effectPreset,effectParticleCount,type EnvironmentalEffect} from '../../shared/environmentalEffects'
 import type {LightingQuality} from '../../shared/lighting'
@@ -47,9 +48,9 @@ export default function ParticleEffect3D({effect,quality,reduced,secondary=false
  const geometry=useMemo(()=>particleGeometry(effect.id,count,p.spread,p.height),[effect.id,count,p.spread,p.height])
  const material=useMemo(()=>new ShaderMaterial({vertexShader,fragmentShader,transparent:true,depthTest:true,depthWrite:false,side:DoubleSide,uniforms:{time:{value:0},lifetime:{value:1},spread:{value:1},height:{value:1},style:{value:0},drift:{value:[0,0]},colour:{value:new Color()},alpha:{value:1},detail:{value:1}}}),[])
  useEffect(()=>()=>geometry.dispose(),[geometry]);useEffect(()=>()=>material.dispose(),[material])
- useEffect(()=>{const m=ref.current?.material as ShaderMaterial|undefined;if(!m)return
+ useLayoutEffect(()=>{const m=ref.current?.material as ShaderMaterial|undefined;if(!m)return
  m.uniforms.lifetime.value=p.lifetime;m.uniforms.spread.value=p.spread;m.uniforms.height.value=p.height;m.uniforms.drift.value=[p.direction.x,p.direction.z];m.uniforms.style.value=secondary?4:styles[preset.style]??4;m.uniforms.detail.value=quality==='low'?0:1;m.uniforms.colour.value.set(effect.color).multiplyScalar(effect.intensity);m.uniforms.alpha.value=effect.opacity*Math.min(1,effect.intensity);invalidate()
  },[effect,p,preset,quality,secondary,invalidate])
- useFrame(state=>{if(!ref.current)return;(ref.current.material as ShaderMaterial).uniforms.time.value=reduced?p.lifetime*.3:state.clock.elapsedTime*effect.speed;if(!reduced&&effect.speed>0)state.invalidate()})
+ useEffectAnimation(()=>ref.current,effect,reduced,p.lifetime*.3)
  return <mesh ref={ref} dispose={null} name={`${secondary?'effect-secondary':'environmental-effect'}:${effect.id}`} geometry={geometry} material={material} raycast={()=>null} userData={{effectParticles:count,renderer:preset.renderer,style:preset.style}}/>
 }

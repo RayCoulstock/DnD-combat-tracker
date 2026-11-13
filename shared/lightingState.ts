@@ -1,11 +1,11 @@
-import {linkedEffect,effectVisible,effectiveEffectLight} from './effectLighting.ts'
+import {resolveEffect,effectPermitted} from './effectState.ts'
+import {linkedEffect,effectiveEffectLight} from './effectLighting.ts'
 import {regionRevealed} from './fog.ts'
 import {dungeonLevels,primaryLevelId} from './dungeon.ts'
 import type {EncounterState} from './domain.ts'
 import type {PointLightSource,LightPosition} from './lighting.ts'
-export function resolveLight(source:PointLightSource,state:{dungeonMap?:EncounterState['dungeonMap'];combatants:{id:string|number;floorId?:string;visible?:boolean;unplaced?:boolean;miniature?:EncounterState['combatants'][number]['miniature']}[];battleMap:Pick<EncounterState['battleMap'],'tokens'>}){
- const attachment=source.attachment
- if(!attachment)return {floorId:source.floorId,position:source.position,parentExists:true,parentVisible:true,placed:true}
+export type AttachmentState={dungeonMap?:EncounterState['dungeonMap'];combatants:{id:string|number;floorId?:string;visible?:boolean;unplaced?:boolean;miniature?:EncounterState['combatants'][number]['miniature']}[];battleMap:Pick<EncounterState['battleMap'],'tokens'>}
+export function attachmentParent(attachment:NonNullable<PointLightSource['attachment']>,state:AttachmentState){
  let parent:{x:number;z:number;rotation:number;scale:number;height:number;floorId:string;visible:boolean;placed:boolean}|undefined
  if(attachment.kind==='scenery'){
   const floor=state.dungeonMap&&dungeonLevels(state.dungeonMap).find(l=>l.id===attachment.floorId),prop=floor?.props.find(p=>p.id===attachment.id)
@@ -14,6 +14,12 @@ export function resolveLight(source:PointLightSource,state:{dungeonMap?:Encounte
   const c=state.combatants.find(c=>String(c.id)===attachment.id),p=c&&state.battleMap.tokens[String(c.id)]
   if(c&&p)parent={x:p.x,z:p.z,rotation:c.miniature?.rotation??0,scale:c.miniature?.scale??1,height:((c.miniature?.verticalOffset??0)+(c.miniature?.showBase?.12:0))*5,floorId:c.floorId??primaryLevelId(state.dungeonMap),visible:c.visible!==false,placed:!c.unplaced}
  }
+ return parent
+}
+export function resolveLight(source:PointLightSource,state:AttachmentState){
+ const attachment=source.attachment
+ if(!attachment)return {floorId:source.floorId,position:source.position,parentExists:true,parentVisible:true,placed:true}
+ const parent=attachmentParent(attachment,state)
  if(!parent)return{floorId:source.floorId,position:source.position,parentExists:false,parentVisible:false,placed:true}
  const angle=parent.rotation*Math.PI/180,o=attachment.offset
  const position:LightPosition={x:parent.x+parent.scale*(o.x*Math.cos(angle)+o.z*Math.sin(angle)),z:parent.z+parent.scale*(o.z*Math.cos(angle)-o.x*Math.sin(angle)),heightFeet:parent.height+o.heightFeet*parent.scale}
@@ -35,7 +41,7 @@ export function reconcileLightParents(previous:EncounterState,next:EncounterStat
 export function permittedLightSources(state:EncounterState,permittedCombatantIds:Set<string>){
  const levels=state.dungeonMap?dungeonLevels(state.dungeonMap):[],fog=state.dungeonMap?.fogOfWar
  return (state.dungeonMap?.lighting?.sources??[]).filter(source=>{
-  const effect=linkedEffect(state.dungeonMap,source.id);if(effect)return Boolean(state.dungeonMap&&effectVisible(state.dungeonMap,effect))
+  const effect=linkedEffect(state.dungeonMap,source.id);if(effect)return effectPermitted(state,effect,permittedCombatantIds)
   const resolved=resolveLight(source,state),floor=levels.find(l=>l.id===resolved.floorId&&l.playerVisible)
   if(!floor||!regionRevealed(fog,floor.id,floor.width,floor.height,resolved.position.x,resolved.position.z,resolved.position.x+1,resolved.position.z+1))return false
   if(!source.attachment)return true
@@ -44,7 +50,8 @@ export function permittedLightSources(state:EncounterState,permittedCombatantIds
   // The player receives a detached resolved source, never that hidden parent's ID.
   return fog?.enabled||source.attachment.kind!=='combatant'||permittedCombatantIds.has(source.attachment.id)
  }).map(stored=>{
-  const source=effectiveEffectLight(state.dungeonMap,stored)
+  const owner=linkedEffect(state.dungeonMap,stored.id),effect=owner&&resolveEffect(owner,state).effect
+  const source=effectiveEffectLight(state.dungeonMap,effect?{...stored,floorId:effect.floorId,position:effect.position}:stored)
   const resolved=resolveLight(source,state)
   if(fog?.enabled){const{attachment,...plain}=source;void attachment;return{...plain,floorId:resolved.floorId,position:resolved.position,name:'Light'}}
   return{...source,floorId:resolved.floorId,position:resolved.position,name:'Light'}

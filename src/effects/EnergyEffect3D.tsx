@@ -1,5 +1,6 @@
-import {useEffect,useMemo,useRef} from 'react'
-import {useFrame,useThree} from '@react-three/fiber'
+import {useEffectAnimation} from './effectClock'
+import {useEffect,useLayoutEffect,useMemo,useRef} from 'react'
+import {useThree} from '@react-three/fiber'
 import {InstancedBufferGeometry,InstancedBufferAttribute,Float32BufferAttribute,ShaderMaterial,Color,Mesh,DoubleSide,Sphere,Vector3} from 'three'
 import {effectPreset,effectSurface} from '../../shared/environmentalEffects'
 import type {EffectRendererProps} from './ParticleEffect3D'
@@ -21,7 +22,7 @@ export default function EnergyEffect3D({effect,quality,reduced}:EffectRendererPr
  g.setAttribute('position',new Float32BufferAttribute(position,3));g.setAttribute('uv',new Float32BufferAttribute(uv,2));g.setIndex(indices);g.setAttribute('seed',new InstancedBufferAttribute(Float32Array.from({length:count},(_,i)=>(i+.5)/count),1));g.instanceCount=count;g.boundingSphere=new Sphere(new Vector3(0,p.radius,0),p.radius*1.6);return g},[segments,count,p.radius])
  const material=useMemo(()=>new ShaderMaterial({vertexShader,fragmentShader,side:DoubleSide,transparent:true,depthTest:true,depthWrite:false,uniforms:{time:{value:0},radius:{value:1},alpha:{value:1},pulse:{value:0},variant:{value:0},colour:{value:new Color()},accent:{value:new Color()}}}),[])
  useEffect(()=>()=>geometry.dispose(),[geometry]);useEffect(()=>()=>material.dispose(),[material])
- useEffect(()=>{const m=ref.current?.material as ShaderMaterial|undefined;if(!m)return;m.uniforms.radius.value=p.radius;m.uniforms.alpha.value=effect.opacity*Math.min(1,effect.intensity);m.uniforms.pulse.value=p.pulse;m.uniforms.variant.value=preset.style==='lightning'?1:preset.style==='unstable'?2:0;m.uniforms.colour.value.set(effect.color).multiplyScalar(effect.intensity);m.uniforms.accent.value.set(p.secondaryColor).multiplyScalar(effect.intensity);invalidate()},[effect,p,preset,invalidate])
- useFrame(state=>{if(!ref.current)return;(ref.current.material as ShaderMaterial).uniforms.time.value=reduced||effect.speed===0?1.4:state.clock.elapsedTime*effect.speed;if(!reduced&&effect.speed>0)state.invalidate()})
+ useLayoutEffect(()=>{const m=ref.current?.material as ShaderMaterial|undefined;if(!m)return;m.uniforms.radius.value=p.radius;m.uniforms.alpha.value=effect.opacity*Math.min(1,effect.intensity);m.uniforms.pulse.value=p.pulse;m.uniforms.variant.value=preset.style==='lightning'?1:preset.style==='unstable'?2:0;m.uniforms.colour.value.set(effect.color).multiplyScalar(effect.intensity);m.uniforms.accent.value.set(p.secondaryColor).multiplyScalar(effect.intensity);invalidate()},[effect,p,preset,invalidate])
+ useEffectAnimation(()=>ref.current,effect,reduced,1.4)
  return <mesh ref={ref} dispose={null} name={`environmental-effect:${effect.id}`} geometry={geometry} material={material} raycast={()=>null} userData={{renderer:'energy',style:preset.style,effectParticles:0,segments,ribbons:count}}/>
 }

@@ -103,6 +103,7 @@ export async function execute(pool: Pool, actor: Actor, campaignId: string, data
     }
     const current = await loadState(db, encounter.id)
     let command = data.command
+    if(command.type==='map.effect.playback.configure'||command.type==='map.effect.playback.control')command={...command,at:Date.now()}
     if(command.type==='map.lighting.scene.activate'||command.type==='map.lighting.scene.restore')command={...command,startedAt:Date.now()}
     let groupResult:GroupInsertionResult|undefined
     let emptyGroup=false
