@@ -21,5 +21,17 @@ export async function exerciseFloorTextures(page:Page,player:Page,path:string){
  await assets.getByRole('button',{name:'Delete texture',exact:true}).click();await page.getByRole('dialog',{name:'Delete floor texture',exact:true}).getByRole('button',{name:'Delete texture',exact:true}).click();await expect(assets.getByRole('alert')).toContainText('referenced')
  await assets.getByRole('button',{name:'Return to models',exact:true}).click();await page.getByRole('button',{name:'Return to encounter',exact:true}).click();await page.setViewportSize({width:768,height:1024});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
  expect((await api(page,path+'/snapshot')).state.dungeonMap.floorSurface).toEqual(saved.state.dungeonMap.floorSurface)
- const assetId=saved.state.dungeonMap.floorSurface.texture.assetId;await page.route(`**/api/floor-images/${assetId}/file*`,route=>route.fulfill({status:503,body:'temporary texture failure'}));await page.reload();await page.getByRole('button',{name:'Campaigns',exact:true}).click();await page.getByRole('menuitem',{name:(await api(page,path)).name,exact:true}).click();await page.getByRole('button',{name:'Views',exact:true}).click();await page.getByRole('menuitem',{name:'Map editor',exact:true}).click();await expect(page.getByRole('alert').filter({hasText:'Floor texture unavailable'})).toContainText('HTTP 503');await page.unroute(`**/api/floor-images/${assetId}/file*`);await page.getByRole('button',{name:'Retry floor texture',exact:true}).click();await expect(page.locator('[data-floor-texture-state=ready]')).toHaveAttribute('data-texture-asset',assetId);expect((await api(page,path+'/snapshot')).state.dungeonMap.floorImage).toEqual(before.floorImage)
+ const assetId=saved.state.dungeonMap.floorSurface.texture.assetId
+ await page.route(`**/api/floor-images/${assetId}/file*`,route=>route.fulfill({status:503,body:'temporary texture failure'}))
+ await page.reload()
+ // Rejoin restores the selected campaign; at tablet widths its select is hidden
+ // behind the compact Campaigns menu. Wait for the authoritative shell first.
+ await expect(page.locator('.connection')).toHaveText('Connected')
+ await expect(page.locator('select[aria-label="Campaign"]')).toHaveValue(path.split('/')[2])
+ await page.getByRole('button',{name:'Views',exact:true}).click();await page.getByRole('menuitem',{name:'Map editor',exact:true}).click()
+ await expect(page.getByRole('alert').filter({hasText:'Floor texture unavailable'})).toContainText('HTTP 503')
+ await page.unroute(`**/api/floor-images/${assetId}/file*`)
+ await page.getByRole('button',{name:'Retry floor texture',exact:true}).click()
+ await expect(page.locator('[data-floor-texture-state=ready]')).toHaveAttribute('data-texture-asset',assetId)
+ expect((await api(page,path+'/snapshot')).state.dungeonMap.floorImage).toEqual(before.floorImage)
 }

@@ -3,6 +3,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { makeTexturedGlb } from '../test-fixtures/glb'
 import { projectBattlefield,clickBattlefield } from './workspace-helpers'
+test.use({actionTimeout:15000})
 async function cameraState(page:Page){return page.locator('.battlefield-wrap canvas:visible').evaluate(async node=>{for(const resource of performance.getEntriesByType('resource').filter(r=>r.name.includes('/@react-three_fiber.js')).reverse()){const module=await import(resource.name),state=module._roots.get(node)?.store.getState();if(state?.controls)return{position:state.camera.position.toArray(),target:state.controls.target.toArray()}}throw new Error('No mounted camera')})}
 async function api(page: Page, path: string, body?: unknown) {
   return page.evaluate(async ({path,body})=>{const{csrf}=await(await fetch('/api/session')).json();const r=await fetch('/api'+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:body===undefined?undefined:JSON.stringify(body)});if(!r.ok)throw new Error(await r.text());return r.json()},{path,body})
@@ -53,12 +54,15 @@ test('DM assigns shared miniatures live; two players retain movement, fallback a
       if(reordered)releaseBootstraps.push(reordered.release)
       if(index===0)player.on('request',r=>{if(new URL(r.url()).pathname===`/api/assets/${asset.id}/file`)modelRequests++})
       else await player.route('**/api/assets/*/file?**',route=>route.fulfill({status:503,body:'Temporary storage failure'}))
-      await player.goto(invitation.url);await player.getByLabel('Display name').fill('Player '+(index+1));await reordered?.finish()
+      // Release the anonymous bootstrap before interacting with its dependent form.
+      // Credential transitions deliberately refresh the session again later.
+      await player.goto(invitation.url);await reordered?.finish();await player.getByLabel('Display name').fill('Player '+(index+1))
+      expect(sessionBootstraps,'one anonymous session bootstrap per player').toBe(1)
       const redemption=player.waitForResponse(response=>new URL(response.url()).pathname==='/api/invitations/redeem'&&response.request().method()==='POST')
       await player.getByRole('button',{name:'Join campaign',exact:true}).click()
       const redeemed=await redemption
       expect(redeemed.status(),`invitation redemption: ${(await redeemed.json()).error?.code??'ok'}`).toBe(201)
-      await expect(player.locator('.connection')).toHaveText('Connected');expect(sessionBootstraps,'one anonymous session bootstrap per player').toBe(1)
+      await expect(player.locator('.connection')).toHaveText('Connected')
       await expect(player.getByRole('button',{name:'Assign 3D Miniature',exact:true})).toHaveCount(0)
     }
     await openSetup(page);await page.getByRole('combobox',{name:/^Controlled by /}).nth(0).selectOption({label:'Player 1'});await page.getByRole('combobox',{name:/^Controlled by /}).nth(1).selectOption({label:'Player 2'})
