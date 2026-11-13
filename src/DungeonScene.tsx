@@ -18,7 +18,7 @@ export interface EditorHit { edgeDistance?: number; position?: Cell; cell: Cell;
 export interface EditorInteraction {
   fog?:FogInteraction
   terrain?:{disabled?:boolean;mode:'paint'|'erase';brush:TerrainBrush;texture:RepeatingTexture;onStroke:(stroke:TerrainStroke)=>void}
-  tool: 'fog' | 'lighting' | 'transition' | 'select' | 'floor' | 'wall' | 'door' | 'object' | 'erase' | 'scenery' | 'sceneryMove' | 'wall-line' | 'room' | 'corridor' | 'objectMove'
+  tool: 'effects' | 'fog' | 'lighting' | 'transition' | 'select' | 'floor' | 'wall' | 'door' | 'object' | 'erase' | 'scenery' | 'sceneryMove' | 'wall-line' | 'room' | 'corridor' | 'objectMove'
   transitionPicking?:boolean
   activation?:number
   document?:DungeonMap

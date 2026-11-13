@@ -1,3 +1,4 @@
+import EnvironmentalEffects3D from './EnvironmentalEffects3D'
 import FogOfWar3D from './FogOfWar3D'
 import type {FogOfWar} from '../shared/fog'
 import PointLights3D from './PointLights3D'
@@ -62,7 +63,7 @@ interface Combatant {
 
 export interface BattleMap3DProps {
  fogOverlay?:boolean;fogPreview?:boolean;onExitFogPreview?:()=>void;fog?:FogOfWar;
- onSelectLight?:(id:string)=>void;lightingQuality?:LightingQuality;lightingFlicker?:boolean;lightingReducedMotion?:boolean;
+ onSelectEffect?:(id:string)=>void;onSelectLight?:(id:string)=>void;lightingQuality?:LightingQuality;lightingFlicker?:boolean;lightingReducedMotion?:boolean;
   turnOrder?:TurnOrder
   combatControlState?:EncounterState
   keyboardActive?:boolean
@@ -214,6 +215,7 @@ function BattlefieldScene(props:Parameters<typeof LevelScene>[0]){
    const toolbar=active&&props.toolbar?{...props.toolbar,position:props.toolbar.position.map((v,i)=>v+offset[i]) as [number,number,number]}:undefined
    // Inactive levels are display only, including their labels; they never consume raycasts.
    return <group key={level.id} position={offset} userData={{levelInteractive:active,levelId:level.id,editorTool:active?editor?.tool:undefined,mapRevision:props.combatControlState?.mapRevision}}>
+    <EnvironmentalEffects3D effects={props.dungeonMap?.environmentalEffects?.effects.filter(e=>e.floorId===level.id)??[]} width={level.width} height={level.height} quality={props.lightingQuality} reduced={props.lightingReducedMotion} select={Boolean(active&&props.editing&&props.actor?.role!=='player'&&['select','effects'].includes(editor?.tool??''))} onSelect={props.onSelectEffect}/>
     <LevelScene {...props} fog={props.dungeonMap?.fogOfWar} lit={configured} onPlaceSquare={active?props.onPlaceSquare:undefined} sceneTransitions={props.dungeonMap?.transitions} sceneFloorNames={Object.fromEntries(levels.map(l=>[l.id,l.name]))} sceneFloorId={level.id} onTransitionMarker={active?props.onTransitionMarker:undefined} dungeonMap={levelDocument(level)} map={{...map,width:level.width,height:level.height}} editor={active?editor:undefined} canMove={active?props.canMove:false} combatants={props.combatants.filter(c=>(c.floorId??primaryLevelId(props.dungeonMap))===level.id)} onSelectToken={active?props.onSelectToken:()=>{}} tactical={active?props.tactical?.filter(r=>(r.floorId??primaryLevelId(props.dungeonMap))===level.id):[]} tacticalDraft={active?props.tacticalDraft:null} tacticalInteraction={active?props.tacticalInteraction:{...props.tacticalInteraction,mode:'navigate'}} toolbar={toolbar}/>
    </group>
   })}

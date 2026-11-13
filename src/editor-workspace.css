@@ -46,3 +46,6 @@
 .combatant-transfer { padding:.5rem; }
 .tabletop-shell[data-roster-expanded=false] .combatant-transfer { display:none; }
 @media(max-width:800px) { .level-view-controls { top:4.5rem; max-width:calc(100% - 2rem); } }
+
+/* Keep effect library actions readable within the contextual inspector. */
+.effects-placement-actions { display: grid; grid-template-columns: 1fr; }
