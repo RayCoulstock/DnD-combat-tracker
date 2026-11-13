@@ -69,3 +69,9 @@ test('clock skew cannot expand a fade-out beyond the authorized opacity/scale en
  let p=configurePlayback(undefined,{mode:'manual',durationMs:3000,transition:{kind:'scale',durationMs:500}},0,1000);p=controlPlayback(p,'activate',1,1000);p=controlPlayback(p,'deactivate',2,2000)
  const s=samplePlayback(p,0);assert.ok(s.opacity<=1&&s.opacity>=0);assert.ok(s.scale<=1&&s.scale>=.1)
 })
+
+test('long-running persistent loops continue advancing and can pause after more than a week',()=>{
+ const settings=defaultPlaybackSettings();let p=configurePlayback(undefined,settings,0,1000)
+ assert.ok(samplePlayback(p,1000+8*86400000).time!>7*86400)
+ p=controlPlayback(p,'pause',1,1000+8*86400000);assert.equal(p.elapsedMs,8*86400000)
+})
