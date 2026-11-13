@@ -164,3 +164,5 @@ Final software-renderer samples (milliseconds; short synthetic windows, not a ha
 | cavern | tablet-viewport | 15 | 89.7 / 100.1 | 22 / 800 | 120 | 22 → 2 | 2 → 1 |
 
 All ten cleanup samples returned to the empty-map baseline of two geometries and one renderer texture. The software frame-time target remains unmet, particularly for large/stacked scenes. Physical GPU measurements and optimization against those measurements remain necessary before accepting the performance target. D is implemented for review, not a claim that all milestone manual/remote acceptance gates have completed.
+
+Delivery: pushed `codex/milestone-6.3d-cinematic-attachments` with final implementation/tests/evidence. Creating the main-targeted PR through `gh pr create` failed with `Post https://api.github.com/graphql: Forbidden`. Git transport succeeds, but remote checks, PR creation/merge and main publication cannot be verified through the blocked API. [Open the main-targeted PR](https://github.com/RayCoulstock/DnD-combat-tracker/compare/main...codex/milestone-6.3d-cinematic-attachments?expand=1). No production deployment or Milestone 7 work occurred.
