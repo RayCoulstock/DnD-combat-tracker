@@ -1,3 +1,4 @@
+import {environmentalEffectsSchema,effectSchema,effectIdSchema} from './environmentalEffects.ts'
 import {sameFogMask} from './fogEditing.ts'
 import {fogSchema,initialFog,fogCinematicSchema} from './fog.ts'
 import {captureLighting,applyLightingSnapshot} from './lightingScenes.ts'
@@ -30,7 +31,7 @@ const geometryShape = z.object({
 export const LEGACY_LEVEL_ID = 'ground'
 export const levelMetadataSchema = z.object({id:objectId,name:z.string().trim().min(1).max(150),elevationFeet:z.number().finite().min(-1000).max(1000),playerVisible:z.boolean()}).strict()
 const additionalLevelSchema = geometryShape.omit({schemaVersion:true}).extend({elevationFeet:levelMetadataSchema.shape.elevationFeet,playerVisible:z.boolean()})
-const documentShape = geometryShape.extend({fogOfWar:fogSchema.optional(),lighting:lightingSchema.optional(),level:levelMetadataSchema.optional(),levels:z.array(additionalLevelSchema).max(11).optional(),transitions:z.array(transitionSchema).max(200).optional()}).strict()
+const documentShape = geometryShape.extend({environmentalEffects:environmentalEffectsSchema.optional(),fogOfWar:fogSchema.optional(),lighting:lightingSchema.optional(),level:levelMetadataSchema.optional(),levels:z.array(additionalLevelSchema).max(11).optional(),transitions:z.array(transitionSchema).max(200).optional()}).strict()
 export type DungeonLevel = z.infer<typeof additionalLevelSchema>
 export type LevelMetadata = z.infer<typeof levelMetadataSchema>
 export type DungeonMap = z.infer<typeof documentShape>
@@ -89,6 +90,7 @@ export const dungeonSchema = documentShape.superRefine((map,ctx)=>{
     if(elevations.some(e=>Math.abs(e-level.elevationFeet)<.1))ctx.addIssue({code:'custom',message:'Levels must be at least 0.1 feet apart to avoid coincident floor surfaces.'})
     elevations.push(level.elevationFeet);ids.add(level.id);validateGeometry({...level,schemaVersion:5},ctx)
   }
+  for(const effect of map.environmentalEffects?.effects??[]){const floor=[{...map,id:map.level?.id??LEGACY_LEVEL_ID},...(map.levels??[])].find(l=>l.id===effect.floorId);if(!floor||effect.position.x>=floor.width||effect.position.z>=floor.height)ctx.addIssue({code:'custom',message:'Effects require existing floors and in-bounds positions.'})}
   if(map.lighting?.sources?.some(l=>!ids.has(l.floorId)))ctx.addIssue({code:'custom',message:'Light sources require existing floors.'})
   if(map.transitions&&map.schemaVersion<6)ctx.addIssue({code:'custom',message:'Transitions require map version 6.'})
   const transitionIds=new Set<string>(),levels=[{...map,id:map.level?.id??LEGACY_LEVEL_ID},...(map.levels??[])]
@@ -107,7 +109,7 @@ const levelCache=new WeakMap<DungeonMap,DungeonLevel[]>()
 // One adapter for legacy documents and version 5; stable views avoid geometry rebuilds on combat updates.
 export function dungeonLevels(map:DungeonMap):DungeonLevel[]{
   const cached=levelCache.get(map);if(cached)return cached
-  const {level,levels,schemaVersion,transitions,lighting,fogOfWar,...geometry}=map;void schemaVersion;void transitions;void lighting;void fogOfWar
+  const {level,levels,schemaVersion,transitions,lighting,fogOfWar,environmentalEffects,...geometry}=map;void schemaVersion;void transitions;void lighting;void fogOfWar;void environmentalEffects
   const result=[{...geometry,...(level??legacyMetadata)},...(levels??[])]
   levelCache.set(map,result);return result
 }
@@ -133,7 +135,7 @@ export function composeLevels(map:DungeonMap,levels:DungeonLevel[]):DungeonMap{
   if(!levels.length)throw new Error('The last dungeon level cannot be deleted.')
   const [first,...rest]=levels
   const {id,name,elevationFeet,playerVisible,...geometry}=first
-  return {...geometry,...(map.fogOfWar?{fogOfWar:map.fogOfWar}:{}),...(map.lighting?{lighting:map.lighting}:{}),id:map.id,name:map.name,schemaVersion:map.schemaVersion===6?6:5,...(map.transitions?{transitions:map.transitions}:{}),level:{id,name,elevationFeet,playerVisible},levels:rest}
+  return {...geometry,...(map.environmentalEffects?{environmentalEffects:map.environmentalEffects}:{}),...(map.fogOfWar?{fogOfWar:map.fogOfWar}:{}),...(map.lighting?{lighting:map.lighting}:{}),id:map.id,name:map.name,schemaVersion:map.schemaVersion===6?6:5,...(map.transitions?{transitions:map.transitions}:{}),level:{id,name,elevationFeet,playerVisible},levels:rest}
 }
 export function blankDungeon(id: string, name: string, width = 20, height = 20): DungeonMap {
   return dungeonSchema.parse({ schemaVersion: 1, id, name, width, height, theme: 'stone-dungeon', floors: [], walls: [], doors: [], props: [] })
@@ -141,6 +143,9 @@ export function blankDungeon(id: string, name: string, width = 20, height = 20):
 // Legacy versions remain valid; scenery uses 2, architectural visuals 3, and floor images 4. Never downgrade a document.
 export const readDungeon = (value: unknown): DungeonMap => dungeonSchema.parse(value)
 export const mapCommandSchemas = [
+  z.object({type:z.literal('map.effect.set'),effect:effectSchema,levelId:objectId.optional()}).strict(),
+  z.object({type:z.literal('map.effect.remove'),id:effectIdSchema,levelId:objectId.optional()}).strict(),
+  z.object({type:z.literal('map.effect.duplicate'),id:effectIdSchema,newId:effectIdSchema,levelId:objectId.optional()}).strict(),
   z.object({type:z.literal('map.fog.settings'),edgeSoftness:z.union([z.literal(0),z.literal(0.5),z.literal(1)]),cinematic:fogCinematicSchema}).strict(),
   z.object({type:z.literal('map.fog.enabled'),enabled:z.boolean(),levelId:objectId.optional()}).strict(),
   z.object({type:z.literal('map.fog.reset'),confirmed:z.literal(true),levelId:objectId.optional()}).strict(),
@@ -293,6 +298,19 @@ export function editMap(frame:MapFrame,history:MapHistory,command:MapCommand):{f
   if(command.type==='map.undo'||command.type==='map.redo'||command.type==='map.history.clear'||command.type==='map.blank'||command.type==='map.load'||command.type==='map.template.load')return editSingleMap(frame,history,command)
   const document=frame.document
   if(!document)throw new Error('Create or load a dungeon map first.')
+  if(command.type==='map.effect.set'||command.type==='map.effect.remove'||command.type==='map.effect.duplicate'){
+    const effects=document.environmentalEffects?.effects??[]
+    let updated
+    if(command.type==='map.effect.set')updated=[...effects.filter(e=>e.id!==command.effect.id),command.effect]
+    else{
+      const source=effects.find(e=>e.id===command.id)
+      if(!source)throw new Error('Effect no longer exists.')
+      if(command.type==='map.effect.remove')updated=effects.filter(e=>e.id!==command.id)
+      else{if(effects.some(e=>e.id===command.newId))throw new Error('Effect ID is already in use.');updated=[...effects,{...source,id:command.newId}]}
+    }
+    const next=reuseDungeonGeometry(document,readDungeon({...document,environmentalEffects:{version:1,effects:updated}}))
+    return {frame:{...frame,document:next},history:{undo:bounded([...history.undo,structuredClone(frame)]),redo:[]}}
+  }
   if(command.type==='map.fog.settings'||command.type==='map.fog.enabled'||command.type==='map.fog.reset'||command.type==='map.fog.mask'){
     if(command.type==='map.fog.settings'&&!document.fogOfWar)throw new Error('Enable fog before changing its appearance.')
     const fog=structuredClone(document.fogOfWar??initialFog())
@@ -376,7 +394,10 @@ export function editMap(frame:MapFrame,history:MapHistory,command:MapCommand):{f
     const {schemaVersion,...geometry}=result;void schemaVersion
     levels=levels.map((l,i)=>i===index?{...geometry,id:source.id,name:source.name,elevationFeet:source.elevationFeet,playerVisible:source.playerVisible}:l)
   }
-  const composed=composeLevels({...document,...(rig?{lighting:rig}:{})},levels)
+  let environmentalEffects=document.environmentalEffects
+  if(environmentalEffects&&command.type==='map.level.remove')environmentalEffects={...environmentalEffects,effects:environmentalEffects.effects.filter(e=>e.floorId!==command.id)}
+  if(environmentalEffects&&command.type==='map.level.duplicate')environmentalEffects={...environmentalEffects,effects:[...environmentalEffects.effects,...environmentalEffects.effects.filter(e=>e.floorId===command.id).map((e,i)=>({...e,id:`${command.newId.slice(0,60)}:effect:${i}`,floorId:command.newId}))]}
+  const composed=composeLevels({...document,...(environmentalEffects?{environmentalEffects}:{}),...(rig?{lighting:rig}:{})},levels)
   if(composed.fogOfWar){
     const floors=Object.fromEntries(Object.entries(composed.fogOfWar.floors).filter(([id])=>{const before=dungeonLevels(document).find(l=>l.id===id),after=levels.find(l=>l.id===id);return before&&after&&before.width===after.width&&before.height===after.height}))
     composed.fogOfWar={...composed.fogOfWar,floors}

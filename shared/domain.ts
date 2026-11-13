@@ -1,3 +1,4 @@
+import {effectRegistry} from './environmentalEffects.ts'
 import {visibleFogLevel,fogTokenVisible,fogFloorFull} from './fogVisibility.ts'
 import {regionRevealed} from './fog.ts'
 import {resolveLight,reconcileLightParents,permittedLightSources} from './lightingState.ts'
@@ -202,7 +203,7 @@ export function applyMapEdit(state: EncounterState, actor: Actor, command: MapCo
     let editCommand:MapCommand=command
     if(command.type==='map.lighting.source.detach'){const source=state.dungeonMap?.lighting?.sources?.find(s=>s.id===command.id);if(!source)throw new Error('Light no longer exists.');const resolved=resolveLight(source,state),{attachment,...plain}=source;void attachment;editCommand={type:'map.lighting.source.set',source:{...plain,floorId:resolved.floorId,position:resolved.position}}}
     const result = editMap({ document: state.dungeonMap ?? null, width: state.battleMap.width, height: state.battleMap.height }, history, editCommand)
-    if(command.type.startsWith('map.fog.'))return {state:{...state,dungeonMap:result.frame.document??undefined,mapUndoDepth:result.history.undo.length,mapRedoDepth:result.history.redo.length},history:result.history}
+    if(command.type.startsWith('map.fog.')||command.type.startsWith('map.effect.'))return {state:{...state,dungeonMap:result.frame.document??undefined,mapUndoDepth:result.history.undo.length,mapRedoDepth:result.history.redo.length},history:result.history}
     if (!state.dungeonMap?.level && (command.type === 'map.undo' || command.type === 'map.redo') && (state.dungeonMap?.floorImage || result.frame.document?.floorImage) && Object.values(state.battleMap.tokens).some(p => p.x >= result.frame.width || p.z >= result.frame.height)) throw new Error('Undo/redo would move combatants outside the map. Move them inside the restored bounds first.')
     let next: EncounterState = { ...state, tactical:state.tactical?.map(r=>({...r,floorId:r.floorId??primaryLevelId(state.dungeonMap)})), combatants:state.combatants.map(c=>({...c,floorId:c.floorId??primaryLevelId(state.dungeonMap)})), dungeonMap: result.frame.document ?? undefined,
       battleMap: reconcileBattleMap({ ...state.battleMap, width: result.frame.width, height: result.frame.height }, state.combatants.map(c => c.id)),
@@ -296,9 +297,16 @@ export function playerDungeon(map?:DungeonMap,mapRevision?:number):DungeonMap|un
   if(!map)return undefined
   const levels=dungeonLevels(map).filter(l=>l.playerVisible).map(l=>{const level=visibleFogLevel(map,l);return level.floorImage?.fogView?{...level,floorImage:{...level.floorImage,fogView:{...level.floorImage.fogView,revision:mapRevision??level.floorImage.fogView.revision}}}:level})
   if(!levels.length)return undefined
+  const environmentalEffects=map.environmentalEffects?{version:1 as const,effects:map.environmentalEffects.effects.filter(effect=>{
+    const floor=levels.find(l=>l.id===effect.floorId)
+    if(!floor)return false
+    const r=effectRegistry[effect.presetId].radius*effect.scale,x=effect.position.x+.5,z=effect.position.z+.5
+    if(map.fogOfWar?.enabled&&(x-r<0||z-r<0||x+r>floor.width||z+r>floor.height))return false
+    return regionRevealed(map.fogOfWar,floor.id,floor.width,floor.height,x-r,z-r,x+r,z+r)
+  })}:undefined
   // Legacy maps retain their public wire format; multi-level maps expose visible levels only.
-  if(!map.level){const {elevationFeet,playerVisible,...geometry}=levels[0];void elevationFeet;void playerVisible;return {...map,...geometry,id:map.id,name:map.name}}
+  if(!map.level){const {elevationFeet,playerVisible,...geometry}=levels[0];void elevationFeet;void playerVisible;return {...map,...geometry,...(environmentalEffects?{environmentalEffects}:{}),id:map.id,name:map.name}}
   const visible=new Set(levels.map(l=>l.id))
   const transitions=map.transitions?.filter(t=>visible.has(t.source.floorId)&&visible.has(t.destination.floorId)&&[t.source,t.destination].every(p=>{const l=dungeonLevels(map).find(l=>l.id===p.floorId)!;return regionRevealed(map.fogOfWar,l.id,l.width,l.height,p.x,p.z,p.x+1,p.z+1)})).map(t=>{const {dmNotes,...publicTransition}=t;void dmNotes;return publicTransition})
-  return composeLevels({...map,...(map.fogOfWar?{fogOfWar:{...map.fogOfWar,floors:Object.fromEntries(Object.entries(map.fogOfWar.floors).filter(([id])=>visible.has(id)))}}:{}),...(transitions?{transitions}:{})},levels)
+  return composeLevels({...map,...(environmentalEffects?{environmentalEffects}:{}),...(map.fogOfWar?{fogOfWar:{...map.fogOfWar,floors:Object.fromEntries(Object.entries(map.fogOfWar.floors).filter(([id])=>visible.has(id)))}}:{}),...(transitions?{transitions}:{})},levels)
 }

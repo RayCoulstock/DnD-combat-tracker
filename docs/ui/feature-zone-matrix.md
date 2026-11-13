@@ -481,3 +481,14 @@ Synthetic [phone](milestone-6.2/my-campaigns-phone.png) and [tablet](milestone-6
 | Campaign metadata loading | C2 My Campaigns | Accessible loading state and existing refresh action. |
 
 Existing D3 canvas controls, C3 inspectors, floor-image recovery and phone A4 navigation are preserved. No permanent header row or floating toolbar was added.
+
+## Milestone 6.3A — effects foundations
+
+| Feature | Actual location | Contract |
+| --- | --- | --- |
+| Effects tool/library | D4 Effects → C3 Editing / Selection | Built-in preset category browse, pointer/tap placement, keyboard centre placement; no permanent navigation row. |
+| Selected effect | C3 Selection / Effect properties | Explicit Apply, bounded appearance/position/yaw/height, duplicate and confirmed delete; unsupported light/attachment controls absent in A. |
+| Preview/rendering | C2 existing map canvas | Existing square cursor preview and DM-only selection gizmos; no player edit handlers. |
+| History/fullscreen | D3 existing controls | One completed command per history frame; camera/canvas identity retained. |
+| Local effect quality | D5 existing Rendering quality menu | Shares Low/Medium/High preference; reduced motion makes motes static. |
+| Destructive confirmation | E4 existing native modal | Focus/keyboard/touch behavior supplied by useConfirmation/Modal. |
