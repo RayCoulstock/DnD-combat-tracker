@@ -1,3 +1,5 @@
+import {resolveEffect,permittedEffects,reconcileEffectParents} from './effectState.ts'
+import type {EnvironmentalEffect} from './environmentalEffects.ts'
 import {effectVisible} from './effectLighting.ts'
 import {visibleFogLevel,fogTokenVisible,fogFloorFull} from './fogVisibility.ts'
 import {regionRevealed} from './fog.ts'
@@ -91,7 +93,7 @@ export type CommandEnvelope = z.infer<typeof envelopeSchema>
 export class DomainError extends Error {
   constructor(public code: 'FORBIDDEN' | 'INVALID' | 'CONFLICT' | 'NOT_FOUND' | 'UNAUTHENTICATED' | 'SESSION_ENDED', message: string,public groupResult?:GroupInsertionResult) { super(message) }
 }
-export function applyCommand(state:EncounterState,actor:Actor,command:GameCommand,now=Date.now()):EncounterState{return reconcileLightParents(state,applyCommandCore(state,actor,command,now),command.type==='combatant.remove')}
+export function applyCommand(state:EncounterState,actor:Actor,command:GameCommand,now=Date.now()):EncounterState{return reconcileEffectParents(reconcileLightParents(state,applyCommandCore(state,actor,command,now),command.type==='combatant.remove'))}
 function applyCommandCore(state: EncounterState, actor: Actor, command: GameCommand, now=Date.now()): EncounterState {
   if(command.type==='tactical.create'||command.type==='tactical.update'||command.type==='tactical.remove'||command.type==='tactical.clear'){
     const records=activeTactical(state.tactical,now)
@@ -201,9 +203,15 @@ export function applyMapEdit(state: EncounterState, actor: Actor, command: MapCo
   try {
     if (!state.dungeonMap?.level && command.type === 'map.floorImage.set' && Object.values(state.battleMap.tokens).some(p => p.x >= command.width || p.z >= command.height)) throw new Error('Resize would move combatants outside the map. Move them inside the new bounds first.')
     let editCommand:MapCommand=command
+    if(command.type==='map.effect.detach'){
+      const e=state.dungeonMap?.environmentalEffects?.effects.find(e=>e.id===command.id);if(!e)throw new Error('Effect no longer exists.')
+      const resolved=resolveEffect(e,state),{attachment,...plain}=resolved.effect;void attachment
+      const floor=state.dungeonMap&&dungeonLevels(state.dungeonMap).find(l=>l.id===plain.floorId)
+      editCommand={type:'map.effect.set',effect:{...plain,position:{x:Math.max(0,Math.min((floor?.width??20)-1,plain.position.x)),z:Math.max(0,Math.min((floor?.height??20)-1,plain.position.z)),heightFeet:Math.max(0,Math.min(500,plain.position.heightFeet))}}}
+    }
     if(command.type==='map.lighting.source.detach'){const source=state.dungeonMap?.lighting?.sources?.find(s=>s.id===command.id);if(!source)throw new Error('Light no longer exists.');const resolved=resolveLight(source,state),{attachment,...plain}=source;void attachment;editCommand={type:'map.lighting.source.set',source:{...plain,floorId:resolved.floorId,position:resolved.position}}}
     const result = editMap({ document: state.dungeonMap ?? null, width: state.battleMap.width, height: state.battleMap.height }, history, editCommand)
-    if(command.type.startsWith('map.fog.')||command.type.startsWith('map.effect.'))return {state:{...state,dungeonMap:result.frame.document??undefined,mapUndoDepth:result.history.undo.length,mapRedoDepth:result.history.redo.length},history:result.history}
+    if(command.type.startsWith('map.fog.')||command.type.startsWith('map.effect.'))return {state:reconcileEffectParents({...state,dungeonMap:result.frame.document??undefined,mapUndoDepth:result.history.undo.length,mapRedoDepth:result.history.redo.length}),history:result.history}
     if (!state.dungeonMap?.level && (command.type === 'map.undo' || command.type === 'map.redo') && (state.dungeonMap?.floorImage || result.frame.document?.floorImage) && Object.values(state.battleMap.tokens).some(p => p.x >= result.frame.width || p.z >= result.frame.height)) throw new Error('Undo/redo would move combatants outside the map. Move them inside the restored bounds first.')
     let next: EncounterState = { ...state, tactical:state.tactical?.map(r=>({...r,floorId:r.floorId??primaryLevelId(state.dungeonMap)})), combatants:state.combatants.map(c=>({...c,floorId:c.floorId??primaryLevelId(state.dungeonMap)})), dungeonMap: result.frame.document ?? undefined,
       battleMap: reconcileBattleMap({ ...state.battleMap, width: result.frame.width, height: result.frame.height }, state.combatants.map(c => c.id)),
@@ -220,7 +228,7 @@ export function applyMapEdit(state: EncounterState, actor: Actor, command: MapCo
     }
     next=reconcileLevelTokens({...next,battleMap:{...next.battleMap,tokens:state.battleMap.tokens}})
     next=reconcileLightParents(state,next,command.type==='map.prop.remove'||command.type==='map.scenery.remove'||command.type==='map.level.remove')
-    return { state: next, history: result.history }
+    return { state: reconcileEffectParents(next), history: result.history }
   } catch (error) { throw new DomainError('INVALID', error instanceof Error ? error.message : 'Invalid map edit.') }
 }
 // Explicit allowlists: never send opaque stored objects to players.
@@ -238,7 +246,7 @@ export function projectEncounter(state: EncounterState, actor: Actor): Encounter
   })
   const ids = new Set(combatants.map(c => String(c.id)))
   const owned = combatants.filter(c => c.ownerId === actor.id)
-  let dungeonMap=playerDungeon(state.dungeonMap,state.mapRevision)
+  let dungeonMap=playerDungeon(state.dungeonMap,state.mapRevision,permittedEffects(state,mapIds))
   if(dungeonMap?.lighting)dungeonMap={...dungeonMap,lighting:{environment:dungeonMap.lighting.environment,sources:permittedLightSources(state,mapIds),...(dungeonMap.lighting.transition?{transition:dungeonMap.lighting.transition}:{})}}
   const levels=dungeonMap?dungeonLevels(dungeonMap):[]
   return { ...state, ...(state.turnOrder?{turnOrder:{...state.turnOrder,manualIds:state.turnOrder.manualIds.filter(id=>ids.has(String(id))),completedIds:state.turnOrder.completedIds.filter(id=>ids.has(String(id)))}}:{}), levelsHidden:Boolean(state.dungeonMap&&!dungeonMap), tactical:state.tactical?.filter(r=>levelVisible(state,r.floorId)&&fogFloorFull(state.dungeonMap,r.floorId)).map(r=>({...r,floorId:r.floorId??primaryLevelId(state.dungeonMap)})), dungeonMap, mapUndoDepth: undefined, mapRedoDepth: undefined, combatants, selectedId: null, activeId: ids.has(String(state.activeId)) ? state.activeId : null,
@@ -293,11 +301,11 @@ export function reconcileLevelTokens(state:EncounterState):EncounterState{
   if(state.combatants.some(c=>!levels.some(l=>l.id===combatantFloorId(state,c))))throw new DomainError('INVALID','Combatant references an unknown level.')
   return {...state,battleMap:{...state.battleMap,width:Math.max(...levels.map(l=>l.width)),height:Math.max(...levels.map(l=>l.height)),tokens}}
 }
-export function playerDungeon(map?:DungeonMap,mapRevision?:number):DungeonMap|undefined{
+export function playerDungeon(map?:DungeonMap,mapRevision?:number,effectProjection?:EnvironmentalEffect[]):DungeonMap|undefined{
   if(!map)return undefined
   const levels=dungeonLevels(map).filter(l=>l.playerVisible).map(l=>{const level=visibleFogLevel(map,l);return level.floorImage?.fogView?{...level,floorImage:{...level.floorImage,fogView:{...level.floorImage.fogView,revision:mapRevision??level.floorImage.fogView.revision}}}:level})
   if(!levels.length)return undefined
-  const environmentalEffects=map.environmentalEffects?{version:1 as const,effects:map.environmentalEffects.effects.filter(e=>effectVisible(map,e))}:undefined
+  const environmentalEffects=map.environmentalEffects?{version:1 as const,effects:effectProjection??map.environmentalEffects.effects.filter(e=>!e.attachment&&effectVisible(map,e))}:undefined
   // Legacy maps retain their public wire format; multi-level maps expose visible levels only.
   if(!map.level){const {elevationFeet,playerVisible,...geometry}=levels[0];void elevationFeet;void playerVisible;return {...map,...geometry,...(environmentalEffects?{environmentalEffects}:{}),id:map.id,name:map.name}}
   const visible=new Set(levels.map(l=>l.id))

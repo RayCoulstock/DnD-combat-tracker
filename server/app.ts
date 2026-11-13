@@ -6,7 +6,7 @@ import {expireMeasurements} from './tactical.ts'
 import {durableEncounter,projectEncounter} from '../shared/domain.ts'
 import express, { type Request, type Response, type NextFunction } from 'express'
 import { createServer } from 'node:http'
-import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { resolve } from 'node:path'
 import session from 'express-session'
 import { Passport } from 'passport'
@@ -291,7 +291,7 @@ export function createApplication({ pool, secret, origin, production = false, al
     catch(e) { const error=Object.assign(new Error(e instanceof DomainError?'Authentication required.':'Connection unavailable.'),{data:{code:e instanceof DomainError&&e.code==='FORBIDDEN'?'FORBIDDEN':e instanceof DomainError?'UNAUTHENTICATED':'UNAVAILABLE'}});next(error) }
   })
   const rooms = new Map<string, string>()
-  const sentMaps = new Map<string, { encounterId: string; revision: number }>()
+  const sentMaps = new Map<string, { encounterId: string; revision:number; document: string }>()
   async function publishState(socket: Socket<ClientEvents, ServerEvents>, campaignId: string, full = false) {
     const joinGeneration=socket.data.joinGeneration
     const actor = await socketActor(socket,campaignId)
@@ -299,11 +299,11 @@ export function createApplication({ pool, secret, origin, production = false, al
     if (rooms.get(socket.id) !== campaignId || !socket.connected || joinGeneration!==socket.data.joinGeneration) return data
     const map = data.snapshot
     if (map) {
-      const previous = sentMaps.get(socket.id)
-      if (!full && !(actor.role==='player'&&map.state.dungeonMap?.fogOfWar?.enabled) && map.state.dungeonMap && previous?.encounterId === map.encounterId && previous.revision === map.state.mapRevision) {
+      const previous = sentMaps.get(socket.id),document=createHash('sha256').update(JSON.stringify(map.state.dungeonMap??null)).digest('hex')
+      if (!full && !(actor.role==='player'&&map.state.dungeonMap?.fogOfWar?.enabled) && map.state.dungeonMap && previous?.encounterId === map.encounterId && previous.revision===map.state.mapRevision && previous.document === document) {
         data.snapshot = { ...map, mapDocumentOmitted: true, state: { ...map.state, dungeonMap: undefined } }
       }
-      sentMaps.set(socket.id, { encounterId: map.encounterId, revision: map.state.mapRevision ?? 0 })
+      sentMaps.set(socket.id, { encounterId: map.encounterId,revision:map.state.mapRevision??0, document })
     }
     socket.data.actor=actor
     socket.emit('session.state', data)

@@ -1,3 +1,4 @@
+import {effectPlaybackSettingsSchema,configurePlayback,controlPlayback} from './effectPlayback.ts'
 import {effectEmitterId,linkedEffect} from './effectLighting.ts'
 import {effectPreset} from './environmentalEffects.ts'
 import {environmentalEffectsSchema,effectSchema,effectIdSchema} from './environmentalEffects.ts'
@@ -92,7 +93,7 @@ export const dungeonSchema = documentShape.superRefine((map,ctx)=>{
     if(elevations.some(e=>Math.abs(e-level.elevationFeet)<.1))ctx.addIssue({code:'custom',message:'Levels must be at least 0.1 feet apart to avoid coincident floor surfaces.'})
     elevations.push(level.elevationFeet);ids.add(level.id);validateGeometry({...level,schemaVersion:5},ctx)
   }
-  for(const effect of map.environmentalEffects?.effects??[]){const floor=[{...map,id:map.level?.id??LEGACY_LEVEL_ID},...(map.levels??[])].find(l=>l.id===effect.floorId);if(!floor||effect.position.x>=floor.width||effect.position.z>=floor.height)ctx.addIssue({code:'custom',message:'Effects require existing floors and in-bounds positions.'})}
+  for(const effect of map.environmentalEffects?.effects??[]){const floor=[{...map,id:map.level?.id??LEGACY_LEVEL_ID},...(map.levels??[])].find(l=>l.id===effect.floorId);if(!floor||!effect.attachment&&(effect.position.x>=floor.width||effect.position.z>=floor.height))ctx.addIssue({code:'custom',message:'Effects require existing floors and in-bounds positions.'})}
   const ownedLights=new Set<string>()
   for(const effect of map.environmentalEffects?.effects??[]){if(!effect.light)continue;const source=map.lighting?.sources?.find(s=>s.id===effect.light!.emitterId)
     if(!source||ownedLights.has(source.id)||source.attachment||source.floorId!==effect.floorId||(['x','z','heightFeet'] as const).some(k=>source.position[k]!==effect.position[k]))ctx.addIssue({code:'custom',message:'Effect lights require one exclusively owned emitter at the effect position.'})
@@ -150,6 +151,9 @@ export function blankDungeon(id: string, name: string, width = 20, height = 20):
 // Legacy versions remain valid; scenery uses 2, architectural visuals 3, and floor images 4. Never downgrade a document.
 export const readDungeon = (value: unknown): DungeonMap => dungeonSchema.parse(value)
 export const mapCommandSchemas = [
+  z.object({type:z.literal('map.effect.playback.configure'),id:effectIdSchema,settings:effectPlaybackSettingsSchema,expectedRevision:z.number().int().nonnegative(),at:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional()}).strict(),
+  z.object({type:z.literal('map.effect.playback.control'),id:effectIdSchema,action:z.enum(['activate','deactivate','restart','pause','resume']),expectedRevision:z.number().int().nonnegative(),at:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional()}).strict(),
+  z.object({type:z.literal('map.effect.detach'),id:effectIdSchema}).strict(),
   z.object({type:z.literal('map.effect.light.set'),id:effectIdSchema,appearance:lightAppearanceSchema.nullable(),levelId:objectId.optional()}).strict(),
   z.object({type:z.literal('map.effect.set'),effect:effectSchema,levelId:objectId.optional()}).strict(),
   z.object({type:z.literal('map.effect.remove'),id:effectIdSchema,levelId:objectId.optional()}).strict(),
@@ -306,6 +310,15 @@ export function editMap(frame:MapFrame,history:MapHistory,command:MapCommand):{f
   if(command.type==='map.undo'||command.type==='map.redo'||command.type==='map.history.clear'||command.type==='map.blank'||command.type==='map.load'||command.type==='map.template.load')return editSingleMap(frame,history,command)
   const document=frame.document
   if(!document)throw new Error('Create or load a dungeon map first.')
+  if(command.type==='map.effect.playback.control'||command.type==='map.effect.playback.configure'){
+    const effects=document.environmentalEffects?.effects??[],e=effects.find(e=>e.id===command.id)
+    if(!e)throw new Error('Effect no longer exists.')
+    const at=command.at??Date.now(),playback=command.type==='map.effect.playback.control'?controlPlayback(e.playback,command.action,command.expectedRevision,at):configurePlayback(e.playback,command.settings,command.expectedRevision,at)
+    if(JSON.stringify(playback)===JSON.stringify(e.playback))return{frame,history}
+    const next=reuseDungeonGeometry(document,readDungeon({...document,environmentalEffects:{version:1,effects:effects.map(v=>v.id===e.id?{...e,playback}:v)}}))
+    return{frame:{...frame,document:next},history:{undo:bounded([...history.undo,structuredClone(frame)]),redo:[]}}
+  }
+  if(command.type==='map.effect.detach')throw new Error('Resolve effect attachment using encounter state first.')
   if(command.type==='map.effect.set'||command.type==='map.effect.remove'||command.type==='map.effect.duplicate'||command.type==='map.effect.light.set'){
     const effects=document.environmentalEffects?.effects??[],id=command.type==='map.effect.set'?command.effect.id:command.id,source=effects.find(e=>e.id===id)
     let updated:typeof effects;let rig=document.lighting
@@ -318,6 +331,7 @@ export function editMap(frame:MapFrame,history:MapHistory,command:MapCommand):{f
       rig={...rig!,sources:[...(rig?.sources??[]),{...original,id:emitterId}]};return {emitterId}
     }
     if(command.type==='map.effect.set'){
+      if(JSON.stringify(command.effect.playback)!==JSON.stringify(source?.playback))throw new Error('Use effect playback controls to change lifecycle state.')
       if(command.effect.light?.emitterId!==source?.light?.emitterId)throw new Error('Configure linked lights through effect lighting controls.')
       updated=[...effects.filter(e=>e.id!==id),command.effect]
       if(source?.light&&rig)rig={...rig,sources:rig.sources?.map(s=>s.id===source.light!.emitterId?{...s,floorId:command.effect.floorId,position:command.effect.position}:s)}
@@ -326,7 +340,7 @@ export function editMap(frame:MapFrame,history:MapHistory,command:MapCommand):{f
       if(command.type==='map.effect.remove'){updated=effects.filter(e=>e.id!==id);if(source.light)removeEmitter(source.light.emitterId)}
       else if(command.type==='map.effect.duplicate'){
         if(effects.some(e=>e.id===command.newId))throw new Error('Effect ID is already in use.')
-        updated=[...effects,{...source,id:command.newId,...(source.light?{light:copyEmitter(source,command.newId)}:{})}]
+        updated=[...effects,{...source,id:command.newId,...(source.playback?{playback:{...source.playback,revision:0}}:{}),...(source.light?{light:copyEmitter(source,command.newId)}:{})}]
       }else{
         if(!effectPreset(source.presetId).lighting)throw new Error('This effect does not support lighting.')
         let next=source
@@ -429,7 +443,7 @@ export function editMap(frame:MapFrame,history:MapHistory,command:MapCommand):{f
   }
   let environmentalEffects=document.environmentalEffects
   if(environmentalEffects&&command.type==='map.level.remove')environmentalEffects={...environmentalEffects,effects:environmentalEffects.effects.filter(e=>e.floorId!==command.id)}
-  if(environmentalEffects&&command.type==='map.level.duplicate')environmentalEffects={...environmentalEffects,effects:[...environmentalEffects.effects,...environmentalEffects.effects.filter(e=>e.floorId===command.id).map((e,i)=>{const originals=document.lighting?.sources?.filter(l=>l.floorId===command.id&&l.attachment?.kind!=='combatant')??[],lightIndex=originals.findIndex(s=>s.id===e.light?.emitterId);return {...e,id:`${command.newId.slice(0,60)}:effect:${i}`,floorId:command.newId,...(e.light?{light:{emitterId:`${command.newId.slice(0,60)}:light:${lightIndex}`}}:{})}})]}
+  if(environmentalEffects&&command.type==='map.level.duplicate')environmentalEffects={...environmentalEffects,effects:[...environmentalEffects.effects,...environmentalEffects.effects.filter(e=>e.floorId===command.id).map((e,i)=>{const originals=document.lighting?.sources?.filter(l=>l.floorId===command.id&&l.attachment?.kind!=='combatant')??[],lightIndex=originals.findIndex(s=>s.id===e.light?.emitterId);const propIndex=e.attachment?.kind==='scenery'?dungeonLevels(document).find(l=>l.id===command.id)?.props.findIndex(p=>p.id===e.attachment!.id):-1;return {...e,id:`${command.newId.slice(0,60)}:effect:${i}`,floorId:command.newId,...(e.attachment?.kind==='scenery'?{attachment:{...e.attachment,floorId:command.newId,id:propIndex!==undefined&&propIndex>=0?`${command.newId.slice(0,60)}:prop:${propIndex}`:e.attachment.id}}:{}),...(e.light?{light:{emitterId:`${command.newId.slice(0,60)}:light:${lightIndex}`}}:{})}})]}
   const composed=composeLevels({...document,...(environmentalEffects?{environmentalEffects}:{}),...(rig?{lighting:rig}:{})},levels)
   if(composed.fogOfWar){
     const floors=Object.fromEntries(Object.entries(composed.fogOfWar.floors).filter(([id])=>{const before=dungeonLevels(document).find(l=>l.id===id),after=levels.find(l=>l.id===id);return before&&after&&before.width===after.width&&before.height===after.height}))

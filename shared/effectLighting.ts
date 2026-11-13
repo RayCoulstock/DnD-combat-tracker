@@ -1,3 +1,4 @@
+import {samplePlayback} from './effectPlayback.ts'
 import type {DungeonMap} from './dungeon.ts'
 import type {PointLightSource} from './lighting.ts'
 import {regionRevealed} from './fog.ts'
@@ -12,7 +13,7 @@ export function effectVisible(map:DungeonMap,e:EnvironmentalEffect){
 }
 export function effectiveEffectLight(map:DungeonMap|undefined,s:PointLightSource):PointLightSource{
  const e=linkedEffect(map,s.id)
- return e&&(!e.enabled||e.intensity===0)?{...s,enabled:false}:s
+ return e&&(!e.enabled||e.intensity===0||!samplePlayback(e.playback).visible)?{...s,enabled:false}:s
 }
 export function effectEmitterId(id:string){
  let hash=2166136261;for(const c of id)hash=Math.imul(hash^c.charCodeAt(0),16777619)>>>0

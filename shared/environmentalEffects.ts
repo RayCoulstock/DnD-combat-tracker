@@ -1,3 +1,5 @@
+import {effectPlaybackSchema} from './effectPlayback.ts'
+import {lightAttachmentSchema} from './lighting.ts'
 import {z} from 'zod'
 export const effectIdSchema=z.string().min(1).max(100).regex(/^[A-Za-z0-9_:-]+$/).refine(s=>!['__proto__','constructor','prototype'].includes(s))
 export const effectCategories=['Elemental','Atmospheric','Magical','Environmental','Energy'] as const
@@ -19,15 +21,15 @@ interface Preset {
 }
 const make=(id:string,name:string,category:Preset['category'],renderer:Preset['renderer'],style:Preset['style'],color:string,description:string,particles:Partial<ParticleParameters>={},lighting=false):Preset=>({id,name,category,renderer,style,description,icon:renderer==='fire'?'♨':renderer==='sparks'?'✧':'≋',
  defaults:{scale:1,intensity:1,speed:1,color,opacity:renderer==='atmosphere'?.45:.85},parameters:effectParametersSchema,
- resources:{geometry:renderer==='fire'?'crossed-flames-and-billboards':'instanced-billboards',textures:0},quality:renderer==='atmosphere'?{low:6,medium:14,high:24}:{low:12,medium:32,high:64},radius:1.5,lighting,attachments:false,particles:{...particleDefaults,...particles}} as Preset)
+ resources:{geometry:renderer==='fire'?'crossed-flames-and-billboards':'instanced-billboards',textures:0},quality:renderer==='atmosphere'?{low:6,medium:14,high:24}:{low:12,medium:32,high:64},radius:1.5,lighting,attachments:true,particles:{...particleDefaults,...particles}} as Preset)
 const surface=(id:string,name:string,renderer:'portal'|'circle'|'corruption'|'liquid'|'energy',style:Preset['style'],color:string,secondaryColor:string,description:string,lighting=true,secondary?:'motes'|'bubbles'):Preset=>({
  id,name,category:renderer==='liquid'||renderer==='corruption'?'Environmental':renderer==='energy'?'Energy':'Magical',icon:renderer==='portal'?'◉':renderer==='energy'?'ϟ':'◎',description,
  defaults:{scale:1,intensity:1,speed:1,color,opacity:renderer==='liquid'?.85:.8},parameters:effectParametersSchema,renderer,style,
- resources:{geometry:renderer==='energy'?'bounded-ribbons':'procedural-surface',textures:0},quality:{low:12,medium:24,high:48},radius:1.5,lighting,attachments:false,
+ resources:{geometry:renderer==='energy'?'bounded-ribbons':'procedural-surface',textures:0},quality:{low:12,medium:24,high:48},radius:1.5,lighting,attachments:true,
  surface:{radius:renderer==='portal'?1.2:renderer==='circle'?1.5:1.3,pulse:.25,secondaryColor,particles:Boolean(secondary)},secondary,
 })
 export const effectRegistry={
- 'magical-motes':{id:'magical-motes',name:'Magical motes',category:'Magical',icon:'✦',description:'A bounded cloud of softly drifting magical lights.',defaults:{scale:1,intensity:1,speed:1,color:'#97e8ce',opacity:.7},parameters:effectParametersSchema,renderer:'motes',style:'motes',resources:{geometry:'seeded-points',textures:0},quality:{low:12,medium:32,high:64},radius:1.5,lighting:false,attachments:false},
+ 'magical-motes':{id:'magical-motes',name:'Magical motes',category:'Magical',icon:'✦',description:'A bounded cloud of softly drifting magical lights.',defaults:{scale:1,intensity:1,speed:1,color:'#97e8ce',opacity:.7},parameters:effectParametersSchema,renderer:'motes',style:'motes',resources:{geometry:'seeded-points',textures:0},quality:{low:12,medium:32,high:64},radius:1.5,lighting:false,attachments:true},
  'small-flame':make('small-flame','Small flame','Elemental','fire','fire','#ff8736','A small licking flame for a candle or burning object.',{spread:.25,height:.7,embers:true},true),
  'campfire':make('campfire','Campfire','Elemental','fire','fire','#ff9d42','Layered warm flames with optional rising embers.',{spread:.6,height:1.5,embers:true},true),
  'brazier-flame':make('brazier-flame','Brazier flame','Elemental','fire','fire','#ffb34d','A compact, bright flame for a brazier or forge.',{spread:.4,height:1.1,embers:true},true),
@@ -70,8 +72,8 @@ export const effectPresetIds=Object.keys(effectRegistry) as [EffectPresetId,...E
 export const effectLightSchema=z.object({emitterId:effectIdSchema}).strict()
 export const effectSchema=effectParametersSchema.extend({id:effectIdSchema,presetId:z.enum(effectPresetIds),floorId:effectIdSchema,
  position:z.object({x:z.number().finite().min(0).max(50),z:z.number().finite().min(0).max(50),heightFeet:z.number().finite().min(0).max(500)}).strict(),
- rotation:z.number().finite().min(0).max(360),enabled:z.boolean(),parameters:particleParametersSchema.optional(),surface:surfaceParametersSchema.optional(),light:effectLightSchema.optional(),
-}).strict().superRefine((e,ctx)=>{const p=effectPreset(e.presetId);if(e.surface&&!p.surface)ctx.addIssue({code:'custom',message:'This preset does not support surface controls.'});if(e.surface?.particles&&!p.secondary)ctx.addIssue({code:'custom',message:'This preset does not support secondary detail.'});if(e.parameters&&!p.particles)ctx.addIssue({code:'custom',message:'This preset does not support particle controls.'});if(e.light&&!p.lighting)ctx.addIssue({code:'custom',message:'This preset does not support a linked light.'});if(e.parameters?.embers&&p.renderer!=='fire')ctx.addIssue({code:'custom',message:'Secondary embers require a fire preset.'})})
+ rotation:z.number().finite().min(0).max(360),enabled:z.boolean(),playback:effectPlaybackSchema.optional(),attachment:lightAttachmentSchema.optional(),parameters:particleParametersSchema.optional(),surface:surfaceParametersSchema.optional(),light:effectLightSchema.optional(),
+}).strict().superRefine((e,ctx)=>{const p=effectPreset(e.presetId);if(e.attachment&&!p.attachments)ctx.addIssue({code:'custom',message:'This preset does not support attachments.'});if(e.surface&&!p.surface)ctx.addIssue({code:'custom',message:'This preset does not support surface controls.'});if(e.surface?.particles&&!p.secondary)ctx.addIssue({code:'custom',message:'This preset does not support secondary detail.'});if(e.parameters&&!p.particles)ctx.addIssue({code:'custom',message:'This preset does not support particle controls.'});if(e.light&&!p.lighting)ctx.addIssue({code:'custom',message:'This preset does not support a linked light.'});if(e.parameters?.embers&&p.renderer!=='fire')ctx.addIssue({code:'custom',message:'Secondary embers require a fire preset.'})})
 export const environmentalEffectsSchema=z.object({version:z.literal(1),effects:z.array(effectSchema).max(64).refine(a=>new Set(a.map(e=>e.id)).size===a.length,'Effect IDs must be unique.')}).strict()
 export type EnvironmentalEffect=z.infer<typeof effectSchema>
 export function effectParticles(e:EnvironmentalEffect):ParticleParameters{return e.parameters??effectPreset(e.presetId).particles??particleDefaults}

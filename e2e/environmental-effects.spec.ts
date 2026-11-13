@@ -5,7 +5,7 @@ import {clickBattlefield} from './workspace-helpers'
 async function effects(page:Page){return page.locator('canvas:visible').evaluate(async node=>{
  for(const url of [...new Set(performance.getEntriesByType('resource').map(e=>e.name).filter(n=>n.includes('/@react-three_fiber.js')))].reverse()){
  const m=await import(/* @vite-ignore */url),s=m._roots.get(node)?.store.getState();if(!s?.internal.active)continue
- const list:{name:string;count:number;scale:number;alpha:number}[]=[];s.scene.traverse((o:{name:string;isPoints?:boolean;geometry:{attributes:{position:{count:number}}};parent:{scale:{x:number}};material:{uniforms:{alpha:{value:number}}}})=>{if(o.isPoints&&o.name.startsWith('environmental-effect:'))list.push({name:o.name,count:o.geometry.attributes.position.count,scale:o.parent.scale.x,alpha:o.material.uniforms.alpha.value})});return {list,memory:s.gl.info.memory,uuid:s.scene.uuid}
+ const list:{name:string;count:number;scale:number;alpha:number}[]=[];s.scene.traverse((o:{name:string;isPoints?:boolean;geometry:{attributes:{position:{count:number}}};parent:{scale:{x:number};parent:{scale:{x:number}}};material:{uniforms:{alpha:{value:number}}}})=>{if(o.isPoints&&o.name.startsWith('environmental-effect:'))list.push({name:o.name,count:o.geometry.attributes.position.count,scale:o.parent.scale.x*o.parent.parent.scale.x,alpha:o.material.uniforms.alpha.value})});return {list,memory:s.gl.info.memory,uuid:s.scene.uuid}
  }return {list:[],memory:{geometries:0,textures:0},uuid:''}
 })}
 test('effects placement, appearance, history, reduced-motion and resource cleanup',async({page})=>{

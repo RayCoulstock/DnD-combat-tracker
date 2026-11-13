@@ -1,5 +1,6 @@
-import {useEffect,useMemo,useRef} from 'react'
-import {useFrame,useThree} from '@react-three/fiber'
+import {useEffectAnimation} from './effectClock'
+import {useEffect,useLayoutEffect,useMemo,useRef} from 'react'
+import {useThree} from '@react-three/fiber'
 import {InstancedBufferGeometry,InstancedBufferAttribute,Float32BufferAttribute,ShaderMaterial,Mesh,Color,DoubleSide,Sphere,Vector3} from 'three'
 import {effectParticles} from '../../shared/environmentalEffects'
 import ParticleEffect3D,{type EffectRendererProps} from './ParticleEffect3D'
@@ -23,7 +24,7 @@ export default function FireEffect3D({effect,quality,reduced}:EffectRendererProp
  const geometry=useMemo(()=>{const g=new InstancedBufferGeometry();g.setAttribute('position',new Float32BufferAttribute([-.5,-.5,0,.5,-.5,0,.5,.5,0,-.5,.5,0],3));g.setAttribute('uv',new Float32BufferAttribute([0,0,1,0,1,1,0,1],2));g.setIndex([0,1,2,0,2,3]);g.setAttribute('angle',new InstancedBufferAttribute(Float32Array.from({length:layers},(_,i)=>i*Math.PI/layers),1));g.instanceCount=layers;g.boundingSphere=new Sphere(new Vector3(0,p.height/2,0),p.height+p.spread*2);return g},[layers,p.height,p.spread])
  const material=useMemo(()=>new ShaderMaterial({vertexShader,fragmentShader,side:DoubleSide,transparent:true,depthTest:true,depthWrite:false,uniforms:{time:{value:0},height:{value:1},spread:{value:1},alpha:{value:1},colour:{value:new Color()},detail:{value:1}}}),[])
  useEffect(()=>()=>geometry.dispose(),[geometry]);useEffect(()=>()=>material.dispose(),[material])
- useEffect(()=>{const m=ref.current?.material as ShaderMaterial|undefined;if(!m)return;m.uniforms.height.value=p.height;m.uniforms.spread.value=p.spread;m.uniforms.alpha.value=effect.opacity*Math.min(1,effect.intensity);m.uniforms.colour.value.set(effect.color).multiplyScalar(effect.intensity);m.uniforms.detail.value=quality==='low'?0:1;invalidate()},[effect,p,quality,invalidate])
- useFrame(state=>{if(!ref.current)return;(ref.current.material as ShaderMaterial).uniforms.time.value=reduced?0:state.clock.elapsedTime*effect.speed;if(!reduced&&effect.speed>0)state.invalidate()})
+ useLayoutEffect(()=>{const m=ref.current?.material as ShaderMaterial|undefined;if(!m)return;m.uniforms.height.value=p.height;m.uniforms.spread.value=p.spread;m.uniforms.alpha.value=effect.opacity*Math.min(1,effect.intensity);m.uniforms.colour.value.set(effect.color).multiplyScalar(effect.intensity);m.uniforms.detail.value=quality==='low'?0:1;invalidate()},[effect,p,quality,invalidate])
+ useEffectAnimation(()=>ref.current,effect,reduced,0)
  return <><mesh dispose={null} ref={ref} name={`environmental-effect:${effect.id}`} geometry={geometry} material={material} raycast={()=>null} userData={{effectParticles:0,renderer:'fire',layers}}/>{p.embers&&quality!=='low'&&<ParticleEffect3D effect={effect} quality={quality} reduced={reduced} secondary/>}</>
 }

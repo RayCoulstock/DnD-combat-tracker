@@ -28,3 +28,6 @@ __pycache__
 # Ephemeral CI image/evidence transfer; no local assets or runtime state.
 release-artifact/
 ci-results/
+
+# Local development and profiling scratch files are never image inputs.
+work/
