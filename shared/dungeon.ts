@@ -1,8 +1,10 @@
+import {effectEmitterId,linkedEffect} from './effectLighting.ts'
+import {effectPreset} from './environmentalEffects.ts'
 import {environmentalEffectsSchema,effectSchema,effectIdSchema} from './environmentalEffects.ts'
 import {sameFogMask} from './fogEditing.ts'
 import {fogSchema,initialFog,fogCinematicSchema} from './fog.ts'
 import {captureLighting,applyLightingSnapshot} from './lightingScenes.ts'
-import {lightingSchema,environmentSchema,environmentOverrideSchema,pointLightSchema,lightIdSchema,legacyEnvironment,lightingSceneSchema} from './lighting.ts'
+import {lightingSchema,environmentSchema,environmentOverrideSchema,pointLightSchema,lightAppearanceSchema,lightIdSchema,legacyEnvironment,lightingSceneSchema} from './lighting.ts'
 import {terrainPaintSchema,terrainStrokeSchema} from './terrain.ts'
 import {floorSurfaceSchema} from './floor-surface.ts'
 import {transitionSchema} from './transitions.ts'
@@ -91,6 +93,11 @@ export const dungeonSchema = documentShape.superRefine((map,ctx)=>{
     elevations.push(level.elevationFeet);ids.add(level.id);validateGeometry({...level,schemaVersion:5},ctx)
   }
   for(const effect of map.environmentalEffects?.effects??[]){const floor=[{...map,id:map.level?.id??LEGACY_LEVEL_ID},...(map.levels??[])].find(l=>l.id===effect.floorId);if(!floor||effect.position.x>=floor.width||effect.position.z>=floor.height)ctx.addIssue({code:'custom',message:'Effects require existing floors and in-bounds positions.'})}
+  const ownedLights=new Set<string>()
+  for(const effect of map.environmentalEffects?.effects??[]){if(!effect.light)continue;const source=map.lighting?.sources?.find(s=>s.id===effect.light!.emitterId)
+    if(!source||ownedLights.has(source.id)||source.attachment||source.floorId!==effect.floorId||(['x','z','heightFeet'] as const).some(k=>source.position[k]!==effect.position[k]))ctx.addIssue({code:'custom',message:'Effect lights require one exclusively owned emitter at the effect position.'})
+    ownedLights.add(effect.light.emitterId)
+  }
   if(map.lighting?.sources?.some(l=>!ids.has(l.floorId)))ctx.addIssue({code:'custom',message:'Light sources require existing floors.'})
   if(map.transitions&&map.schemaVersion<6)ctx.addIssue({code:'custom',message:'Transitions require map version 6.'})
   const transitionIds=new Set<string>(),levels=[{...map,id:map.level?.id??LEGACY_LEVEL_ID},...(map.levels??[])]
@@ -143,6 +150,7 @@ export function blankDungeon(id: string, name: string, width = 20, height = 20):
 // Legacy versions remain valid; scenery uses 2, architectural visuals 3, and floor images 4. Never downgrade a document.
 export const readDungeon = (value: unknown): DungeonMap => dungeonSchema.parse(value)
 export const mapCommandSchemas = [
+  z.object({type:z.literal('map.effect.light.set'),id:effectIdSchema,appearance:lightAppearanceSchema.nullable(),levelId:objectId.optional()}).strict(),
   z.object({type:z.literal('map.effect.set'),effect:effectSchema,levelId:objectId.optional()}).strict(),
   z.object({type:z.literal('map.effect.remove'),id:effectIdSchema,levelId:objectId.optional()}).strict(),
   z.object({type:z.literal('map.effect.duplicate'),id:effectIdSchema,newId:effectIdSchema,levelId:objectId.optional()}).strict(),
@@ -298,17 +306,41 @@ export function editMap(frame:MapFrame,history:MapHistory,command:MapCommand):{f
   if(command.type==='map.undo'||command.type==='map.redo'||command.type==='map.history.clear'||command.type==='map.blank'||command.type==='map.load'||command.type==='map.template.load')return editSingleMap(frame,history,command)
   const document=frame.document
   if(!document)throw new Error('Create or load a dungeon map first.')
-  if(command.type==='map.effect.set'||command.type==='map.effect.remove'||command.type==='map.effect.duplicate'){
-    const effects=document.environmentalEffects?.effects??[]
-    let updated
-    if(command.type==='map.effect.set')updated=[...effects.filter(e=>e.id!==command.effect.id),command.effect]
-    else{
-      const source=effects.find(e=>e.id===command.id)
-      if(!source)throw new Error('Effect no longer exists.')
-      if(command.type==='map.effect.remove')updated=effects.filter(e=>e.id!==command.id)
-      else{if(effects.some(e=>e.id===command.newId))throw new Error('Effect ID is already in use.');updated=[...effects,{...source,id:command.newId}]}
+  if(command.type==='map.effect.set'||command.type==='map.effect.remove'||command.type==='map.effect.duplicate'||command.type==='map.effect.light.set'){
+    const effects=document.environmentalEffects?.effects??[],id=command.type==='map.effect.set'?command.effect.id:command.id,source=effects.find(e=>e.id===id)
+    let updated:typeof effects;let rig=document.lighting
+    const removeEmitter=(emitterId:string)=>{if(rig)rig={...rig,sources:rig.sources?.filter(s=>s.id!==emitterId)}}
+    const copyEmitter=(effect:typeof effects[number],newId:string)=>{
+      const original=rig?.sources?.find(s=>s.id===effect.light?.emitterId)
+      if(!original)throw new Error('Effect emitter is unavailable.')
+      const emitterId=effectEmitterId(newId)
+      if(rig?.sources?.some(s=>s.id===emitterId))throw new Error('Effect emitter ID is already in use.')
+      rig={...rig!,sources:[...(rig?.sources??[]),{...original,id:emitterId}]};return {emitterId}
     }
-    const next=reuseDungeonGeometry(document,readDungeon({...document,environmentalEffects:{version:1,effects:updated}}))
+    if(command.type==='map.effect.set'){
+      if(command.effect.light?.emitterId!==source?.light?.emitterId)throw new Error('Configure linked lights through effect lighting controls.')
+      updated=[...effects.filter(e=>e.id!==id),command.effect]
+      if(source?.light&&rig)rig={...rig,sources:rig.sources?.map(s=>s.id===source.light!.emitterId?{...s,floorId:command.effect.floorId,position:command.effect.position}:s)}
+    }else{
+      if(!source)throw new Error('Effect no longer exists.')
+      if(command.type==='map.effect.remove'){updated=effects.filter(e=>e.id!==id);if(source.light)removeEmitter(source.light.emitterId)}
+      else if(command.type==='map.effect.duplicate'){
+        if(effects.some(e=>e.id===command.newId))throw new Error('Effect ID is already in use.')
+        updated=[...effects,{...source,id:command.newId,...(source.light?{light:copyEmitter(source,command.newId)}:{})}]
+      }else{
+        if(!effectPreset(source.presetId).lighting)throw new Error('This effect does not support lighting.')
+        let next=source
+        if(command.appearance){
+          const emitterId=source.light?.emitterId??effectEmitterId(source.id)
+          if(!source.light&&rig?.sources?.some(s=>s.id===emitterId))throw new Error('Effect emitter ID is already in use.')
+          const emitter=pointLightSchema.parse({...command.appearance,id:emitterId,name:effectPreset(source.presetId).name,floorId:source.floorId,position:source.position})
+          rig={...(rig??{environment:legacyEnvironment}),sources:[...(rig?.sources??[]).filter(s=>s.id!==emitterId),emitter]}
+          next={...source,light:{emitterId}}
+        }else{if(source.light)removeEmitter(source.light.emitterId);const {light,...plain}=source;void light;next=plain}
+        updated=effects.map(e=>e.id===id?next:e)
+      }
+    }
+    const next=reuseDungeonGeometry(document,readDungeon({...document,...(rig?{lighting:rig}:{}),environmentalEffects:{version:1,effects:updated}}))
     return {frame:{...frame,document:next},history:{undo:bounded([...history.undo,structuredClone(frame)]),redo:[]}}
   }
   if(command.type==='map.fog.settings'||command.type==='map.fog.enabled'||command.type==='map.fog.reset'||command.type==='map.fog.mask'){
@@ -350,6 +382,7 @@ export function editMap(frame:MapFrame,history:MapHistory,command:MapCommand):{f
     next=readDungeon({...next,lighting:rig});return {frame:{...frame,document:reuseDungeonGeometry(document,next)},history:{undo:bounded([...history.undo,structuredClone(frame)]),redo:[]}}
   }
   if(command.type==='map.lighting.source.set'||command.type==='map.lighting.source.remove'||command.type==='map.lighting.source.duplicate'){
+    if(linkedEffect(document,command.type==='map.lighting.source.set'?command.source.id:command.id))throw new Error('Manage this emitter through its effect lighting controls.')
     const rig=structuredClone(document.lighting??{environment:legacyEnvironment}),sources=rig.sources??[]
     if(command.type==='map.lighting.source.set')rig.sources=[...sources.filter(s=>s.id!==command.source.id),command.source]
     else {const source=sources.find(s=>s.id===command.id);if(!source)throw new Error('Light no longer exists.');if(command.type==='map.lighting.source.remove')rig.sources=sources.filter(s=>s.id!==command.id);else{if(sources.some(s=>s.id===command.newId))throw new Error('Light ID is already in use.');rig.sources=[...sources,{...source,id:command.newId,name:source.name.slice(0,90)+' Copy'}]}}
@@ -396,7 +429,7 @@ export function editMap(frame:MapFrame,history:MapHistory,command:MapCommand):{f
   }
   let environmentalEffects=document.environmentalEffects
   if(environmentalEffects&&command.type==='map.level.remove')environmentalEffects={...environmentalEffects,effects:environmentalEffects.effects.filter(e=>e.floorId!==command.id)}
-  if(environmentalEffects&&command.type==='map.level.duplicate')environmentalEffects={...environmentalEffects,effects:[...environmentalEffects.effects,...environmentalEffects.effects.filter(e=>e.floorId===command.id).map((e,i)=>({...e,id:`${command.newId.slice(0,60)}:effect:${i}`,floorId:command.newId}))]}
+  if(environmentalEffects&&command.type==='map.level.duplicate')environmentalEffects={...environmentalEffects,effects:[...environmentalEffects.effects,...environmentalEffects.effects.filter(e=>e.floorId===command.id).map((e,i)=>{const originals=document.lighting?.sources?.filter(l=>l.floorId===command.id&&l.attachment?.kind!=='combatant')??[],lightIndex=originals.findIndex(s=>s.id===e.light?.emitterId);return {...e,id:`${command.newId.slice(0,60)}:effect:${i}`,floorId:command.newId,...(e.light?{light:{emitterId:`${command.newId.slice(0,60)}:light:${lightIndex}`}}:{})}})]}
   const composed=composeLevels({...document,...(environmentalEffects?{environmentalEffects}:{}),...(rig?{lighting:rig}:{})},levels)
   if(composed.fogOfWar){
     const floors=Object.fromEntries(Object.entries(composed.fogOfWar.floors).filter(([id])=>{const before=dungeonLevels(document).find(l=>l.id===id),after=levels.find(l=>l.id===id);return before&&after&&before.width===after.width&&before.height===after.height}))

@@ -1,3 +1,5 @@
+import FireEffect3D from './effects/FireEffect3D'
+import ParticleEffect3D from './effects/ParticleEffect3D'
 import {useEffect,useMemo,useRef} from 'react'
 import {useFrame,useThree} from '@react-three/fiber'
 import {BufferGeometry,Float32BufferAttribute,ShaderMaterial,Color,Sphere,Vector3,Points} from 'three'
@@ -32,10 +34,10 @@ function Motes({effect,quality,reduced}:{effect:EnvironmentalEffect;quality:Ligh
  useFrame(state=>{if(!ref.current)return;(ref.current.material as ShaderMaterial).uniforms.time.value=reduced?0:state.clock.elapsedTime*effect.speed;if(animate)state.invalidate()})
  return <points dispose={null} ref={ref} name={`environmental-effect:${effect.id}`} geometry={geometry} material={material} raycast={()=>null}/>
 }
-const renderers={motes:Motes}
+const renderers={motes:Motes,fire:FireEffect3D,atmosphere:ParticleEffect3D,sparks:ParticleEffect3D}
 export default function EnvironmentalEffects3D({effects,width,height,quality='medium',reduced=false,select,onSelect}:{effects:EnvironmentalEffect[];width:number;height:number;quality?:LightingQuality;reduced?:boolean;select:boolean;onSelect?:(id:string)=>void}){
  return <>{effects.map(effect=>{const Renderer=renderers[effectRegistry[effect.presetId].renderer];return <group key={effect.id} position={[effect.position.x+.5-width/2,effect.position.heightFeet/5,effect.position.z+.5-height/2]} rotation={[0,effect.rotation*Math.PI/180,0]} scale={effect.scale}>
- {effect.enabled&&<Renderer effect={effect} quality={quality} reduced={reduced}/>}
+ {effect.enabled&&effect.intensity>0&&effect.opacity>0&&<Renderer effect={effect} quality={quality} reduced={reduced}/>}
  {select&&<mesh name={`effect-gizmo:${effect.id}`} onPointerUp={e=>{if(e.button===0&&e.delta<=3){e.stopPropagation();onSelect?.(effect.id)}}}><sphereGeometry args={[.2,8,6]}/><meshBasicMaterial color={effect.color} wireframe depthTest={true}/></mesh>}
  </group>})}</>
 }

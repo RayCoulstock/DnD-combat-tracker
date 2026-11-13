@@ -492,3 +492,9 @@ Existing D3 canvas controls, C3 inspectors, floor-image recovery and phone A4 na
 | History/fullscreen | D3 existing controls | One completed command per history frame; camera/canvas identity retained. |
 | Local effect quality | D5 existing Rendering quality menu | Shares Low/Medium/High preference; reduced motion makes motes static. |
 | Destructive confirmation | E4 existing native modal | Focus/keyboard/touch behavior supplied by useConfirmation/Modal. |
+
+## Milestone 6.3B — elemental and atmospheric library
+
+D4 Effects → C3 Effects library now has category and preset selectors with one selected description and explicit Place / Add at level centre actions. This keeps the catalogue from pushing the selected inspector down an unbounded card list. C3 Effect properties adds supported particle density, lifetime, spread, vertical extent and drift; fire additionally exposes optional rising embers, disclosed as Medium/High only. Surface height/position retain existing square/feet units and explicit Apply.
+
+Fire's C3 Lighting section creates or removes an ordinary map emitter with explicit Apply effect light, independent light colour/intensity/radius/enabled/flicker and Reload saved effect light. Saved lighting scenes include its appearance. D4 Lighting explains that effect-owned sources are managed through Effects; it cannot move/attach/delete them independently. D3 history restores effect/emitter changes together. No new permanent toolbar, navigation row, dependency or canvas is introduced. Low/Medium/High and reduced motion retain D5 ownership. Steam short burst is described as repeating; cinematic one-shot controls remain the later D increment.
