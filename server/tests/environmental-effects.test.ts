@@ -36,7 +36,7 @@ class Client{
     assert.equal(result.ok,accepted,JSON.stringify(result));if(result.ok)await waitFor(()=>this.snapshot!.revision>=result.revision);return result
   }
 }
-import {createEffect,effectPresetIds} from '../../shared/environmentalEffects.ts'
+import {createEffect,effectPresetIds,magicalEffectPresetIds} from '../../shared/environmentalEffects.ts'
 import {initialFog,fullMask} from '../../shared/fog.ts'
 test('effects use authoritative receipts, privacy, reconnect and persisted snapshots',{timeout:90000},async()=>{
  const admin=new pg.Pool({connectionString:process.env.DATABASE_URL}),schema='effects_'+randomUUID().replaceAll('-',''),directory=await mkdtemp(join(tmpdir(),'ledger-effects-'));await admin.query(`CREATE SCHEMA ${schema}`)
@@ -74,7 +74,7 @@ test('effects use authoritative receipts, privacy, reconnect and persisted snaps
   assert.equal(dm.snapshot!.state.dungeonMap!.environmentalEffects!.effects.length,2);assert.equal(player.snapshot!.state.dungeonMap!.environmentalEffects!.effects.length,1)
   assert.equal(dungeonLevels(dm.snapshot!.state.dungeonMap!).length,2)
   // B uses the same command protocol for real emitters and every new rendering preset.
-  for(const id of effectPresetIds.filter(id=>id!=='magical-motes'))await dm.command({type:'map.effect.set',effect:createEffect('b-'+id,id,'ground',{x:10,z:10,heightFeet:0})})
+  for(const id of effectPresetIds.filter(id=>id!=='magical-motes'&&!magicalEffectPresetIds.includes(id)))await dm.command({type:'map.effect.set',effect:createEffect('b-'+id,id,'ground',{x:10,z:10,heightFeet:0})})
   await dm.command({type:'map.effect.light.set',id:'b-campfire',appearance:lightAppearanceSchema.parse({intensity:12,radius:4,flicker:{enabled:true}})})
   await waitFor(()=>player.snapshot!.revision===dm.snapshot!.revision)
   const emitterId=dm.snapshot!.state.dungeonMap!.environmentalEffects!.effects.find(e=>e.id==='b-campfire')!.light!.emitterId
@@ -96,6 +96,24 @@ test('effects use authoritative receipts, privacy, reconnect and persisted snaps
   const finalRevision=dm.snapshot!.revision;await new Promise(r=>setTimeout(r,150));assert.equal(dm.snapshot!.revision,finalRevision)
   for(const c of clients)c.socket?.disconnect();await app.close();app=createApplication(options);await new Promise<void>(r=>app.http.listen(port,'127.0.0.1',r));await Promise.all([dm.connect(campaign.id),player.connect(campaign.id)])
   assert.equal(dm.snapshot!.state.dungeonMap!.environmentalEffects!.effects.length,18);assert.equal(player.snapshot!.state.dungeonMap!.lighting!.sources!.length,1)
+  // C surfaces/energy remain the same authorized document and emitter protocol.
+  for(const id of magicalEffectPresetIds)await dm.command({type:'map.effect.set',effect:createEffect('c-'+id,id,'ground',{x:10,z:10,heightFeet:0})})
+  await dm.command({type:'map.effect.light.set',id:'c-fey-portal',appearance:lightAppearanceSchema.parse({color:'#7be3a3',intensity:9,radius:4})})
+  await waitFor(()=>player.snapshot!.revision===dm.snapshot!.revision)
+  assert.equal(dm.snapshot!.state.dungeonMap!.environmentalEffects!.effects.length,36);assert.equal(player.snapshot!.state.dungeonMap!.environmentalEffects!.effects.length,35)
+  const cPortal=dm.snapshot!.state.dungeonMap!.environmentalEffects!.effects.find(e=>e.id==='c-fey-portal')!,cLight=cPortal.light!.emitterId
+  await player.command({type:'map.effect.set',effect:{...cPortal,enabled:false}},false);await player.command({type:'map.effect.light.set',id:cPortal.id,appearance:null},false)
+  const combatBefore=JSON.stringify(dm.snapshot!.state.combatants),tokensBefore=JSON.stringify(dm.snapshot!.state.battleMap),fogBefore=JSON.stringify(dm.snapshot!.state.dungeonMap!.fogOfWar)
+  await dm.command({type:'map.effect.set',effect:{...cPortal,surface:{...cPortal.surface!,radius:2,pulse:.7,secondaryColor:'#ec88dd'}}})
+  assert.equal(JSON.stringify(dm.snapshot!.state.combatants),combatBefore);assert.equal(JSON.stringify(dm.snapshot!.state.battleMap),tokensBefore);assert.equal(JSON.stringify(dm.snapshot!.state.dungeonMap!.fogOfWar),fogBefore)
+  await dm.command({type:'map.fog.reset',confirmed:true,levelId:'ground'});await waitFor(()=>player.snapshot!.revision===dm.snapshot!.revision)
+  assert.equal(JSON.stringify(player.snapshot).includes('c-fey-portal'),false);assert.equal(JSON.stringify(player.snapshot).includes(cLight),false)
+  await dm.command({type:'map.fog.mask',levelId:'ground',mask:fullMask(20,20)})
+  late.socket?.disconnect();await late.connect(campaign.id);assert.equal(late.snapshot!.state.dungeonMap!.environmentalEffects!.effects.length,35)
+  const cFile=await dm.api(path+'/export');assert.equal(cFile.dungeonMap.environmentalEffects.effects.length,36)
+  for(const c of clients)c.socket?.disconnect();await app.close();app=createApplication(options);await new Promise<void>(r=>app.http.listen(port,'127.0.0.1',r));await Promise.all([dm.connect(campaign.id),player.connect(campaign.id)])
+  assert.equal(dm.snapshot!.state.dungeonMap!.environmentalEffects!.effects.find(e=>e.id==='c-fey-portal')!.surface!.radius,2);assert.equal(player.snapshot!.state.dungeonMap!.lighting!.sources!.length,2)
+
 
  }finally{for(const c of clients)c.socket?.disconnect();await app.close();await pool.end();await admin.query(`DROP SCHEMA ${schema} CASCADE`);await admin.end();await rm(directory,{recursive:true,force:true})}
 })

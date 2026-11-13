@@ -2,7 +2,7 @@ import {initialFog} from '../shared/fog'
 import {lightAppearanceSchema} from '../shared/lighting'
 import {test,expect,type Page} from '@playwright/test'
 import {blankDungeon} from '../shared/dungeon'
-import {createEffect,effectPresetIds,effectPreset} from '../shared/environmentalEffects'
+import {createEffect,effectPresetIds,magicalEffectPresetIds,effectPreset} from '../shared/environmentalEffects'
 import {sessionAction} from './shell-helpers'
 import {clickBattlefield} from './workspace-helpers'
 async function scene(page:Page){return page.locator('canvas:visible').evaluate(async node=>{
@@ -17,7 +17,7 @@ async function load(page:Page,map:unknown){await page.goto('/');const chooser=pa
 test('all elemental and atmospheric adapters render, scale quality and dispose when disabled',{timeout:120000},async({page})=>{
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error'&&/THREE.WebGLProgram|VALIDATE_STATUS|shader error/i.test(m.text()))errors.push(m.text())})
  await page.setViewportSize({width:1600,height:1000});await page.emulateMedia({reducedMotion:'reduce'})
- const effects=effectPresetIds.map((id,i)=>createEffect(id,id,'ground',{x:4+(i%5)*5,z:4+Math.floor(i/5)*6,heightFeet:effectPreset(id).renderer==='motes'?2.5:0}))
+ const effects=effectPresetIds.filter(id=>!magicalEffectPresetIds.includes(id)).map((id,i)=>createEffect(id,id,'ground',{x:4+(i%5)*5,z:4+Math.floor(i/5)*6,heightFeet:effectPreset(id).renderer==='motes'?2.5:0}))
  await load(page,{...blankDungeon('elemental','Elemental',30,30),environmentalEffects:{version:1,effects}})
  await expect.poll(async()=>(await scene(page)).list.filter(e=>e.name.startsWith('environmental-effect:')).length).toBe(17)
  expect((await scene(page)).list.filter(e=>e.layers===3).length).toBe(4)
