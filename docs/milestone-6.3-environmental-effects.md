@@ -123,3 +123,44 @@ Players receive detached resolved effect/light records only when the parent itse
 A shared mutable effect runtime drives shader time, transition opacity and scale in Fiber frames without React state per frame. Reduced motion bypasses transitions and particle animation. Frustum/distance-aware scheduling pauses offscreen shader updates and reduces distant updates; authoritative state and time continue so re-entry reconstructs correctly. Hidden/inactive floors unmount owned resources. Owned point lights use the same timeline/availability gate and cannot outlive an effect. Existing Low/Medium/High budgets, source ownership and scene behavior remain.
 
 Validation: state/command/time/attachment/privacy/lighting/history tests, real socket authorization/stamped timestamps/replay/stale revisions/reconnect/restart, browser lifecycle/GLB movement/rotation/reduced-motion/cleanup, representative 5/15/30-effect and multi-floor/fog scenes. Record actual average/p95 intervals and renderer counts with explicit software-renderer/device limits. Run the full existing required CI test categories and attempt the actual production image/recovery gate locally. Any unavailable remote/physical checks remain explicit limitations rather than a completion claim.
+
+### 6.3D implementation and review evidence
+
+Implemented the lifecycle, shared effect/light timeline and stable scenery/combatant attachments described above. Playback elapsed offsets support long-running sessions without a seven-day cutoff. Short one-shots cap overlapping fade windows; pulse and clock-skew samples remain bounded. Configuration and controls use revision checks; repeated activation does not restart an active effect. Paused shader time and light flicker remain fixed. Reduced motion and one-shots without lights still settle through one completion timer, with no persistent frame loop or server expiry write.
+
+Player snapshot caching retains existing map-revision and fog full-document rules and additionally compares a SHA-256 digest of the authorized projected document. This sends moved combatant attachments even when the stored map revision is unchanged, while preserving existing fog/lights synchronization contracts. Missing parents suspend both visual and light resources. Floor duplication remaps stable scenery targets and managed emitters. No SQL migration or new dependency is required. Older binaries reject D metadata: retain exports before coordinated rollback rather than stripping saved effects.
+
+The production Dockerfile now assigns runtime manifests and bundles to the existing non-root `node` user. This corrects startup when the build context has restrictive file modes. The built implementation image at `d7bbbd22afc845506af1d75737dac3b1b73f30af` passed the actual isolated Caddy HTTPS/auth/CSRF/WebSocket/GLB smoke gate and encrypted restic backup/check/restore gate, including wrong-password rejection, restart persistence and refusal to overwrite an existing restore target. These were disposable local stacks, not a production deployment.
+
+Reviewed [tablet playback](ui/milestone-6.3d-effects/playback-tablet.png) and [real GLB attachment](ui/milestone-6.3d-effects/attached-glb.png). Browser coverage includes manual activation across DM/player browsers, one-shot completion, pause/resume, reduced motion, parent move/rotation, missing-target suspension and detach. Shared/socket tests cover server timestamp replacement, authorization, stale revisions, replay/history, privacy, restart recovery and long-running/short-duration/skewed-clock timelines.
+
+Performance profiling uses Chromium ANGLE/Vulkan **SwiftShader**, Medium quality, 1600×1000 and 1024×768 viewport sizes. The latter is a viewport emulation, not a physical tablet. Each synthetic sample observes actual renderer-frame changes over two seconds after a 250ms warmup, including base/editor overhead. Scenes contain 5/15/30 effects, a two-floor warehouse attachment, and a fully revealed player-fog cavern with an owned light. Large maps use the supported 50×50 schema maximum; 60×60 is unsupported. Software measurements do not establish the requested 16.7ms desktop / 33.3ms tablet targets; physical GPU/tablet and private campaign-map acceptance remain outstanding.
+
+Manual acceptance before milestone completion (not performed against private maps or physical devices here):
+
+- [ ] Durran's Warehouse: burning crates/smoke/embers, character lantern, device sparks; Night Watch and fog; reveal entrance, move/rotate attachments, save/reload and join as player.
+- [ ] Myconid Cavern: mist/corruption/dormant portal; conceal/reveal chamber, activate across two browsers, disconnect/reconnect, deactivate and inspect all quality tiers.
+- [ ] Attach fire to a brazier, smoke to a chimney and motes to a character; inspect persisted offsets, target deletion, floor switches and fullscreen.
+- [ ] Test desktop GPU and physical tablet touch/pen, frame pacing and cleanup; verify lighting presets, fog masks and unrelated encounter data.
+- [ ] Required remote PR CI passes, D merges to main and publication completes. No automatic deployment; Milestone 7 needs separate approval.
+
+Final local automated checks: **199 unit/script tests passed**, 2 platform-dependent script skips; **116 PostgreSQL integration tests passed**; all **8 infrastructure tests passed**; lint, client/server typecheck, production build, actionlint, shellcheck and CI Python syntax checks passed. The build retains the existing bundle-size advisory. A complete serial browser run executed **82 cases across 40 specs: 80 passed, 2 failed**. The failures were initial navigation/startup timeouts in unchanged combatant-library and floor-inspector tests, before their feature assertions. They are recorded separately from isolated follow-up runs; no timeout, retry or product assertion was relaxed. The production image gate passed independently, and an SPDX SBOM was generated locally.
+
+The unchanged combatant-library and floor-inspector cases both passed in isolation. The final profiling run passed **10/10** after correcting a measurement readiness race: canvas visibility alone did not guarantee a mounted Fiber scene, so profiling now waits for the expected effect count before sampling. The earlier follow-up had 9/10 profiles pass and one null-root sample; this was not a product rendering assertion failure. No test timeout or retry was increased. The complete original browser batch remains recorded as 80/82 rather than relabeled as a clean run.
+
+Final software-renderer samples (milliseconds; short synthetic windows, not a hardware benchmark):
+
+| Scene | Viewport | Effects | Average / p95 ms | Draw calls / triangles | Particles | Geometries → cleared | Textures → cleared |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| small | desktop | 5 | 74.3 / 100.0 | 9 / 176 | 60 | 9 → 2 | 1 → 1 |
+| medium | desktop | 15 | 240.7 / 300.0 | 21 / 798 | 120 | 21 → 2 | 1 → 1 |
+| large | desktop | 30 | 271.4 / 316.6 | 30 / 1534 | 240 | 30 → 2 | 1 → 1 |
+| warehouse | desktop | 15 | 271.4 / 383.4 | 25 / 988 | 120 | 25 → 2 | 1 → 1 |
+| cavern | desktop | 15 | 158.3 / 250.0 | 22 / 800 | 120 | 22 → 2 | 2 → 1 |
+| small | tablet-viewport | 5 | 25.8 / 50.0 | 9 / 176 | 60 | 9 → 2 | 1 → 1 |
+| medium | tablet-viewport | 15 | 75.0 / 99.9 | 21 / 798 | 120 | 21 → 2 | 1 → 1 |
+| large | tablet-viewport | 30 | 82.6 / 100.0 | 27 / 1418 | 240 | 27 → 2 | 1 → 1 |
+| warehouse | tablet-viewport | 15 | 142.3 / 250.0 | 25 / 988 | 120 | 25 → 2 | 1 → 1 |
+| cavern | tablet-viewport | 15 | 89.7 / 100.1 | 22 / 800 | 120 | 22 → 2 | 2 → 1 |
+
+All ten cleanup samples returned to the empty-map baseline of two geometries and one renderer texture. The software frame-time target remains unmet, particularly for large/stacked scenes. Physical GPU measurements and optimization against those measurements remain necessary before accepting the performance target. D is implemented for review, not a claim that all milestone manual/remote acceptance gates have completed.

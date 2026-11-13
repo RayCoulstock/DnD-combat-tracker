@@ -19,6 +19,8 @@ for(const viewport of [{name:'desktop',width:1600,height:1000},{name:'tablet-vie
  effects[0]={...effects[0],light:{emitterId:'profile-light'}}
  map={...map,environmentalEffects:{version:1,effects},lighting:{environment:legacyEnvironment,sources:[{...lightAppearanceSchema.parse({intensity:8,radius:4}),id:'profile-light',name:'Profile light',floorId:'ground',position:effects[0].position}]}}
  const chooser=page.waitForEvent('filechooser');await sessionAction(page,'Import encounter');await(await chooser).setFiles({name:'profile.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({version:1,round:1,combatants:[],dungeonMap:map}))});if(fixture.name==='cavern'){await page.getByRole('button',{name:'Map editor',exact:true}).click();await page.getByRole('button',{name:'Player Preview',exact:true}).click()}else await page.getByRole('button',{name:'Battle map',exact:true}).click();if(fixture.name==='warehouse')await page.getByLabel('Battlefield level view',{exact:true}).selectOption('stacked')
+ // A visible canvas can precede Fiber mounting its scene; sample only a ready workload.
+ await expect.poll(()=>page.locator('canvas:visible').evaluate(async node=>{for(const url of [...new Set(performance.getEntriesByType('resource').map(e=>e.name).filter(n=>n.includes('/@react-three_fiber.js')))].reverse()){const m=await import(/* @vite-ignore */url),s=m._roots.get(node)?.store.getState();if(!s?.internal.active||!s.gl.info.render.frame)continue;let count=0;s.scene.traverse((o:{name:string})=>{if(o.name.startsWith('environmental-effect:'))count++});return count}return 0})).toBe(fixture.count)
  const result=await page.locator('canvas:visible').evaluate(async node=>{
   for(const url of [...new Set(performance.getEntriesByType('resource').map(e=>e.name).filter(n=>n.includes('/@react-three_fiber.js')))].reverse()){
    const m=await import(/* @vite-ignore */url),s=m._roots.get(node)?.store.getState();if(!s?.internal.active)continue;s.invalidate()
@@ -29,5 +31,10 @@ for(const viewport of [{name:'desktop',width:1600,height:1000},{name:'tablet-vie
   }return null
  })
  expect(result).not.toBeNull();expect(result!.samples).toBeGreaterThan(0)
- console.log('EFFECT_PROFILE '+JSON.stringify({scene:fixture.name,viewport:viewport.name,effects:fixture.count,quality:'medium',...result}))
+ const empty=page.waitForEvent('filechooser');await sessionAction(page,'Import encounter');await(await empty).setFiles({name:'empty.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({version:1,round:1,combatants:[],dungeonMap:blankDungeon('empty','Empty',fixture.size,fixture.size)}))})
+ const memory=()=>page.locator('canvas:visible').evaluate(async node=>{for(const url of [...new Set(performance.getEntriesByType('resource').map(e=>e.name).filter(n=>n.includes('/@react-three_fiber.js')))].reverse()){const m=await import(/* @vite-ignore */url),s=m._roots.get(node)?.store.getState();if(!s?.internal.active)continue;s.invalidate();return{...s.gl.info.memory}}return{geometries:Infinity,textures:Infinity}})
+ await expect.poll(async()=>(await memory()).geometries).toBeLessThan(result!.memory.geometries)
+ const afterCleanup=await memory()
+
+ console.log('EFFECT_PROFILE '+JSON.stringify({scene:fixture.name,viewport:viewport.name,effects:fixture.count,quality:'medium',...result,afterCleanup}))
 })
