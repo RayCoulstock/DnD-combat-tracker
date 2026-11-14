@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "mode": "scene-v1",
+  "options": {"width":30,"height":25,"roomCount":6,"minRoomSize":3,"maxRoomSize":7,"theme":"stone-dungeon","seed":"reproducible"},
+  "source": {"kind":"seeded"},
+  "floors": [{"id":"ground","elevationFeet":0}],
+  "zones": [{"id":"entry","floorId":"ground","roomIndex":0,"purpose":"entry","material":"stone","dressing":[{"tag":"storage","fallback":"crate","density":"sparse"}],"effects":["magical-motes"]}],
+  "transitions": [],
+  "budget": {"scenery":20,"effects":8,"lights":4,"shadowLights":0},
+  "fog":"concealed"
+}
