@@ -1,3 +1,6 @@
+import SceneProposalPanel from './scene-generation/SceneProposalPanel'
+import {generationPresets,presetOptions} from './scene-generation/presets'
+import type {SceneProposalAuthority} from './scene-generation/workflow'
 import EffectsPanel from './EffectsPanel'
 import {createEffect,effectPreset as presetMetadata,type EffectPresetId} from '../shared/environmentalEffects'
 import {sameFogMask} from '../shared/fogEditing'
@@ -44,8 +47,8 @@ export interface MapLibrary { campaignId: string; api: (path: string, body?: unk
 interface SavedMap { id: string; name: string; revision: number; document?: DungeonMap; width?: number; height?: number }
 const localTemplates = z.array(z.object({ id: z.uuid(), name: z.string().min(1).max(150), revision: z.number().int().positive(), document: dungeonSchema }).strict()).max(100)
 const localKey = 'ledger.dungeon.templates.v1'
-export default function DungeonBuilder({ state, editing, send, connected, library, battlefield, templatesRequest=0, visible=true }: {
-  visible?:boolean; templatesRequest?:number; state: EncounterState; editing: boolean; send: (command: GameCommand) => Promise<void>; connected: boolean; library?: MapLibrary
+export default function DungeonBuilder({ state, editing, send, connected, library, battlefield, templatesRequest=0, visible=true, sceneAuthority }: {
+  sceneAuthority?:SceneProposalAuthority; visible?:boolean; templatesRequest?:number; state: EncounterState; editing: boolean; send: (command: GameCommand) => Promise<void>; connected: boolean; library?: MapLibrary
   battlefield: Omit<BattleMap3DProps, 'map' | 'dungeonMap' | 'editor'>
 }) {
   const [fogSettings,setFogSettings]=useState<FogToolSettings>({shape:'brush',mode:'reveal',radius:1.5,snap:false})
@@ -94,7 +97,7 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
   const [seed, setSeed] = useState('my-dungeon')
   const [theme, setTheme] = useState<GenerationOptions['theme']>('stone-dungeon')
   const [roomCount, setRoomCount] = useState(4), [minRoomSize, setMinRoomSize] = useState(3), [maxRoomSize, setMaxRoomSize] = useState(6)
-  const [preview, setPreview] = useState<{ document: DungeonMap; options: GenerationOptions } | null>(null)
+  const [preview, setPreview] = useState<{ document: DungeonMap; options: GenerationOptions; scene?: boolean; revision: number } | null>(null)
   const [floorPreview,setFloorPreview]=useState<DungeonMap|null>(null)
   const previewState=useRef(state)
   useEffect(()=>{previewState.current=state},[state])
@@ -120,8 +123,8 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
     setMessageScope('map')
     try {
       const options = { width, height, roomCount, minRoomSize, maxRoomSize, theme, seed: newSeed }
-      setPreview({ document: generateDungeon(options), options }); setSeed(newSeed); setMessage('')
-    } catch (e) { setMessage((e as Error).message) }
+      setPreview({ document: generateDungeon(options), options, revision: state.mapRevision??0 }); setFloorPreview(null); setSeed(newSeed); setFailed(false); setMessage('')
+    } catch (e) { setPreview(null); setFailed(true); setMessage((e as Error).message) }
   }
   const request = async <T,>(path: string, body?: unknown) => await library!.api(`/campaigns/${library!.campaignId}/maps${path}`, body) as T
   const libraryApi = library?.api, libraryCampaign = library?.campaignId
@@ -141,6 +144,23 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
   }
   const dispatch = (command: GameCommand) => run(async() => {await sendToLevel(command);if(command.type==='map.terrain.stroke')setMessage('Terrain stroke saved.');if(command.type.startsWith('map.fog.'))setMessage(library?'Fog synced to encounter.':'Fog applied. Save a map template or export to keep a local copy.')},command.type.startsWith('map.fog.')?'fog':'map')
   const selectedTemplate = maps.find(m => m.id === templateId)
+  const applyGenerationPreset = (id: string) => {
+    if (!id) return
+    try {
+      const options = presetOptions(id, seed)
+      setWidth(options.width); setHeight(options.height); setRoomCount(options.roomCount)
+      setMinRoomSize(options.minRoomSize); setMaxRoomSize(options.maxRoomSize); setTheme(options.theme)
+      setPreview(null); setMessage(''); setFailed(false)
+    } catch (error) { setMessageScope('map'); setFailed(true); setMessage((error as Error).message) }
+  }
+  const proposalSource = selectedTemplate ? {
+    id: selectedTemplate.id, revision: selectedTemplate.revision, name: selectedTemplate.name,
+    load: async () => {
+      const source = library ? await request<SavedMap>(`/${selectedTemplate.id}`) : selectedTemplate
+      if (source.revision !== selectedTemplate.revision) throw new Error('Template changed. Refresh the library before previewing.')
+      return readDungeon(source.document)
+    },
+  } : undefined
   const localSave = (list: SavedMap[]) => { localStorage.setItem(localKey, JSON.stringify(localTemplates.parse(list))); setMaps(list) }
   const save = (overwrite: boolean) => run(async () => {
     if (!document) throw new Error('Create or generate a map first.')
@@ -308,8 +328,11 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
       {state.dungeonMap&&<TransitionsPanel map={state.dungeonMap} draft={transitionDraft} onDraft={setTransitionDraft} onNew={()=>{setTransitionDraft(newTransition(state.dungeonMap!));setTool('transition')}} onPick={pickTransition} onSelect={selectTransition} send={async command=>{setMessageScope('map');await send(command);setMessage('Transition saved.')}} disabled={!connected||busy||Boolean(preview)||Boolean(floorPreview)} onChooseAsset={library?()=>setTransitionAssetPicker(true):undefined}/>}
       {transitionPick&&<p role="status">Click the {transitionPick} square on {activeLevel?.name}.</p>}
       <h3 className="inspector-group-label">Map</h3>{state.dungeonMap&&<LightingScenesPanel document={state.dungeonMap} send={send} disabled={!connected||busy}/>}{state.dungeonMap&&<LightingEnvironmentPanel key={`global:${state.dungeonMap.id}`} document={state.dungeonMap} send={send} disabled={!connected||busy}/>}<InspectorSection title="Map file & templates" description={`${maps.length} saved`} sectionId="map-templates" persistenceKey="map-templates"><label className="template-name">Template name<input aria-label="Template name" value={name} maxLength={150} onChange={e=>setName(e.target.value)}/></label>        <div className="builder-row"><label>Saved maps<select aria-label="Saved maps" value={templateId} onChange={e => setTemplateId(e.target.value)}><option value="">Choose a template</option>{maps.map(m => <option key={m.id} value={m.id}>{m.name} · v{m.revision}</option>)}</select></label><button disabled={!selectedTemplate} onClick={loadTemplate}>Open saved map</button><button disabled={!selectedTemplate} onClick={() => void save(true)}>Overwrite selected template</button>{(['rename', 'duplicate', 'delete'] as const).map(action => <button key={action} disabled={!selectedTemplate} onClick={() => void manageTemplate(action)}>{action[0].toUpperCase() + action.slice(1)} template</button>)}</div></InspectorSection>
-      </fieldset><InspectorSection title="Generate dungeon" sectionId="generate-dungeon" persistenceKey="generate-dungeon" description={theme}>      {<div className="builder-preview"><h3>Dungeon generation</h3><div className="builder-row"><label>Theme<select aria-label="Theme" value={theme} onChange={e => setTheme(e.target.value as typeof theme)}>{themes.map(t => <option key={t}>{t}</option>)}</select></label><label>Generation width<input type="number" min={6} max={50} value={width} onChange={e => setWidth(Number(e.target.value))} /></label><label>Generation height<input type="number" min={6} max={50} value={height} onChange={e => setHeight(Number(e.target.value))} /></label><label>Rooms<input type="number" min={1} max={25} value={roomCount} onChange={e => setRoomCount(Number(e.target.value))} /></label><label>Minimum room size<input type="number" min={3} max={20} value={minRoomSize} onChange={e => setMinRoomSize(Number(e.target.value))} /></label><label>Maximum room size<input type="number" min={3} max={30} value={maxRoomSize} onChange={e => setMaxRoomSize(Number(e.target.value))} /></label><label>Random seed<input value={seed} onChange={e => setSeed(e.target.value)} maxLength={100} /></label><button disabled={busy} onClick={() => previewGeneration()}>Preview dungeon</button><button disabled={busy} onClick={() => previewGeneration(crypto.randomUUID())}>Regenerate with new seed</button></div>
-        {preview && <div className="builder-row"><strong>Preview only — the encounter has not changed.</strong><button disabled={!connected || busy} onClick={() => void run(async () => { if (state.dungeonMap && !confirm('Replace the encounter environment with this generated map? Saved templates and combat statistics stay unchanged.')) return; await send({ type: 'map.generate', options: preview.options }); setName(preview.document.name); setPreview(null) })}>Accept generated map</button><button onClick={() => setPreview(null)}>Cancel generation</button></div>}</div>}
+      </fieldset><InspectorSection title="Generate dungeon" sectionId="generate-dungeon" persistenceKey="generate-dungeon" description={theme}>      {<div className="builder-preview"><h3>Dungeon generation</h3>
+        <label>Generation preset<select disabled={busy||Boolean(preview?.scene)} aria-label="Generation preset" defaultValue="" onChange={e=>{applyGenerationPreset(e.target.value);e.target.value=''}}><option value="">Choose a preset</option>{generationPresets.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+        <SceneProposalPanel options={{width,height,roomCount,minRoomSize,maxRoomSize,theme,seed}} authority={sceneAuthority} source={proposalSource} onPreview={result=>{setFloorPreview(null);setPreview(result?{document:result.document,options:{width,height,roomCount,minRoomSize,maxRoomSize,theme,seed},scene:true,revision:state.mapRevision??0}:null)}}/>
+        <fieldset disabled={busy||Boolean(preview?.scene)} className="inspector-fields"><div className="builder-row"><label>Theme<select aria-label="Theme" value={theme} onChange={e => {setPreview(null);setTheme(e.target.value as typeof theme)}}>{themes.map(t => <option key={t}>{t}</option>)}</select></label><label>Generation width<input type="number" min={6} max={50} value={width} onChange={e => {setPreview(null);setWidth(Number(e.target.value))}} /></label><label>Generation height<input type="number" min={6} max={50} value={height} onChange={e => {setPreview(null);setHeight(Number(e.target.value))}} /></label><label>Rooms<input type="number" min={1} max={25} value={roomCount} onChange={e => {setPreview(null);setRoomCount(Number(e.target.value))}} /></label><label>Minimum room size<input type="number" min={3} max={20} value={minRoomSize} onChange={e => {setPreview(null);setMinRoomSize(Number(e.target.value))}} /></label><label>Maximum room size<input type="number" min={3} max={30} value={maxRoomSize} onChange={e => {setPreview(null);setMaxRoomSize(Number(e.target.value))}} /></label><label>Random seed<input value={seed} onChange={e => {setPreview(null);setSeed(e.target.value)}} maxLength={100} /></label><button disabled={busy} onClick={() => previewGeneration()}>Preview dungeon</button><button disabled={busy} onClick={() => previewGeneration(crypto.randomUUID())}>Regenerate with new seed</button></div>
+        {preview && !preview.scene && <div className="builder-row"><strong>Preview only — the encounter has not changed.</strong><button disabled={!connected || busy} onClick={() => void run(async () => { if(preview.revision!==(state.mapRevision??0))throw new Error('The encounter map changed. Preview again before accepting.'); if (state.dungeonMap && !confirm('Replace the encounter environment with this generated map? Saved templates and combat statistics stay unchanged.')) return; await send({ type: 'map.generate', options: preview.options }); setName(preview.document.name); setPreview(null) })}>Accept generated map</button><button onClick={() => setPreview(null)}>Cancel generation</button></div>}</fieldset></div>}
 </InspectorSection>
       <fieldset disabled={!connected||busy||Boolean(preview)} className="inspector-fields"><InspectorSection title="New blank map" description={`${width} × ${height}`} sectionId="new-blank-map" persistenceKey="new-blank-map">        <div className="builder-row"><label>Map name<input value={name} onChange={e => setName(e.target.value)} maxLength={150} /></label><label>Map width<input type="number" min={4} max={50} value={width} onChange={e => setWidth(Number(e.target.value))} /></label><label>Map height<input type="number" min={4} max={50} value={height} onChange={e => setHeight(Number(e.target.value))} /></label><button onClick={() => { if (!document || confirm('Replace the current environment with a blank map? Combatants are preserved; invalid token positions relocate deterministically.')) void dispatch({ type: 'map.blank', id: crypto.randomUUID(), name, width, height }) }}>Create blank map</button></div></InspectorSection></fieldset>
       {message&&messageScope!=='fog'&&<p role={failed?"alert":"status"}>{message}</p>}</div>
