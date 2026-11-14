@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "assets": [
+    {"id":"00000000-0000-4000-8000-000000000002","revision":1,"tags":["storage"],"footprint":{"width":2,"height":1},"blocking":true},
+    {"id":"00000000-0000-4000-8000-000000000001","revision":2,"tags":["storage","stone"],"footprint":{"width":1,"height":1},"blocking":true}
+  ],
+  "effects": ["small-flame","magical-motes"]
+}
