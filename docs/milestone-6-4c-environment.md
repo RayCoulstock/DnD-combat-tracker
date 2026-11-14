@@ -47,3 +47,23 @@ DM authority, source/manifest revision checks, atomic history and campaign isola
 preview/accept multiplayer and browser/server pipeline tests await that coordinator; this
 module is deliberately not enabled in production. Physical GPU/tablet budget measurement
 also remains an integration gate before enabling scene generation.
+
+## Validation evidence
+
+Validated implementation `eb283dd` on 14 November 2026:
+
+- `npm test`: 213 passed, 3 existing platform skips, no failures (36 script/UI plus
+  177 shared/server tests). Final focused adapter run: 8/8 passed after adding the
+  generated linked-glow projection test. Includes multi-floor equivalence, zero budgets,
+  collisions, preserved lifecycle fields, editability and variant fog geometry checks.
+- `npm run typecheck`, `npm run lint`, final focused adapter/test lint: passed.
+- `npm run build`: passed; existing large-bundle advisory remains.
+- `npm run test:integration`: 116 passed, no skips/failures, using a disposable local
+  PostgreSQL 17 container. Includes multiplayer authorization, effect/privacy/reconnect,
+  lighting persistence, campaign isolation and map templates/history.
+- `CHROMIUM_PATH=/usr/bin/chromium npm run test:e2e -- e2e/editor-workspace.spec.ts e2e/environmental-effects.spec.ts`:
+  2/2 passed against local Vite, covering editor/camera controls and existing effect
+  quality, reduced motion, history and resource cleanup. These are renderer regressions,
+  not a claim that the deferred scene coordinator is enabled or tested end to end.
+
+No production database, deployment, migration change or merge was used.
