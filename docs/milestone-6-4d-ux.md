@@ -1,84 +1,102 @@
-# 6.4D UX and coordinator integration
+# 6.4D UX and combined coordinator
 
 Authority: [Issue #58](https://github.com/RayCoulstock/DnD-combat-tracker/issues/58)
 and the approved `docs/milestone-6-4-scene-generator.md` ownership matrix.
-Started from main `11765df` (6.4A PR #59 merged), on isolated branch/worktree
-`codex/milestone-6.4d-ux`. No open B/C PRs or merged adapters were available at audit.
+Branch/worktree: `codex/milestone-6.4d-ux`. Updated from main
+`0b8d951` after B #61 and C #60 merged. No shared planning contract, generator
+internals or B/C implementation files were changed by D.
 
-## Delivered at the typed-mock integration boundary
+## Implemented behavior
 
 - Three editable generation presets retain the entered seed and feed the existing generator.
-  Preview/regenerate remain local; acceptance sends the reviewed legacy options to server
-  regeneration. Editing options invalidates the old preview; failed generation removes it.
-  Acceptance rejects a changed map revision. Cancel leaves the encounter unchanged.
-- Structured scene proposal editor uses the approved strict schema with no additional fields.
-  Seeded proposals derive from current options. Variant proposals load the selected template
-  without writes, pin its revision, copy actual floors/transitions, and preserve fog. Users
-  can edit zones, budgets, environment and all existing spec options as JSON and validate
-  offline. Natural language authoring remains deferred; there is no external model/API.
-- The pure coordinator uses the existing layout generator per floor, normalized authority
-  manifests, then explicit assets, environment and validation stages. It clones inputs and
-  stage boundaries, concatenates bounded diagnostics, validates canonical output and guards
-  source geometry/objects/effects/lights and fog. B's room resolver and spatial validator
-  are mandatory injected dependencies, with no identity defaults. Mocks exist only in tests.
-- The UI workflow snapshots the reviewed spec, ignores cancelled/out-of-order previews,
-  prevents duplicate accepts, retains preview after failed acceptance, and requires a new
-  variant name. Persistence is an authority dependency; browser mocks verify orchestration,
-  not database atomicity. The original template is never overwritten by this implementation.
+  Legacy preview/regenerate remain local; acceptance sends the reviewed legacy options for
+  server regeneration. Editing options invalidates the old preview; failed generation removes
+  it. Acceptance rejects a changed map revision. Cancel leaves the encounter unchanged.
+  The new stone preset uses minimum room size 4: size-3 legacy rooms can have an existing
+  prop on the essential room centre, which B correctly rejects. Other user-selected options
+  can still fail placement/routes; this integration surfaces the error without deleting props.
+- The structured proposal editor uses the approved strict schema. Seeded proposals derive
+  from current options. Variant proposals read the selected template without writes, pin
+  its revision, copy actual floors/transitions, and preserve fog. Zones, budgets, environment
+  and all existing spec options are editable as JSON and can be validated offline.
+- `coordinateSceneGeneration` now defaults to the **real merged adapters**:
+  layout -> `placeSceneAssets` -> `generateSceneEnvironment` -> final spatial validation.
+  Final validation reuses B's placement stage with no zones, so it checks existing/generated
+  footprints, overlap, geometry and essential routes after C without adding decoration twice.
+  It then validates canonical output. All inputs and stage boundaries are cloned, manifests
+  normalized, and bounded diagnostics concatenated in order. Explicit dependency injection
+  remains for focused failure/cancellation tests.
+- The builder uses the real pipeline for local offline scene previews, with no uploaded GLBs
+  eligible until the authority supplies verified footprint records. Built-in effects use the
+  fixed preset registry, and missing GLBs use B's checked procedural fallback. No client
+  library metadata is treated as verified occupancy. The same coordinator accepts an
+  authority-owned populated manifest when invoked on the server.
+- Scene preview has no persistence callback. Its accept button is disabled, and the workflow
+  also rejects programmatic acceptance without an authority adapter. Preview/cancel never
+  modifies the encounter. Legacy dungeon acceptance remains available. The workflow ignores
+  cancelled/out-of-order previews and prevents duplicate acceptance when a real accept port
+  is supplied. Test-only variant mocks demonstrate UI orchestration, not server persistence.
 
-## Integration gates and proposed shared additions (not registered)
+## Remaining review gates and proposed contract changes
 
-The contract is explicitly a planning contract, not an executable command. Rather than
-independently defining a wire protocol, this PR leaves `shared/sceneGeneration.ts`, fixtures,
-`shared/domain.ts`, `server/game.ts`, `server/maps.ts`, generator internals and B/C files
-unchanged. Scene preview/accept are disabled in the shipped builder until an authority
-adapter is supplied. The legacy generator remains enabled. This is the initial D delivery,
-not a claim that full scene generation or variant persistence is enabled.
+**Keep PR #62 in draft: combined seeded realization is integrated, but full scene/variant
+acceptance is not ready for final approval.** Both merged adapter handoffs identify the same
+missing variant-room seam; their merges did not approve a replacement contract.
 
-Proposed contract-owner review:
+1. B rejects variant placement, and C rejects effect-bearing variant zones, because the
+   approved context has no resolved room analysis for arbitrary edited geometry. The default
+   coordinator rejects variants explicitly and preserves the source. Proposed owner-reviewed
+   addition: authority-resolved per-floor room regions/centres tied to a checked source revision,
+   with ordering, irregular-room, entry and essential-route rules. Do not infer these from a
+   regenerated layout or bypass B's rejection. No shared schema/type was redefined here.
+2. The authority preview/accept protocol still needs review: approved spec plus encounter
+   revision, manifest snapshot identity, source revision and receipt semantics. Browser preview
+   JSON or a browser-supplied manifest must never become trusted persistence input. Agree the
+   snapshot protocol before defining new wire fields or registering a scene command.
+3. Acceptance must lock/authorize campaign, encounter, source and ready asset revisions,
+   reject stale snapshots, deterministically regenerate, synchronize references and apply one
+   `map.load` history frame under the existing receipt transaction. Atomic variant acceptance
+   additionally duplicates to a new UUID/name, applies to the variant encounter and saves
+   with encounter revision in that same transaction. Existing separate duplicate/load/save
+   HTTP requests are not a substitute. Destination encounter semantics also need agreement.
+4. Additional-floor seed suffixes can exceed the legacy 100-character limit. The documented
+   derivation continues to fail explicitly for that case; a bounded versioned derivation
+   requires owner review. No truncation or independent seed algorithm was introduced.
+5. Physical GPU/tablet measurements and full authoritative acceptance/stale manifest/source/
+   atomic-variant tests remain gates before enabling scene persistence. Natural language
+   authoring remains deferred; there is no external model/API or network requirement.
 
-1. Add an explicit scene preview/accept authority protocol carrying the approved spec,
-   encounter revision, manifest snapshot identity and command receipt. The browser must
-   not submit a trusted manifest or canonical document. Agree how the server pins and
-   verifies the preview snapshot before defining field names in a schema.
-2. Accept must lock/authorize the campaign, encounter, source template and ready asset
-   revisions, reject stale encounter/source/manifest, rerun realization with the same
-   snapshot, synchronize references and apply one `map.load` history frame under the
-   existing receipt transaction. SceneProposalAuthority is a local UI port, not this protocol.
-3. A variant accept must duplicate to a new UUID/name, load the transformed canonical copy
-   into the variant encounter, and save the new template with encounter revision in the
-   same transaction. Do not compose existing HTTP duplicate/load/save calls: they are
-   separate transactions and can leave a partial duplicate. Define whether the destination
-   encounter is newly created or explicitly selected; do not silently replace the source.
-4. B must supply verified footprint/ownership metadata, deterministic variant room analysis
-   and spatial validation in addition to placement; C supplies environment/fog integration.
-   The approved single-stage seam does not currently expose B's validation/room analysis.
-   The coordinator's local dependency interface requests those capabilities without changing
-   the shared contract. Adapt the real exports only after B/C merge and review the seam.
-5. Additional floor seeds can exceed the legacy 100-character limit after suffix derivation.
-   The coordinator currently fails explicitly; agree a versioned bounded derivation before
-   enabling that edge case. No truncation or independent hash algorithm was introduced.
+These are existing contract/authority gaps, not passing acceptance claims. The new PostgreSQL
+check below validates **combined canonical output through existing authorized map commands**;
+it does not implement or prove a new scene-spec acceptance protocol or atomic variant save.
 
-After B/C merge, rebase on main, replace test-only mocks with reviewed real adapters and
-implement the approved authority protocol. Require full browser/server equivalence, spatial
-failure/fallback, stale snapshots, multiplayer authorization/fog, atomic variants, history,
-restart/import/export and quality/budget acceptance before enabling scene acceptance.
+## Combined validation
 
-## Verification
+Validated against main `0b8d9516f6c5c2e3f0fe472f58d9ffa0a5783da2`:
 
-- `npm test`: 215 passed, 3 existing platform-dependent skips, zero failures
-  (36 script/UI + 179 shared/server; includes 9 new coordinator/workflow tests).
-- Final focused coordinator/workflow run: 9 passed, zero failures/skips.
-- `npm run test:integration`: 116 passed, zero failures/skips, against disposable
-  PostgreSQL 17 on loopback port 55464. Container removed after the run. Covers existing
-  authoritative generation, DM authority, campaign isolation, receipts, restart and effects.
+- `npm test`: **236 passed**, **3 existing platform-dependent skips**, zero failures
+  (36 script/UI + 200 shared/server). Includes both real adapter suites and 4 new combined
+  acceptance tests. Final strengthened preset/workflow run: **6 passed**, zero failures/skips.
+- `npm run test:integration`: **117 passed**, zero failures/skips, on disposable PostgreSQL
+  17 bound to loopback port 55464. The new combined-output check verifies one undo frame,
+  duplicate receipts, stale encounter rejection, player edit rejection, fog/glow projection,
+  undo/redo, campaign isolation, template save, export/import and backend restart. It also
+  verifies conservative concealment of generated linked glow crossing the map edge, even
+  under a fully revealed mask. It does not validate an unimplemented scene accept protocol.
 - `npm run typecheck`, `npm run lint`, `npm run build`, `git diff --check`: passed.
   Build retains the existing large-bundle advisory.
 - `CHROMIUM_PATH=/usr/bin/chromium npm run test:e2e -- e2e/scene-generation.spec.ts
-  e2e/editor-workspace.spec.ts e2e/environmental-effects.spec.ts`: 5 passed, zero failures/skips.
-  Browser tests distinguish production legacy/proposal validation from a test-only injected
-  B/C/authority harness; they do not establish atomic server variant persistence.
-- Re-fetched main before publication: still `11765df8149caf46e0637b560fdd76726a7ed4ca`.
+  e2e/scene-generation-combined.spec.ts e2e/scene-generation-assets.spec.ts
+  e2e/editor-workspace.spec.ts e2e/environmental-effects.spec.ts`: **7 passed**, zero
+  failures/skips. Real full-pipeline browser/Node equivalence includes populated and missing
+  manifests, zero budgets, multi-floor scenes and inaccessible transition rejection.
+- Re-fetched main before publication; B/C remain merged at the revision above.
 
-No test mock is imported by the application bundle. No production database, merge or
-deployment was used. Real-adapter and authority acceptance gates above remain outstanding.
+The combined checks cover real B/C stages,
+client/Node equivalence, immutability, populated/missing/oversized assets, absent effects,
+zero/dense budgets, multi-floor walkable transitions and rejected orphan endpoints, canonical
+editability, concealed linked glow, history, import/export and explicit variant rejection.
+Separate mock-only tests remain for in-flight cancel, out-of-order previews, duplicate accepts,
+conflicts and named variant UI orchestration. No mock is imported by the application bundle.
+
+No production database, migration change, merge to main or deployment is authorized or used.

@@ -1,3 +1,5 @@
+import { placeSceneAssets } from './sceneGenerationAssets.ts'
+import { generateSceneEnvironment } from './sceneGenerationEnvironment.ts'
 import { dungeonLevels, readDungeon, type DungeonMap } from './dungeon.ts'
 import { generateLayout } from './generator.ts'
 import { initialFog } from './fog.ts'
@@ -10,6 +12,15 @@ export interface SceneGenerationAdapters {
   // B owns room analysis and footprint/route validation; authorization is the caller's responsibility.
   validate: SceneGenerationStage
   resolveVariantRooms: (spec: SceneGenerationSpec, source: DungeonMap) => void
+}
+
+// B's placement stage also validates existing footprints/routes when given no zones.
+// Reuse that implementation after C without placing the same decoration twice.
+export const integratedSceneAdapters: SceneGenerationAdapters = {
+  assets: placeSceneAssets,
+  environment: generateSceneEnvironment,
+  validate: (spec, context, document) => placeSceneAssets({ ...spec, zones: [] }, context, document),
+  resolveVariantRooms: () => { throw new Error('Variant placement requires an approved room-analysis seam; source geometry was not changed.') },
 }
 
 function layout(spec: SceneGenerationSpec): DungeonMap {
@@ -56,7 +67,7 @@ function preserveVariant(source: DungeonMap, result: DungeonMap) {
 }
 
 // Pure realization only. Never accepts proposal-supplied manifests or saves client JSON.
-export function coordinateSceneGeneration(input: unknown, authorityContext: SceneGenerationContext, adapters: SceneGenerationAdapters): SceneGenerationResult {
+export function coordinateSceneGeneration(input: unknown, authorityContext: SceneGenerationContext, adapters: SceneGenerationAdapters = integratedSceneAdapters): SceneGenerationResult {
   const spec = sceneGenerationSpecSchema.parse(input)
   const context: SceneGenerationContext = { manifest: normalizeSceneManifest(authorityContext.manifest), ...(authorityContext.sourceDocument ? { sourceDocument: readDungeon(authorityContext.sourceDocument) } : {}) }
   let document = spec.source.kind === 'seeded' ? layout(spec) : variant(spec, context, adapters)

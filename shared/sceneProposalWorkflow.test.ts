@@ -1,3 +1,4 @@
+import { coordinateSceneGeneration } from './sceneGenerationCoordinator.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { SceneProposalWorkflow, type SceneProposalAuthority } from '../src/scene-generation/workflow.ts'
@@ -8,7 +9,13 @@ const spec = () => seededProposal(presetOptions('dungeon', 'test'))
 const result = (): SceneGenerationResult => ({ document: generateDungeon(spec().options), diagnostics: [] })
 const deferred = <T,>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(r => { resolve = r }); return { promise, resolve } }
 test('all editable presets fit, keep the seed and use the unchanged generator', () => {
-  for (const p of generationPresets) { const options = presetOptions(p.id, 'repeat'); assert.equal(options.seed, 'repeat'); assert.deepEqual(generateDungeon(options), generateDungeon(options)); assert.equal(seededProposal(options).options.theme, options.theme) }
+  for (const p of generationPresets) for (const seed of ['test', 'my-dungeon', 'browser-repeat']) {
+    const options = presetOptions(p.id, seed), proposal = seededProposal(options)
+    const realized = coordinateSceneGeneration(proposal, { manifest: { version: 1, assets: [], effects: [] } })
+    assert.equal(options.seed, seed)
+    assert.deepEqual(realized.document.floors, generateDungeon(options).floors)
+    assert.equal(proposal.options.theme, options.theme)
+  }
 })
 test('cancel and out-of-order previews cannot publish stale results or accept', async () => {
   const first = deferred<SceneGenerationResult>(), second = deferred<SceneGenerationResult>(); let calls = 0, saves = 0
@@ -40,4 +47,11 @@ test('invalid proposals fail before authority invocation and discard old preview
   let calls = 0
   const workflow = new SceneProposalWorkflow({ preview: async () => { calls++; return result() }, accept: async () => {} })
   await workflow.generate(spec()); await assert.rejects(workflow.generate({ ...spec(), code: 'execute' })); assert.equal(calls, 1); assert.equal(workflow.preview, null)
+})
+test('preview-only authority never invokes a persistence callback', async () => {
+  const workflow = new SceneProposalWorkflow({ preview: async () => result() })
+  await workflow.generate(spec())
+  await assert.rejects(workflow.accept(), /authoritative server/)
+  assert.ok(workflow.preview)
+  workflow.cancel(); assert.equal(workflow.preview, null)
 })

@@ -3,7 +3,7 @@ import { sceneGenerationSpecSchema, type SceneGenerationSpec, type SceneGenerati
 // UI dependency ports, not wire contracts. Authority must resolve revisions and commit atomically.
 export interface SceneProposalAuthority {
   preview: (spec: SceneGenerationSpec) => Promise<SceneGenerationResult>
-  accept: (spec: SceneGenerationSpec, preview: SceneGenerationResult, variantName?: string) => Promise<void>
+  accept?: (spec: SceneGenerationSpec, preview: SceneGenerationResult, variantName?: string) => Promise<void>
 }
 export class SceneProposalWorkflow {
   private epoch = 0
@@ -23,6 +23,7 @@ export class SceneProposalWorkflow {
     return this.preview
   }
   async accept(variantName?: string) {
+    if (!this.authority.accept) throw new Error('Scene acceptance requires an authoritative server adapter.')
     if (!this.value || this.pendingAccept) throw new Error('Preview the proposal before accepting.')
     const snapshot = structuredClone(this.value)
     if (snapshot.spec.source.kind === 'variant' && (!variantName?.trim() || variantName.trim().length > 150)) throw new Error('Name the new variant (1–150 characters).')

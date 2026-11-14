@@ -45,13 +45,13 @@ export default function SceneProposalPanel({ options, authority, onPreview, sour
         const preview = await workflow!.generate(input)
         if (preview) { onPreview(preview.result); setHasPreview(true); setMessage(preview.result.diagnostics.map(d => `${d.code}${d.zoneId ? ` (${d.zoneId})` : ''}`).join('; ') || 'Preview ready. The encounter has not changed.') }
       })}>Preview scene</button>
-      {hasPreview && <button type="button" disabled={!workflow || variant && !variantName.trim()} onClick={() => void run(async () => {
+      {hasPreview && <button type="button" disabled={!workflow || !authority?.accept || variant && !variantName.trim()} onClick={() => void run(async () => {
         setAccepting(true)
         try { await workflow!.accept(variantName); setHasPreview(false); onPreview(null); setMessage(variant ? 'Variant saved as a new template.' : 'Scene accepted.') } finally { setAccepting(false) }
       })}>{variant ? 'Accept and save new variant' : 'Accept scene'}</button>}
     </fieldset>
     {(hasPreview || busy) && <button type="button" disabled={accepting} onClick={cancel}>Cancel scene preview</button>}
-    {!authority && <p>Scene preview and saving variants are not available yet. You can edit and validate proposals now, or use dungeon generation below.</p>}
+    {!authority?.accept && <p>Scene previews are local. Accepting scenes and saving variants are not available yet; use dungeon generation below to create an encounter map.</p>}
     {message && <p role="status">{message}</p>}
   </details>
 }
