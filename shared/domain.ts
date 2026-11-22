@@ -229,7 +229,12 @@ export function applyMapEdit(state: EncounterState, actor: Actor, command: MapCo
     next=reconcileLevelTokens({...next,battleMap:{...next.battleMap,tokens:state.battleMap.tokens}})
     next=reconcileLightParents(state,next,command.type==='map.prop.remove'||command.type==='map.scenery.remove'||command.type==='map.level.remove')
     return { state: reconcileEffectParents(next), history: result.history }
-  } catch (error) { throw new DomainError('INVALID', error instanceof Error ? error.message : 'Invalid map edit.') }
+  } catch (error) {
+    if ((command.type === 'map.wall.place' || command.type === 'map.draw') && error instanceof z.ZodError) {
+      throw new DomainError('INVALID', error.issues.map(issue => issue.message).join(' '))
+    }
+    throw new DomainError('INVALID', error instanceof Error ? error.message : 'Invalid map edit.')
+  }
 }
 // Explicit allowlists: never send opaque stored objects to players.
 export function projectEncounter(state: EncounterState, actor: Actor): EncounterState {

@@ -24,6 +24,7 @@ export interface EditorInteraction {
   document?:DungeonMap
   drawing?: Omit<Drawing,'type'|'start'|'end'>
   onDraw?: (command:Drawing)=>void
+  onDrawRejected?: (message: string) => void
   toolbar?:ObjectToolbarContext
   selectedId?: string
   onHit: (hit: EditorHit) => void
@@ -49,7 +50,7 @@ function Instances({ transforms, color, shape = 'box', emissive = false, onHit }
     ref.current!.instanceMatrix.needsUpdate = true; ref.current!.computeBoundingSphere()
   }, [transforms])
   if (!transforms.length) return null
-  return <instancedMesh ref={ref} args={[undefined, undefined, transforms.length]} castShadow receiveShadow onPointerUp={e => { if (onHit && e.button === 0 && e.delta <= 3) { e.stopPropagation(); onHit(e.instanceId!) } }}>
+  return <instancedMesh ref={ref} args={[undefined, undefined, transforms.length]} castShadow receiveShadow onPointerUp={onHit ? e => { if (e.button === 0 && e.delta <= 3) { e.stopPropagation(); onHit(e.instanceId!) } } : undefined}>
     {shape === 'box' ? <boxGeometry /> : shape === 'cylinder' ? <cylinderGeometry args={[.5, .5, 1, 12]} /> : <sphereGeometry args={[.5, 10, 8]} />}
     <meshStandardMaterial color={color} roughness={.85} emissive={emissive ? color : '#000'} emissiveIntensity={emissive ? .7 : 0} />
   </instancedMesh>
@@ -82,7 +83,7 @@ export const DungeonScene = memo(function DungeonScene({ map, editor, assetScope
   return <>
     {map.props.filter(isScenery).map(prop => <Scenery3D key={prop.id} prop={prop} width={map.width} height={map.height} editor={editor} scope={assetScope} context={assetContext} />)}
     {groups.floors.map(g => <Instances key={g.type} color={g.color} emissive={g.type === 'lava'} transforms={g.transforms} />)}
-    {groups.walls.map(g => <Instances key={g.material} color={g.material === 'stone' ? '#666c6b' : '#775235'} transforms={g.walls.map(w => wallTransform(w, map))} onHit={editor && ['select', 'erase', 'wall', 'door'].includes(editor.tool) ? i => editor.onHit(hitWall(g.walls[i])) : undefined} />)}
+    {groups.walls.map(g => <Instances key={g.material} color={g.material === 'stone' ? '#666c6b' : '#775235'} transforms={g.walls.map(w => wallTransform(w, map))} onHit={editor && ['select', 'erase', 'door'].includes(editor.tool) ? i => editor.onHit(hitWall(g.walls[i])) : undefined} />)}
     {map.walls.filter(w=>w.visual&&!map.doors.some(d=>d.wallId===w.id)).map(wall=><ArchitecturalObject3D key={wall.id} wall={wall} map={map} editor={editor} scope={assetScope} context={assetContext}/>)}
     {map.doors.map(door=><ArchitecturalObject3D key={door.id} wall={map.walls.find(w=>w.id===door.wallId)!} door={door} map={map} editor={editor} scope={assetScope} context={assetContext}/>)}
     {(Object.keys(propParts) as Array<keyof typeof propParts>).map(type => {
@@ -108,6 +109,7 @@ function CellEditorSurface({ width, height, editor }: { width: number; height: n
     const distances = [fz, 1 - fx, 1 - fz, fx], edges = ['north', 'east', 'south', 'west'] as const
     return { edgeDistance: Math.min(...distances), position: sceneryAtPoint(x,z,width,height,editor.snap ?? true), cell, wall: canonicalWall(cell.x, cell.z, edges[distances.indexOf(Math.min(...distances))]) }
   }
+  const occupiedWall = editor.tool === 'wall' && hover && editor.document?.walls.some(wall => wall.id === hover.wall.id)
   const add = (hit: EditorHit | null) => { if (hit && stroke.current) { stroke.current.set(`${hit.cell.x}:${hit.cell.z}`, hit.cell); setPainted([...stroke.current.values()]) } }
   return <>
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, .002, 0]} onPointerMove={e => { const h = getHit(e); setHover(h); if (e.buttons & 1) add(h) }} onPointerLeave={() => setHover(null)}
@@ -117,10 +119,10 @@ function CellEditorSurface({ width, height, editor }: { width: number; height: n
     </mesh>
     {hover && editor.scenery && (editor.tool === 'scenery' || editor.tool === 'sceneryMove') && <Scenery3D prop={{ ...editor.scenery, position: hover.position! }} width={width} height={height} scope={editor.assetScope} context={editor.assetContext} preview />}
     {painted.map(cell => <mesh key={`${cell.x}:${cell.z}`} rotation={[-Math.PI / 2, 0, 0]} position={[cell.x - width / 2 + .5, .013, cell.z - height / 2 + .5]}><planeGeometry args={[.98,.98]} /><meshBasicMaterial color="#70c8ff" transparent opacity={.3} depthWrite={false} /></mesh>)}
-    {hover && ((editor.tool==='wall'&&editor.wallVisual)||(editor.tool==='door'&&editor.doorVisual)) && <ArchitecturalObject3D wall={hover.wall} door={editor.tool==='door'?{id:'door-preview',wallId:hover.wall.id,state:'closed'}:undefined} map={{width,height}} visual={editor.tool==='wall'?editor.wallVisual:editor.doorVisual} scope={editor.assetScope} context={editor.assetContext} preview/>}
+    {hover && ((editor.tool==='wall'&&!occupiedWall&&editor.wallVisual)||(editor.tool==='door'&&editor.doorVisual)) && <ArchitecturalObject3D wall={hover.wall} door={editor.tool==='door'?{id:'door-preview',wallId:hover.wall.id,state:'closed'}:undefined} map={{width,height}} visual={editor.tool==='wall'?editor.wallVisual:editor.doorVisual} scope={editor.assetScope} context={editor.assetContext} preview/>}
     {hover && (editor.tool === 'object'||editor.tool==='objectMove') && <mesh position={[hover.cell.x - width / 2 + .5, .35, hover.cell.z - height / 2 + .5]} rotation={[0, (editor.previewRotation ?? 0) * Math.PI / 180, 0]}><boxGeometry args={[.7,.7,.7]} /><meshBasicMaterial color="#70c8ff" transparent opacity={.35} depthWrite={false} /></mesh>}
     {hover && (editor.tool === 'wall' || editor.tool === 'door' ? <mesh position={[hover.wall.x - width / 2 + (hover.wall.axis === 'H' ? .5 : 0), .1, hover.wall.z - height / 2 + (hover.wall.axis === 'V' ? .5 : 0)]}><boxGeometry args={hover.wall.axis === 'H' ? [1, .12, .18] : [.18, .12, 1]} /><meshBasicMaterial color="#70c8ff" transparent opacity={.6} depthWrite={false} /></mesh> : <mesh rotation={[-Math.PI / 2, 0, 0]} position={[hover.cell.x - width / 2 + .5, .012, hover.cell.z - height / 2 + .5]}><planeGeometry args={[.98, .98]} /><meshBasicMaterial color="#70c8ff" transparent opacity={.35} depthWrite={false} /></mesh>)}
   </>
 }
 
-export function EditorSurface(props:{width:number;height:number;editor:EditorInteraction}){return props.editor.tool==='fog'&&props.editor.fog?<FogEditorSurface key={JSON.stringify([props.editor.activation,props.width,props.height,props.editor.fog.floorId,props.editor.fog.revision,props.editor.fog.shape,props.editor.fog.mode,props.editor.fog.radius,props.editor.fog.snap,props.editor.fog.disabled,props.editor.fog.mask])} {...props}/>:props.editor.tool==='floor'&&props.editor.terrain?<TerrainBrushSurface key={props.editor.activation} {...props}/>:props.editor.drawing&&props.editor.onDraw?<DrawingSurface key={props.editor.tool} width={props.width} height={props.height} document={props.editor.document} settings={props.editor.drawing} onCommit={props.editor.onDraw}/>:<CellEditorSurface key={props.editor.tool} {...props}/> }
+export function EditorSurface(props:{width:number;height:number;editor:EditorInteraction}){return props.editor.tool==='fog'&&props.editor.fog?<FogEditorSurface key={JSON.stringify([props.editor.activation,props.width,props.height,props.editor.fog.floorId,props.editor.fog.revision,props.editor.fog.shape,props.editor.fog.mode,props.editor.fog.radius,props.editor.fog.snap,props.editor.fog.disabled,props.editor.fog.mask])} {...props}/>:props.editor.tool==='floor'&&props.editor.terrain?<TerrainBrushSurface key={props.editor.activation} {...props}/>:props.editor.drawing&&props.editor.onDraw?<DrawingSurface key={props.editor.tool} width={props.width} height={props.height} document={props.editor.document} settings={props.editor.drawing} onCommit={props.editor.onDraw} onRejected={props.editor.onDrawRejected}/>:<CellEditorSurface key={props.editor.tool} {...props}/> }

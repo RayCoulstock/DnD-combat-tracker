@@ -34,3 +34,28 @@ test('unified object selection retains every procedural prop with search and cat
   assert.deepEqual(builtinObjects.map(o=>o.type),[...propTypes]);assert.equal(filterBuiltinObjects(' CHAIR ','furniture')[0].type,'chair')
   assert.equal(filterBuiltinObjects('chair','terrain').length,0);assert.equal(filterBuiltinObjects('','architecture')[0].type,'pillar')
 })
+
+test('a floor at its custom architecture limit can still accept built-in walls', async () => {
+  const { applyMapEdit, importEncounter } = await import('./domain.ts')
+  const walls = Array.from({ length: 199 }, (_, i) => ({ ...canonicalWall(i % 20, Math.floor(i / 20), 'north'), visual }))
+  const state = importEncounter({
+    version: 1, round: 1, combatants: [],
+    dungeonMap: {
+      ...blankDungeon('m', 'Map'), schemaVersion: 3, walls,
+      doors: [{ id: 'door', wallId: walls[0].id, state: 'closed', visual }],
+    },
+  })
+  const actor = { id: 'dm', role: 'dm' } as const
+  const candidate = canonicalWall(1, 10, 'north')
+  const history = emptyHistory()
+  assert.throws(
+    () => applyMapEdit(state, actor, { type: 'map.wall.place', wall: { ...candidate, visual } }, history),
+    { message: 'Too many custom architectural visuals (maximum 200).' },
+  )
+  assert.equal(state.dungeonMap!.walls.length, 199)
+  assert.equal(history.undo.length, 0)
+  const placed = applyMapEdit(state, actor, { type: 'map.wall.place', wall: candidate }, history)
+  assert.deepEqual(placed.state.dungeonMap!.walls, [...walls, candidate])
+  assert.deepEqual(placed.state.dungeonMap!.doors, state.dungeonMap!.doors)
+  assert.equal(placed.history.undo.length, 1)
+})

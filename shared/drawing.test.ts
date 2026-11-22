@@ -32,3 +32,22 @@ test('corridors cut only their connecting walls and retain unrelated architectur
  assert.equal(result.frame.document!.walls.some(w=>w.id==='V:6:3'),false)
  assert.ok(result.frame.document!.walls.find(w=>w.id==='V:15:15')!.visual)
 })
+
+test('successive wall lines grow the same map through 1,000 segments', () => {
+  let result: ReturnType<typeof editMap> = {
+    frame: { document: blankDungeon('large-map', 'Large map', 50, 50), width: 50, height: 50 },
+    history: emptyHistory(),
+  }
+  for (let z = 0; z < 40; z++) {
+    const before = result.frame
+    result = editMap(before, result.history, command('wall-line', { x: 0, z }, { x: 25, z }))
+    const count = 25 * (z + 1)
+    if (![25, 50, 100, 250, 500, 1000].includes(count)) continue
+    const walls = result.frame.document!.walls
+    assert.equal(walls.length, count)
+    assert.equal(new Set(walls.map(wall => wall.id)).size, count)
+    const undo = editMap(result.frame, result.history, { type: 'map.undo' })
+    assert.deepEqual(undo.frame, before)
+    assert.deepEqual(editMap(undo.frame, undo.history, { type: 'map.redo' }).frame, result.frame)
+  }
+})
