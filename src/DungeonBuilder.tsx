@@ -88,7 +88,7 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
   const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0)
   const [doorState, setDoorState] = useState<'open' | 'closed' | 'locked'>('closed')
   const [message, setMessage] = useState(''),[failed,setFailed]=useState(false)
-  const [messageScope,setMessageScope]=useState<'map'|'fog'>('map')
+  const [messageScope,setMessageScope]=useState<'map'|'fog'|'wall'>('map')
   const [busy, setBusy] = useState(false)
   const [maps, setMaps] = useState<SavedMap[]>([])
   const [templateId, setTemplateId] = useState('')
@@ -138,12 +138,28 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
     void load().catch(e => { if (!cancelled) setMessage(e.message) })
     return () => { cancelled = true }
   }, [libraryApi, libraryCampaign, refresh])
-  const run = async (fn: () => Promise<unknown>,scope:'map'|'fog'='map') => {
+  const run = async (fn: () => Promise<unknown>,scope:typeof messageScope='map') => {
     if (!connected || busy||fogPreview) return
     setMessageScope(scope);setBusy(true);setFailed(false); setMessage('')
     try { await fn(); setRefresh(n => n + 1) } catch (error) {setFailed(true); setMessage((error as Error).message) } finally { setBusy(false) }
   }
-  const dispatch = (command: GameCommand) => run(async() => {await sendToLevel(command);if(command.type==='map.terrain.stroke')setMessage('Terrain stroke saved.');if(command.type.startsWith('map.fog.'))setMessage(library?'Fog synced to encounter.':'Fog applied. Save a map template or export to keep a local copy.')},command.type.startsWith('map.fog.')?'fog':'map')
+  const wallError = (message: string) => {
+    setMessageScope('wall')
+    setFailed(true)
+    setMessage(message)
+  }
+  const dispatch = async (command: GameCommand) => {
+    const scope = command.type.startsWith('map.fog.') ? 'fog' : command.type === 'map.draw' || command.type === 'map.wall.place' ? 'wall' : 'map'
+    if (scope === 'wall' && busy) {
+      wallError('Wait for the current map edit to finish, then try placing the wall again.')
+      return
+    }
+    return run(async () => {
+      await sendToLevel(command)
+      if (command.type === 'map.terrain.stroke') setMessage('Terrain stroke saved.')
+      if (scope === 'fog') setMessage(library ? 'Fog synced to encounter.' : 'Fog applied. Save a map template or export to keep a local copy.')
+    }, scope)
+  }
   const selectedTemplate = maps.find(m => m.id === templateId)
   const applyGenerationPreset = (id: string) => {
     if (!id) return
@@ -219,8 +235,16 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
       return
     }
     if (tool === 'floor') { void dispatch({ type: 'map.floor.paint', cells: [value.cell], material: floor }); return }
-    if (tool === 'wall' && (value.kind === 'wall' || value.kind === 'door')) { setSelected(value); return }
-    if (tool === 'wall') void dispatch({ type: 'map.wall.place', wall: { ...value.wall, material: wallMaterial, ...(wallAsset?{visual:visualFor(wallAsset)}:{}) } })
+    if (tool === 'wall') {
+      // Resolve selection from the same grid edge as the placement preview.
+      const wall = document?.walls.find(w => w.id === value.wall.id)
+      if (wall) {
+        const door = document?.doors.find(d => d.wallId === wall.id)
+        setSelected({ ...value, wall, kind: door ? 'door' : 'wall', objectId: door?.id ?? wall.id })
+      } else {
+        void dispatch({ type: 'map.wall.place', wall: { ...value.wall, material: wallMaterial, ...(wallAsset ? { visual: visualFor(wallAsset) } : {}) } })
+      }
+    }
     else if (tool === 'door') {
       const wall = document?.walls.find(w => w.id === value.wall.id)
       if (!wall) { setMessage('Place a wall on this edge first.'); return }
@@ -292,7 +316,7 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
   const fogMask=state.dungeonMap?.fogOfWar?.floors[activeId]??''
   const saveFogMask=(mask:string,expectedMask:string,expectedMapRevision=state.mapRevision??0)=>{if(sameFogMask(mask,expectedMask))return;void dispatch({type:'map.fog.mask',levelId:activeId,mask,expectedMask,expectedMapRevision})}
   const resetFog=(all:boolean)=>{if(confirm(all?'Reset Fog on every floor? All revealed areas will be concealed. This can be undone.':`Reset Fog on ${activeLevel?.name}? This can be undone.`))void dispatch({type:'map.fog.reset',confirmed:true,...(all?{}:{levelId:activeId})})}
-  const editor: EditorInteraction = {fog:{...fogSettings,edgeSoftness:state.dungeonMap?.fogOfWar?.appearance.edgeSoftness??0,floorId:activeId,revision:state.mapRevision??0,mask:fogMask,disabled:busy||!connected||!state.dungeonMap?.fogOfWar?.enabled||!visible,overlay:fogOverlay&&Boolean(state.dungeonMap?.fogOfWar?.enabled),controller:fogController,onPolygonState:setFogPolygon,onCommit:saveFogMask},...(terrainSettings.mode!=='cells'?{terrain:{disabled:busy,mode:terrainSettings.mode,brush:terrainSettings.brush,texture:terrainSettings.texture,onStroke:stroke=>{void dispatch({type:'map.terrain.stroke',stroke})}}}:{}), transitionPicking:Boolean(transitionPick), activation:toolEpoch, document:document??undefined, toolbar:objectToolbar, drawing: ['wall-line','room','corridor'].includes(tool)?{kind:tool as 'wall-line'|'room'|'corridor',width:corridorWidth,wallsOnly,floor,material:wallMaterial,visual:visualFor(wallAsset)}:undefined,onDraw:command=>{void dispatch(command)}, wallVisual:visualFor(wallAsset),doorVisual:visualFor(doorAsset), snap, scenery: tool === 'sceneryMove' && prop && isScenery(prop) ? prop : sceneryAsset ?? undefined, assetScope: battlefield.assetScope, assetContext: battlefield.assetContext, tool, selectedId: selected?.objectId, previewRotation: tool==='objectMove'&&prop&&!isScenery(prop)?prop.rotation:rotation, onHit: hit, onPaint: cells => { void dispatch({ type: 'map.floor.paint', cells, material: floor }) } }
+  const editor: EditorInteraction = {fog:{...fogSettings,edgeSoftness:state.dungeonMap?.fogOfWar?.appearance.edgeSoftness??0,floorId:activeId,revision:state.mapRevision??0,mask:fogMask,disabled:busy||!connected||!state.dungeonMap?.fogOfWar?.enabled||!visible,overlay:fogOverlay&&Boolean(state.dungeonMap?.fogOfWar?.enabled),controller:fogController,onPolygonState:setFogPolygon,onCommit:saveFogMask},...(terrainSettings.mode!=='cells'?{terrain:{disabled:busy,mode:terrainSettings.mode,brush:terrainSettings.brush,texture:terrainSettings.texture,onStroke:stroke=>{void dispatch({type:'map.terrain.stroke',stroke})}}}:{}), transitionPicking:Boolean(transitionPick), activation:toolEpoch, document:document??undefined, toolbar:objectToolbar, drawing: ['wall-line','room','corridor'].includes(tool)?{kind:tool as 'wall-line'|'room'|'corridor',width:corridorWidth,wallsOnly,floor,material:wallMaterial,visual:visualFor(wallAsset)}:undefined,onDraw:command=>{void dispatch(command)},onDrawRejected:wallError, wallVisual:visualFor(wallAsset),doorVisual:visualFor(doorAsset), snap, scenery: tool === 'sceneryMove' && prop && isScenery(prop) ? prop : sceneryAsset ?? undefined, assetScope: battlefield.assetScope, assetContext: battlefield.assetContext, tool, selectedId: selected?.objectId, previewRotation: tool==='objectMove'&&prop&&!isScenery(prop)?prop.rotation:rotation, onHit: hit, onPaint: cells => { void dispatch({ type: 'map.floor.paint', cells, material: floor }) } }
   const playerView=fogPreview?projectEncounter(state,{id:'fog-preview',role:'player'}):undefined
   const inspector=<>
     <aside className="builder-tools inspector" hidden={!editing} aria-label="Map inspector">
@@ -336,7 +360,7 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
         {preview && !preview.scene && <div className="builder-row"><strong>Preview only — the encounter has not changed.</strong><button disabled={!connected || busy} onClick={() => void run(async () => { if(preview.revision!==(state.mapRevision??0))throw new Error('The encounter map changed. Preview again before accepting.'); if (state.dungeonMap && !confirm('Replace the encounter environment with this generated map? Saved templates and combat statistics stay unchanged.')) return; await send({ type: 'map.generate', options: preview.options }); setName(preview.document.name); setPreview(null) })}>Accept generated map</button><button onClick={() => setPreview(null)}>Cancel generation</button></div>}</fieldset></div>}
 </InspectorSection>
       <fieldset disabled={!connected||busy||Boolean(preview)} className="inspector-fields"><InspectorSection title="New blank map" description={`${width} × ${height}`} sectionId="new-blank-map" persistenceKey="new-blank-map">        <div className="builder-row"><label>Map name<input value={name} onChange={e => setName(e.target.value)} maxLength={150} /></label><label>Map width<input type="number" min={4} max={50} value={width} onChange={e => setWidth(Number(e.target.value))} /></label><label>Map height<input type="number" min={4} max={50} value={height} onChange={e => setHeight(Number(e.target.value))} /></label><button onClick={() => { if (!document || confirm('Replace the current environment with a blank map? Combatants are preserved; invalid token positions relocate deterministically.')) void dispatch({ type: 'map.blank', id: crypto.randomUUID(), name, width, height }) }}>Create blank map</button></div></InspectorSection></fieldset>
-      {message&&messageScope!=='fog'&&<p role={failed?"alert":"status"}>{message}</p>}</div>
+      {message&&messageScope==='map'&&<p role={failed?"alert":"status"}>{message}</p>}</div>
     </aside>
   </>
   return <section ref={workspaceRef} className="dungeon-builder" data-editing={editing} data-inspector-hidden={inspectorHidden}>
@@ -349,7 +373,7 @@ export default function DungeonBuilder({ state, editing, send, connected, librar
       setArchitecturalPicker(null)
     }}/></Modal>}
     {pickingScenery && <Modal label="Add Object" onClose={()=>setPickingScenery(false)}><AssetLibrary api={library?.api ?? (async () => ({assets:[],total:0,maxBytes:25*1024*1024}))} pickerTitle="Add Object" onPickBuiltin={type => { setPropType(type); setSceneryAsset(null); setPickingScenery(false); setTool('object') }} csrf="" onClose={() => setPickingScenery(false)} onPick={chooseScenery} /></Modal>}
-    <BattleMap3D {...battlefield} onSelectEffect={activateEffects} onSelectLight={activateLighting} onSelectTransition={id=>{const transition=state.dungeonMap?.transitions?.find(t=>t.id===id);if(transition)selectTransition(transition)}} showSharedControls={floorPreview ? false : battlefield.showSharedControls} editorInspector={inspector} inspectorOpen={!inspectorHidden} onInspectorOpen={open=>setInspectorHidden(!open)} toolHint={editing&&tool==='effects'?`Effects · ${effectPreset?'Click or tap a square to place '+presetMetadata(effectPreset).name:'Select a gizmo or use the effects list'} · Escape cancels · Visual only`:editing&&tool==='fog'?`${fogSettings.mode==='reveal'?'Reveal':'Conceal'} ${fogSettings.shape} · ${fogSettings.shape==='polygon'?'Tap vertices, then Finish polygon in the inspector':'Left mouse, pen or one finger edits'} · Escape cancels`:editing&&tool==='lighting'?`Lighting · ${lightAction==='place'?'Click a square to add '+lightTemplate:lightAction==='move'?'Click a square to move the light':'Select a gizmo or use the light list'} · Visual only`:editing&&tool==='floor'&&terrainSettings.mode!=='cells'?`${terrainSettings.mode==='paint'?'Terrain brush':'Terrain eraser'} · Left: paint · Middle: orbit · Right: pan · Escape: cancel`:editing&&transitionPick?`Click the ${transitionPick} square on ${activeLevel?.name}.`:undefined} historyControls={editing?<div className="editor-history-controls"><Button disabled={!connected||busy||Boolean(preview)||!state.mapUndoDepth} onClick={()=>void dispatch({type:'map.undo'})}>Undo map edit</Button><Button disabled={!connected||busy||Boolean(preview)||!state.mapRedoDepth} onClick={()=>void dispatch({type:'map.redo'})}>Redo map edit</Button><Menu label="History" items={[{id:'undo',label:'Undo map edit',onSelect:()=>void dispatch({type:'map.undo'}),disabled:!connected||busy||Boolean(preview)||!state.mapUndoDepth},{id:'redo',label:'Redo map edit',onSelect:()=>void dispatch({type:'map.redo'}),disabled:!connected||busy||Boolean(preview)||!state.mapRedoDepth},{id:'clear',label:'Clear map history',danger:true,onSelect:()=>{if(confirm('Clear map undo and redo history? This cannot be undone.'))void dispatch({type:'map.history.clear'})},disabled:!connected||busy||Boolean(preview)}]}/></div>:undefined} canvasTools={editing?<fieldset disabled={!connected||busy||Boolean(preview)||Boolean(floorPreview)} className="editor-palette" aria-label="Editor tools">
+    <BattleMap3D {...battlefield} placementHint={editing && messageScope === 'wall' && failed && message ? <span role="alert">{message}</span> : battlefield.placementHint} onSelectEffect={activateEffects} onSelectLight={activateLighting} onSelectTransition={id=>{const transition=state.dungeonMap?.transitions?.find(t=>t.id===id);if(transition)selectTransition(transition)}} showSharedControls={floorPreview ? false : battlefield.showSharedControls} editorInspector={inspector} inspectorOpen={!inspectorHidden} onInspectorOpen={open=>setInspectorHidden(!open)} toolHint={editing&&tool==='effects'?`Effects · ${effectPreset?'Click or tap a square to place '+presetMetadata(effectPreset).name:'Select a gizmo or use the effects list'} · Escape cancels · Visual only`:editing&&tool==='fog'?`${fogSettings.mode==='reveal'?'Reveal':'Conceal'} ${fogSettings.shape} · ${fogSettings.shape==='polygon'?'Tap vertices, then Finish polygon in the inspector':'Left mouse, pen or one finger edits'} · Escape cancels`:editing&&tool==='lighting'?`Lighting · ${lightAction==='place'?'Click a square to add '+lightTemplate:lightAction==='move'?'Click a square to move the light':'Select a gizmo or use the light list'} · Visual only`:editing&&tool==='floor'&&terrainSettings.mode!=='cells'?`${terrainSettings.mode==='paint'?'Terrain brush':'Terrain eraser'} · Left: paint · Middle: orbit · Right: pan · Escape: cancel`:editing&&transitionPick?`Click the ${transitionPick} square on ${activeLevel?.name}.`:undefined} historyControls={editing?<div className="editor-history-controls"><Button disabled={!connected||busy||Boolean(preview)||!state.mapUndoDepth} onClick={()=>void dispatch({type:'map.undo'})}>Undo map edit</Button><Button disabled={!connected||busy||Boolean(preview)||!state.mapRedoDepth} onClick={()=>void dispatch({type:'map.redo'})}>Redo map edit</Button><Menu label="History" items={[{id:'undo',label:'Undo map edit',onSelect:()=>void dispatch({type:'map.undo'}),disabled:!connected||busy||Boolean(preview)||!state.mapUndoDepth},{id:'redo',label:'Redo map edit',onSelect:()=>void dispatch({type:'map.redo'}),disabled:!connected||busy||Boolean(preview)||!state.mapRedoDepth},{id:'clear',label:'Clear map history',danger:true,onSelect:()=>{if(confirm('Clear map undo and redo history? This cannot be undone.'))void dispatch({type:'map.history.clear'})},disabled:!connected||busy||Boolean(preview)}]}/></div>:undefined} canvasTools={editing?<fieldset disabled={!connected||busy||Boolean(preview)||Boolean(floorPreview)} className="editor-palette" aria-label="Editor tools">
       <Button aria-label="Select" aria-pressed={tool==='select'} onClick={()=>setTool('select')}>⌖<span>Select</span></Button>
       <div className="terrain-floor-tools"><Button aria-label="Paint floor" aria-pressed={tool==='floor'} onClick={()=>setTool('floor')}>▦<span>Floor</span></Button><Menu side="right" pressed={tool==='floor'} label="Floor tools" triggerContent={<>▦<span>Floor ▸</span></>} items={[{id:'paint',label:'Paint terrain',onSelect:()=>{setTerrainSettings(s=>({...s,mode:'paint'}));setTool('floor')}},{id:'erase',label:'Erase terrain',onSelect:()=>{setTerrainSettings(s=>({...s,mode:'erase'}));setTool('floor')}},{id:'cells',label:'Paint floor cells',onSelect:()=>{setTerrainSettings(s=>({...s,mode:'cells'}));setTool('floor')}}]}/></div>
       <Menu side="right" pressed={['wall','wall-line','room','corridor'].includes(tool)} label="Wall tools" triggerContent={<>━<span>Wall ▸</span></>} items={(['wall','wall-line','room','corridor'] as const).map((t,i)=>({id:t,label:['Draw wall','Wall line','Rectangle room','Corridor'][i],onSelect:()=>setTool(t)}))}/>
